@@ -17,12 +17,12 @@ WORKDIR /app
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY backend/pyproject.toml .
+COPY pyproject.toml .
 # Use uv for faster installation
-RUN uv pip install --system --no-cache .
+RUN uv pip install --system --no-cache -r pyproject.toml
 
 # Copy backend code
-COPY backend/ .
+COPY app/ ./app
 
 # Copy built frontend static files
 COPY --from=frontend-build /app/frontend/dist /app/static
