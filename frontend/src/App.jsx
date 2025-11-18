@@ -472,11 +472,14 @@ function SettingsPage({ theme, toggleTheme }) {
         apprise_url: '',
         check_interval_minutes: 60,
         notify_on_price_drop: true,
+        notify_on_target_price: true,
+        price_drop_threshold_percent: 10,
         notify_on_stock_change: true
     });
     const [jobConfig, setJobConfig] = useState({ refresh_interval_minutes: 60, next_run: null, running: false });
     const [scraperConfig, setScraperConfig] = useState({
         smart_scroll_enabled: false,
+        smart_scroll_pixels: 350,
         text_context_enabled: false,
         text_context_length: 5000
     });
@@ -505,6 +508,7 @@ function SettingsPage({ theme, toggleTheme }) {
 
             setScraperConfig({
                 smart_scroll_enabled: settingsMap['smart_scroll_enabled'] === 'true',
+                smart_scroll_pixels: parseInt(settingsMap['smart_scroll_pixels'] || '350'),
                 text_context_enabled: settingsMap['text_context_enabled'] === 'true',
                 text_context_length: parseInt(settingsMap['text_context_length'] || '5000')
             });
@@ -540,6 +544,7 @@ function SettingsPage({ theme, toggleTheme }) {
         e.preventDefault();
         try {
             await axios.post(`${API_URL}/settings`, { key: 'smart_scroll_enabled', value: scraperConfig.smart_scroll_enabled.toString() });
+            await axios.post(`${API_URL}/settings`, { key: 'smart_scroll_pixels', value: scraperConfig.smart_scroll_pixels.toString() });
             await axios.post(`${API_URL}/settings`, { key: 'text_context_enabled', value: scraperConfig.text_context_enabled.toString() });
             await axios.post(`${API_URL}/settings`, { key: 'text_context_length', value: scraperConfig.text_context_length.toString() });
             toast.success('Scraper configuration updated');
@@ -558,6 +563,8 @@ function SettingsPage({ theme, toggleTheme }) {
                 apprise_url: '',
                 check_interval_minutes: 60,
                 notify_on_price_drop: true,
+                notify_on_target_price: true,
+                price_drop_threshold_percent: 10,
                 notify_on_stock_change: true
             });
             fetchProfiles();
@@ -657,6 +664,20 @@ function SettingsPage({ theme, toggleTheme }) {
                             </div>
                         </label>
 
+                        {scraperConfig.smart_scroll_enabled && (
+                            <div className="pl-14 animate-in slide-in-from-top-2 duration-200">
+                                <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Scroll Pixels</label>
+                                <input
+                                    type="number"
+                                    min="100"
+                                    max="5000"
+                                    className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none w-40 transition-all"
+                                    value={scraperConfig.smart_scroll_pixels}
+                                    onChange={e => setScraperConfig({ ...scraperConfig, smart_scroll_pixels: e.target.value })}
+                                />
+                            </div>
+                        )}
+
                         <label className="flex items-start gap-4 cursor-pointer group">
                             <div className="relative flex items-center">
                                 <input
@@ -711,7 +732,12 @@ function SettingsPage({ theme, toggleTheme }) {
                                     </span>
                                     {profile.notify_on_price_drop && (
                                         <span className="bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-md border border-green-200 dark:border-green-900/30 text-[10px] font-medium text-green-600 dark:text-green-400">
-                                            Price Drop
+                                            Drop &gt;{profile.price_drop_threshold_percent}%
+                                        </span>
+                                    )}
+                                    {profile.notify_on_target_price && (
+                                        <span className="bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-900/30 text-[10px] font-medium text-purple-600 dark:text-purple-400">
+                                            Target Price
                                         </span>
                                     )}
                                     {profile.notify_on_stock_change && (
@@ -778,6 +804,34 @@ function SettingsPage({ theme, toggleTheme }) {
                                 </div>
                                 Notify on Price Drop
                             </label>
+
+                            {newProfile.notify_on_price_drop && (
+                                <div className="pl-12 animate-in slide-in-from-top-2 duration-200">
+                                    <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Threshold (%)</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="100"
+                                        className="w-24 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all"
+                                        value={newProfile.price_drop_threshold_percent}
+                                        onChange={e => setNewProfile({ ...newProfile, price_drop_threshold_percent: e.target.value })}
+                                    />
+                                </div>
+                            )}
+
+                            <label className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer">
+                                <div className="relative flex items-center">
+                                    <input
+                                        type="checkbox"
+                                        className="peer sr-only"
+                                        checked={newProfile.notify_on_target_price}
+                                        onChange={e => setNewProfile({ ...newProfile, notify_on_target_price: e.target.checked })}
+                                    />
+                                    <div className="w-9 h-5 bg-zinc-200 peer-focus:outline-none rounded-full peer dark:bg-zinc-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-purple-600"></div>
+                                </div>
+                                Notify on Target Price
+                            </label>
+
                             <label className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer">
                                 <div className="relative flex items-center">
                                     <input

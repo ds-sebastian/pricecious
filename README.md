@@ -43,6 +43,8 @@
           - browserless
         extra_hosts:
           - "host.docker.internal:host-gateway"
+        volumes:
+          - screenshots_data:/app/screenshots
 
       db:
         image: postgres:15-alpine
@@ -62,6 +64,7 @@
 
     volumes:
       postgres_data:
+      screenshots_data:
     ```
 
 2.  **Start the Application:**

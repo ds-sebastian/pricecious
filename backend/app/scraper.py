@@ -7,7 +7,7 @@ BROWSERLESS_URL = os.getenv("BROWSERLESS_URL", "ws://browserless:3000")
 
 logger = logging.getLogger(__name__)
 
-async def scrape_item(url: str, selector: str = None, item_id: int = None, smart_scroll: bool = False, text_length: int = 0):
+async def scrape_item(url: str, selector: str = None, item_id: int = None, smart_scroll: bool = False, scroll_pixels: int = 350, text_length: int = 0):
     """
     Scrapes the given URL using Browserless and Playwright.
     Returns a tuple: (screenshot_path, page_text)
@@ -97,9 +97,9 @@ async def scrape_item(url: str, selector: str = None, item_id: int = None, smart
 
             # Smart Scroll
             if smart_scroll:
-                logger.info("Performing smart scroll...")
+                logger.info(f"Performing smart scroll ({scroll_pixels}px)...")
                 try:
-                    await page.evaluate("window.scrollBy(0, 400)")
+                    await page.evaluate(f"window.scrollBy(0, {scroll_pixels})")
                     await page.wait_for_timeout(1000)
                 except Exception as e:
                     logger.warning(f"Smart scroll failed: {e}")

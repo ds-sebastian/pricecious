@@ -20,6 +20,29 @@ logger = logging.getLogger(__name__)
 
 models.Base.metadata.create_all(bind=engine)
 
+# Simple migration to ensure new columns exist
+def run_migrations():
+    try:
+        with engine.connect() as conn:
+            from sqlalchemy import text
+            # Check if columns exist
+            try:
+                conn.execute(text("ALTER TABLE notification_profiles ADD COLUMN notify_on_target_price BOOLEAN DEFAULT TRUE"))
+                logger.info("Added notify_on_target_price column")
+            except Exception:
+                pass
+            
+            try:
+                conn.execute(text("ALTER TABLE notification_profiles ADD COLUMN price_drop_threshold_percent FLOAT DEFAULT 10.0"))
+                logger.info("Added price_drop_threshold_percent column")
+            except Exception:
+                pass
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Migration error: {e}")
+
+run_migrations()
+
 VERSION = "0.1.0"
 
 app = FastAPI(title="Pricecious API", version=VERSION)
@@ -48,6 +71,8 @@ class NotificationProfileCreate(BaseModel):
     name: str
     apprise_url: str
     notify_on_price_drop: bool = True
+    notify_on_target_price: bool = True
+    price_drop_threshold_percent: float = 10.0
     notify_on_stock_change: bool = True
     check_interval_minutes: int = 60
 
@@ -309,16 +334,18 @@ async def process_item_check(item_id: int, db: Session):
         # Fetch Settings
         settings_map = {s.key: s.value for s in db.query(models.Settings).all()}
         smart_scroll = settings_map.get("smart_scroll_enabled", "false").lower() == "true"
+        smart_scroll_pixels = int(settings_map.get("smart_scroll_pixels", "350"))
         text_context_enabled = settings_map.get("text_context_enabled", "false").lower() == "true"
         text_length = int(settings_map.get("text_context_length", "5000")) if text_context_enabled else 0
 
-        logger.info(f"Checking item: {item.name} ({item.url}) [Scroll: {smart_scroll}, Text: {text_length}]")
+        logger.info(f"Checking item: {item.name} ({item.url}) [Scroll: {smart_scroll} ({smart_scroll_pixels}px), Text: {text_length}]")
         
         screenshot_path, page_text = await scraper.scrape_item(
             item.url, 
             item.selector, 
             item_id, 
             smart_scroll=smart_scroll, 
+            scroll_pixels=smart_scroll_pixels,
             text_length=text_length
         )
         
@@ -350,9 +377,20 @@ async def process_item_check(item_id: int, db: Session):
                 if item.notification_profile_id:
                     profile = item.notification_profile
                     if profile:
-                        # Price Drop
-                        if profile.notify_on_price_drop and price is not None and item.target_price and price <= item.target_price:
-                             notifications.send_notification([profile.apprise_url], f"Price Alert: {item.name}", f"Price is ${price} (Target: ${item.target_price})")
+                        # Price Drop (Percentage)
+                        if profile.notify_on_price_drop and price is not None and old_price is not None:
+                            if price < old_price:
+                                drop_percent = ((old_price - price) / old_price) * 100
+                                if drop_percent >= profile.price_drop_threshold_percent:
+                                    notifications.send_notification(
+                                        [profile.apprise_url], 
+                                        f"Price Drop Alert: {item.name}", 
+                                        f"Price dropped by {drop_percent:.1f}%! Now ${price} (was ${old_price})"
+                                    )
+
+                        # Target Price
+                        if profile.notify_on_target_price and price is not None and item.target_price and price <= item.target_price:
+                             notifications.send_notification([profile.apprise_url], f"Target Price Alert: {item.name}", f"Price is ${price} (Target: ${item.target_price})")
                         
                         # Stock Change
                         if profile.notify_on_stock_change and in_stock is not None and old_stock is not None and in_stock != old_stock:

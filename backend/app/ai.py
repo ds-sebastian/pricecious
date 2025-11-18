@@ -34,6 +34,28 @@ def encode_image(image_path):
         logger.error(f"Error encoding image: {e}")
         raise
 
+def clean_text(text: str) -> str:
+    """
+    Cleans the text by removing code blocks, HTML tags, and excessive whitespace.
+    """
+    import re
+    if not text:
+        return ""
+    
+    # Remove code blocks (```...```)
+    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    
+    # Remove HTML tags (basic)
+    text = re.sub(r'<[^>]+>', '', text)
+    
+    # Remove non-printable characters (keep newlines and tabs)
+    text = re.sub(r'[^\x20-\x7E\n\t]', '', text)
+    
+    # Collapse excessive whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
+
 def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is the price of the product in this image? If it is out of stock, say 'Out of Stock'; but if it shows Add to Cart or something similar say In Stock. Return a JSON object with keys 'price' (number or null) and 'in_stock' (boolean)."):
     try:
         logger.info(f"Encoding image: {image_path}")
@@ -41,8 +63,9 @@ def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is t
         
         final_prompt = prompt
         if page_text:
-            final_prompt = f"{prompt}\n\nContext from webpage text:\n{page_text}"
-            logger.info("Added text context to prompt")
+            cleaned_text = clean_text(page_text)
+            final_prompt = f"{prompt}\n\nContext from webpage text:\n{cleaned_text}"
+            logger.info(f"Added text context to prompt (original: {len(page_text)}, cleaned: {len(cleaned_text)})")
 
         payload = {
             "model": MODEL_NAME,

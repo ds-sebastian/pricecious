@@ -10,6 +10,8 @@ class NotificationProfile(Base):
     name = Column(String, unique=True, index=True)
     apprise_url = Column(String)
     notify_on_price_drop = Column(Boolean, default=True)
+    notify_on_target_price = Column(Boolean, default=True)
+    price_drop_threshold_percent = Column(Float, default=10.0)
     notify_on_stock_change = Column(Boolean, default=True)
     check_interval_minutes = Column(Integer, default=60)
     
