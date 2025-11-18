@@ -21,37 +21,67 @@
 
 ## Quick Start
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/yourusername/pricecious.git
-    cd pricecious
+1.  **Create a `docker-compose.yml` file:**
+    Save the following content to a file named `docker-compose.yml`:
+
+    ```yaml
+    services:
+      app:
+        image: ghcr.io/ds-sebastian/pricecious:latest
+        container_name: pricecious-app
+        ports:
+          - "8000:8000"
+        environment:
+          - DATABASE_URL=postgresql://user:password@db:5432/pricewatch
+          - OLLAMA_BASE_URL=http://host.docker.internal:11434
+          - OLLAMA_MODEL=moondream
+          - BROWSERLESS_URL=ws://browserless:3000
+        depends_on:
+          - db
+          - browserless
+        extra_hosts:
+          - "host.docker.internal:host-gateway"
+
+      db:
+        image: postgres:15-alpine
+        environment:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: pricewatch
+        volumes:
+          - postgres_data:/var/lib/postgresql/data
+
+      browserless:
+        image: browserless/chrome:latest
+        ports:
+          - "3000:3000"
+        environment:
+          - MAX_CONCURRENT_SESSIONS=10
+
+    volumes:
+      postgres_data:
     ```
 
-2.  **Configure Environment:**
-    The `docker-compose.yml` is set up to connect to Ollama on the host machine via `host.docker.internal`.
-    *   **Linux Users**: You may need to ensure your Ollama service is listening on `0.0.0.0` or allow docker connections.
-    *   **OLLAMA_BASE_URL**: If your Ollama instance is elsewhere, update this environment variable in `docker-compose.yml`.
-
-3.  **Start the Application:**
-    Pull the latest image from GitHub Container Registry and start the services:
+2.  **Start the Application:**
+    Run the following command in the same directory:
     ```bash
-    docker pull ghcr.io/ds-sebastian/pricecious:latest
     docker compose up -d
     ```
 
-4.  **Access the Dashboard:**
+3.  **Access the Dashboard:**
     Open your browser and navigate to `http://localhost:8000`.
 
 ## Configuration
 
 ### Environment Variables
-The following environment variables can be configured in your `docker-compose.yml` or `.env` file:
+The following environment variables can be configured in your `docker-compose.yml`:
 
 | Variable | Description | Default | Example |
 | :--- | :--- | :--- | :--- |
 | `OLLAMA_BASE_URL` | URL of the Ollama API | `http://ollama:11434` | `http://host.docker.internal:11434` |
 | `OLLAMA_MODEL` | Name of the Ollama model to use | `moondream` | `moondream:latest` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:password@db:5432/pricewatch` | `postgresql://u:p@localhost:5432/db` |
+| `BROWSERLESS_URL` | WebSocket URL for Browserless | `ws://browserless:3000` | `ws://browserless:3000` |
 | `LOG_LEVEL` | Application logging level | `INFO` | `DEBUG` |
 
 ### Scraper Settings
@@ -63,27 +93,6 @@ Navigate to the **Settings** page in the UI to configure:
 Create **Notification Profiles** in the Settings page using Apprise URLs.
 *   Example Discord: `discord://webhook_id/webhook_token`
 *   Example Telegram: `tgram://bot_token/chat_id`
-
-## Development
-
-### Project Structure
-*   `frontend/`: React + Vite application.
-*   `backend/`: FastAPI Python application.
-*   `docker-compose.yml`: Orchestration.
-
-### Running Locally (Dev Mode)
-1.  **Backend**:
-    ```bash
-    cd backend
-    pip install -r requirements.txt
-    uvicorn app.main:app --reload
-    ```
-2.  **Frontend**:
-    ```bash
-    cd frontend
-    npm install
-    npm run dev
-    ```
 
 ## License
 
