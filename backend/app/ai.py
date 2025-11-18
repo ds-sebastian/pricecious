@@ -7,6 +7,9 @@ from PIL import Image
 import io
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+if not OLLAMA_BASE_URL.startswith(("http://", "https://")):
+    OLLAMA_BASE_URL = f"http://{OLLAMA_BASE_URL}"
+
 MODEL_NAME = os.getenv("OLLAMA_MODEL", "moondream")
 
 logger = logging.getLogger(__name__)
