@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+playwright
+requests
+pydantic
+apprise
+Pillow
+apscheduler
+python-multipart
+pydantic-settings
+aiofiles
