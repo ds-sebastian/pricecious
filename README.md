@@ -1,17 +1,17 @@
 # Pricecious 💍
 
-**Pricecious** is a self-hosted, AI-powered price tracking application. It uses [Ollama](https://ollama.com/) and the [Moondream](https://github.com/vikhyat/moondream) vision model to visually analyze product pages, detect prices, and monitor stock status.
+**Pricecious** is a self-hosted, AI-powered price tracking application. It uses [Ollama](https://ollama.com/) and an LLM vision model to visually analyze product pages, detect prices, and monitor stock status.
 
 <img width="1577" height="1188" alt="main_page" src="https://github.com/user-attachments/assets/8453838d-b1c0-45af-a3fc-4a13843bb3f8" />
 
 ## Features
 
-*   **AI-Powered Analysis**: Uses Moondream to "see" the price and stock status on any webpage, bypassing complex HTML structures.
+*   **AI-Powered Analysis**: Uses GenAI to "see" the price and stock status on any webpage, bypassing complex HTML structures.
 *   **Visual History**: Keeps a screenshot history of every check.
 *   **Smart Scrolling**: Automatically scrolls pages to load lazy-loaded content before capturing.
 *   **Text Context**: Optionally extracts page text to improve AI accuracy.
 *   **Notifications**: Supports multi-channel notifications (Discord, Telegram, Email, etc.) via [Apprise](https://github.com/caronc/apprise).
-*   **Dark Mode**: Beautiful "Apple-esque" UI with full dark/light mode support.
+*   **Dark Mode**: Beautiful UI with full dark/light mode support.
 *   **Dockerized**: Easy to deploy with Docker Compose.
 
 ## Prerequisites
@@ -36,7 +36,7 @@
         environment:
           - DATABASE_URL=postgresql://user:password@db:5432/pricewatch
           - OLLAMA_BASE_URL=http://host.docker.internal:11434
-          - OLLAMA_MODEL=moondream
+          - OLLAMA_MODEL=gemma3:4b
           - BROWSERLESS_URL=ws://browserless:3000
         depends_on:
           - db
@@ -81,7 +81,7 @@ The following environment variables can be configured in your `docker-compose.ym
 | Variable | Description | Default | Example |
 | :--- | :--- | :--- | :--- |
 | `OLLAMA_BASE_URL` | URL of the Ollama API | `http://ollama:11434` | `http://host.docker.internal:11434` |
-| `OLLAMA_MODEL` | Name of the Ollama model to use | `moondream` | `moondream:latest` |
+| `OLLAMA_MODEL` | Name of the Ollama model to use | `moondream` | `gemma3:4b` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:password@db:5432/pricewatch` | `postgresql://u:p@localhost:5432/db` |
 | `BROWSERLESS_URL` | WebSocket URL for Browserless | `ws://browserless:3000` | `ws://browserless:3000` |
 | `LOG_LEVEL` | Application logging level | `INFO` | `DEBUG` |
