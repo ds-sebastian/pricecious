@@ -2,6 +2,8 @@
 
 **Pricecious** is a self-hosted, AI-powered price tracking application. It uses [Ollama](https://ollama.com/) and the [Moondream](https://github.com/vikhyat/moondream) vision model to visually analyze product pages, detect prices, and monitor stock status.
 
+<img width="1577" height="1188" alt="main_page" src="https://github.com/user-attachments/assets/8453838d-b1c0-45af-a3fc-4a13843bb3f8" />
+
 ## Features
 
 *   **AI-Powered Analysis**: Uses Moondream to "see" the price and stock status on any webpage, bypassing complex HTML structures.
