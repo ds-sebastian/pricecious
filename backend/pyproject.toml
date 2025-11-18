@@ -1,0 +1,25 @@
+[project]
+name = "pricecious-backend"
+version = "0.1.0"
+description = "Backend for Pricecious Price Tracker"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "psycopg2-binary",
+    "playwright",
+    "requests",
+    "pydantic",
+    "apprise",
+    "Pillow",
+    "apscheduler",
+    "python-multipart",
+    "pydantic-settings",
+    "aiofiles",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

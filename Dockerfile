@@ -17,9 +17,9 @@ WORKDIR /app
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY backend/requirements.txt .
+COPY backend/pyproject.toml .
 # Use uv for faster installation
-RUN uv pip install --system --no-cache -r requirements.txt
+RUN uv pip install --system --no-cache .
 
 # Copy backend code
 COPY backend/ .
