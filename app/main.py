@@ -78,6 +78,8 @@ class ItemResponse(ItemCreate):
     in_stock: bool | None
     is_active: bool
     last_checked: datetime | None
+    is_refreshing: bool = False
+    last_error: str | None = None
     screenshot_url: str | None = None
 
     class Config:
@@ -182,6 +184,12 @@ def check_item(item_id: int, background_tasks: BackgroundTasks, db: Session = De
         raise HTTPException(status_code=404, detail="Item not found")
 
     logger.info(f"Triggering check for item ID: {item_id}")
+    
+    # Set refreshing state immediately
+    item.is_refreshing = True
+    item.last_error = None
+    db.commit()
+    
     # Don't pass the request-scoped DB session to the background task
     background_tasks.add_task(process_item_check, item_id)
     return {"message": "Check triggered"}
@@ -372,13 +380,17 @@ async def process_item_check(item_id: int, db: Session = None):
         logger.error(f"process_item_check: Item ID {item_id} not found")
         return
 
-    logger.info(
-        f"Checking item: {item_data['name']} ({item_data['url']}) "
-        f"[Scroll: {config['smart_scroll']} ({config['smart_scroll_pixels']}px), "
-        f"Text: {config['text_length']}, Timeout: {config['scraper_timeout']}]"
-    )
+    if not item_data:
+        logger.error(f"process_item_check: Item ID {item_id} not found")
+        return
 
     try:
+        logger.info(
+            f"Checking item: {item_data['name']} ({item_data['url']}) "
+            f"[Scroll: {config['smart_scroll']} ({config['smart_scroll_pixels']}px), "
+            f"Text: {config['text_length']}, Timeout: {config['scraper_timeout']}]"
+        )
+
         screenshot_path, page_text = await scraper.scrape_item(
             item_data['url'],
             item_data['selector'],
@@ -421,6 +433,8 @@ async def process_item_check(item_id: int, db: Session = None):
                             session.add(history)
 
                         item.last_checked = datetime.utcnow()
+                        item.is_refreshing = False # Reset refreshing state
+                        item.last_error = None # Clear error
                         session.commit()
 
                         return old_price, old_stock
@@ -470,11 +484,28 @@ async def process_item_check(item_id: int, db: Session = None):
                             f"Item is now {status}",
                         )
             else:
-                logger.error("AI analysis failed to return a result")
+                error_msg = "AI analysis failed to return a result"
+                logger.error(error_msg)
+                raise Exception(error_msg)
         else:
-            logger.error("Failed to capture screenshot")
+            error_msg = "Failed to capture screenshot"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+
     except Exception as e:
         logger.error(f"Error in process_item_check: {e}")
+        # Update DB with error
+        def update_db_error():
+            session = SessionLocal()
+            try:
+                item = session.query(models.Item).filter(models.Item.id == item_id).first()
+                if item:
+                    item.is_refreshing = False
+                    item.last_error = str(e)
+                    session.commit()
+            finally:
+                session.close()
+        await loop.run_in_executor(None, update_db_error)
 
 
 @api_router.get("/settings")

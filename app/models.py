@@ -38,6 +38,8 @@ class Item(Base):
 
     is_active = Column(Boolean, default=True)
     last_checked = Column(DateTime, nullable=True)
+    is_refreshing = Column(Boolean, default=False)
+    last_error = Column(String, nullable=True)
 
     notification_profile_id = Column(Integer, ForeignKey("notification_profiles.id"), nullable=True)
     notification_profile = relationship("NotificationProfile", back_populates="items")

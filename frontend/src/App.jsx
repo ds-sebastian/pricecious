@@ -147,7 +147,6 @@ function Dashboard({ items, refreshItems, searchTerm }) {
     const [editingItem, setEditingItem] = useState(null);
     const [zoomedImage, setZoomedImage] = useState(null);
     const [itemToDelete, setItemToDelete] = useState(null);
-    const [refreshingItems, setRefreshingItems] = useState(new Set());
 
     const filteredItems = items.filter(item => {
         const term = searchTerm.toLowerCase();
@@ -161,28 +160,13 @@ function Dashboard({ items, refreshItems, searchTerm }) {
 
     const handleCheck = async (id) => {
         try {
-            setRefreshingItems(prev => new Set(prev).add(id));
             toast.info('Check triggered...');
             await axios.post(`${API_URL}/items/${id}/check`);
             toast.success('Check started in background');
-
-            // Keep the spinner spinning for a bit to show activity
-            setTimeout(() => {
-                refreshItems();
-                setRefreshingItems(prev => {
-                    const next = new Set(prev);
-                    next.delete(id);
-                    return next;
-                });
-            }, 3000);
+            refreshItems();
         } catch (error) {
             console.error('Error triggering check:', error);
             toast.error('Failed to trigger check');
-            setRefreshingItems(prev => {
-                const next = new Set(prev);
-                next.delete(id);
-                return next;
-            });
         }
     };
 
@@ -266,9 +250,14 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                                 <button onClick={() => setEditingItem(item)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
                                     <Edit2 className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => handleCheck(item.id)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" disabled={refreshingItems.has(item.id)}>
-                                    <RefreshCw className={`w-3.5 h-3.5 ${refreshingItems.has(item.id) ? 'animate-spin text-purple-500' : ''}`} />
+                                <button onClick={() => handleCheck(item.id)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors" disabled={item.is_refreshing}>
+                                    <RefreshCw className={`w-3.5 h-3.5 ${item.is_refreshing ? 'animate-spin text-purple-500' : ''}`} />
                                 </button>
+                                {item.last_error && (
+                                    <div className="p-1.5 text-red-500" title={item.last_error}>
+                                        <AlertTriangle className="w-3.5 h-3.5" />
+                                    </div>
+                                )}
                                 <button onClick={() => handleDelete(item)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md text-zinc-400 hover:text-red-500 transition-colors">
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </button>
