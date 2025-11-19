@@ -173,11 +173,15 @@ function Dashboard({ items, refreshItems, searchTerm }) {
     const handleRefreshAll = async () => {
         try {
             toast.info('Triggering refresh for all items...');
+            // Optimistically update all items to show refreshing state
+            setItems(prevItems => prevItems.map(item => ({ ...item, is_refreshing: true })));
             await axios.post(`${API_URL}/jobs/refresh-all`);
             toast.success('Refresh all started');
         } catch (error) {
             console.error('Error triggering refresh all:', error);
             toast.error('Failed to trigger refresh all');
+            // Revert refreshing state on error (optional, but good practice)
+            refreshItems();
         }
     };
 
@@ -282,6 +286,19 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                                 </div>
                             )}
 
+                            {/* Stock Confidence Bar */}
+                            {(item.in_stock_confidence !== null && item.in_stock_confidence !== undefined) && (
+                                <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/20 backdrop-blur-sm">
+                                    <div
+                                        className={`h-full transition-all duration-500 ${item.in_stock_confidence > 0.8 ? 'bg-emerald-500' :
+                                                item.in_stock_confidence > 0.5 ? 'bg-yellow-500' : 'bg-red-500'
+                                            }`}
+                                        style={{ width: `${item.in_stock_confidence * 100}%` }}
+                                        title={`Stock Confidence: ${Math.round(item.in_stock_confidence * 100)}%`}
+                                    />
+                                </div>
+                            )}
+
                             {/* Stock Badge */}
                             <div className={`absolute top-3 right-3 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase backdrop-blur-md shadow-sm border ${item.in_stock === true ? 'bg-green-500/90 text-white border-green-400/50' :
                                 item.in_stock === false ? 'bg-red-500/90 text-white border-red-400/50' :
@@ -291,56 +308,48 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                             </div>
                         </div>
 
-                        <div className="space-y-3 flex-grow">
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-baseline">
-                                    <span className="text-zinc-500 text-sm font-medium">Current Price</span>
-                                    <div className="flex items-baseline gap-2">
-                                        <span className={`text-2xl font-bold tracking-tight ${item.target_price && item.current_price <= item.target_price
-                                            ? 'text-green-600 dark:text-green-400'
-                                            : item.target_price && item.current_price > item.target_price
-                                                ? 'text-red-600 dark:text-red-400'
-                                                : 'text-zinc-900 dark:text-white'
+                        <div className="space-y-4 flex-grow">
+                            <div>
+                                <div className="flex items-baseline justify-between mb-1">
+                                    <span className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Price</span>
+                                    {item.target_price && (
+                                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${item.current_price <= item.target_price
+                                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                                : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
                                             }`}>
-                                            {item.current_price ? `$${item.current_price}` : '---'}
+                                            Target: ${item.target_price}
                                         </span>
-                                    </div>
+                                    )}
                                 </div>
 
-                                {/* Confidence Badges */}
+                                <div className="flex items-end gap-2">
+                                    <span className={`text-3xl font-bold tracking-tight leading-none ${item.target_price && item.current_price <= item.target_price
+                                        ? 'text-green-600 dark:text-green-400'
+                                        : item.target_price && item.current_price > item.target_price
+                                            ? 'text-zinc-900 dark:text-white'
+                                            : 'text-zinc-900 dark:text-white'
+                                        }`}>
+                                        {item.current_price ? `$${item.current_price}` : '---'}
+                                    </span>
+                                </div>
+
+                                {/* Price Confidence Bar */}
                                 {(item.current_price_confidence !== null && item.current_price_confidence !== undefined) && (
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-100 to-indigo-100 dark:from-purple-900/30 dark:to-indigo-900/30 border border-purple-200/50 dark:border-purple-700/50">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 animate-pulse"></div>
-                                            <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wide">
-                                                Price: {Math.round(item.current_price_confidence * 100)}%
-                                            </span>
+                                    <div className="mt-2 group/confidence relative">
+                                        <div className="h-1.5 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                            <div
+                                                className={`h-full rounded-full transition-all duration-500 ${item.current_price_confidence > 0.8 ? 'bg-purple-500' :
+                                                        item.current_price_confidence > 0.5 ? 'bg-purple-400' : 'bg-purple-300'
+                                                    }`}
+                                                style={{ width: `${item.current_price_confidence * 100}%` }}
+                                            />
                                         </div>
-                                        {(item.in_stock_confidence !== null && item.in_stock_confidence !== undefined) && (
-                                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30 border border-emerald-200/50 dark:border-emerald-700/50">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 animate-pulse"></div>
-                                                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
-                                                    Stock: {Math.round(item.in_stock_confidence * 100)}%
-                                                </span>
-                                            </div>
-                                        )}
+                                        <div className="absolute left-0 -bottom-4 opacity-0 group-hover/confidence:opacity-100 transition-opacity text-[10px] text-zinc-400">
+                                            Price Confidence: {Math.round(item.current_price_confidence * 100)}%
+                                        </div>
                                     </div>
                                 )}
                             </div>
-
-                            {item.target_price ? (
-                                <div className="flex justify-between items-center">
-                                    <span className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Target</span>
-                                    <span className="text-zinc-600 dark:text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-sm">
-                                        ${item.target_price}
-                                    </span>
-                                </div>
-                            ) : (
-                                <div className="flex justify-between items-center">
-                                    <span className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Target</span>
-                                    <span className="text-zinc-400 text-xs italic">Not set</span>
-                                </div>
-                            )}
 
                             {/* Tags */}
                             {item.tags && (
@@ -597,6 +606,7 @@ function SettingsPage({ theme, toggleTheme }) {
         text_context_length: 5000,
         scraper_timeout: 90000
     });
+    const [showAdvancedAi, setShowAdvancedAi] = useState(false);
     const [deleteProfileId, setDeleteProfileId] = useState(null);
 
     useEffect(() => {
@@ -894,106 +904,113 @@ function SettingsPage({ theme, toggleTheme }) {
             </div>
 
             {/* AI Advanced Settings */}
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                <div className="flex items-start justify-between mb-6">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-all duration-300">
+                <div
+                    className="flex items-center justify-between cursor-pointer select-none"
+                    onClick={() => setShowAdvancedAi(!showAdvancedAi)}
+                >
                     <div>
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             <span className="text-xl">⚙️</span> AI Advanced Settings
                         </h3>
                         <p className="text-xs text-zinc-500 mt-1">Configure AI extraction parameters and confidence thresholds</p>
                     </div>
+                    <ChevronRight className={`w-5 h-5 text-zinc-400 transition-transform duration-300 ${showAdvancedAi ? 'rotate-90' : ''}`} />
                 </div>
-                <form onSubmit={handleUpdateAiAdvancedConfig} className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Temperature */}
-                        <div>
-                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
-                                Temperature ({aiAdvancedConfig.ai_temperature})
-                            </label>
-                            <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.1"
-                                className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                                value={aiAdvancedConfig.ai_temperature}
-                                onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, ai_temperature: parseFloat(e.target.value) })}
-                            />
-                            <p className="text-xs text-zinc-400 mt-1">Lower = more deterministic, Higher = more creative</p>
+
+                {showAdvancedAi && (
+                    <form onSubmit={handleUpdateAiAdvancedConfig} className="space-y-6 mt-6 animate-in slide-in-from-top-4 fade-in duration-300">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Temperature */}
+                            <div>
+                                <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                                    Temperature ({aiAdvancedConfig.ai_temperature})
+                                </label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.1"
+                                    className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                    value={aiAdvancedConfig.ai_temperature}
+                                    onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, ai_temperature: parseFloat(e.target.value) })}
+                                />
+                                <p className="text-xs text-zinc-400 mt-1">Lower = more deterministic, Higher = more creative</p>
+                            </div>
+
+                            {/* Max Tokens */}
+                            <div>
+                                <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Max Tokens</label>
+                                <input
+                                    type="number"
+                                    min="100"
+                                    max="1000"
+                                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all"
+                                    value={aiAdvancedConfig.ai_max_tokens}
+                                    onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, ai_max_tokens: parseInt(e.target.value) })}
+                                />
+                                <p className="text-xs text-zinc-400 mt-1">Maximum tokens for AI responses</p>
+                            </div>
+
+                            {/* Price Confidence Threshold */}
+                            <div>
+                                <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                                    Price Confidence Threshold ({(aiAdvancedConfig.confidence_threshold_price * 100).toFixed(0)}%)
+                                </label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                    value={aiAdvancedConfig.confidence_threshold_price}
+                                    onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, confidence_threshold_price: parseFloat(e.target.value) })}
+                                />
+                                <p className="text-xs text-zinc-400 mt-1">Minimum confidence to update price</p>
+                            </div>
+
+                            {/* Stock Confidence Threshold */}
+                            <div>
+                                <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                                    Stock Confidence Threshold ({(aiAdvancedConfig.confidence_threshold_stock * 100).toFixed(0)}%)
+                                </label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                                    value={aiAdvancedConfig.confidence_threshold_stock}
+                                    onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, confidence_threshold_stock: parseFloat(e.target.value) })}
+                                />
+                                <p className="text-xs text-zinc-400 mt-1">Minimum confidence to update stock status</p>
+                            </div>
                         </div>
 
-                        {/* Max Tokens */}
-                        <div>
-                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Max Tokens</label>
-                            <input
-                                type="number"
-                                min="100"
-                                max="1000"
-                                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all"
-                                value={aiAdvancedConfig.ai_max_tokens}
-                                onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, ai_max_tokens: parseInt(e.target.value) })}
-                            />
-                            <p className="text-xs text-zinc-400 mt-1">Maximum tokens for AI responses</p>
-                        </div>
+                        {/* Enable JSON Repair */}
+                        <label className="flex items-start gap-4 cursor-pointer group">
+                            <div className="relative flex items-center">
+                                <input
+                                    type="checkbox"
+                                    className="peer sr-only"
+                                    checked={aiAdvancedConfig.enable_json_repair}
+                                    onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, enable_json_repair: e.target.checked })}
+                                />
+                                <div className="w-11 h-6 bg-zinc-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:peer-focus:ring-purple-800 rounded-full peer dark:bg-zinc-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-purple-600"></div>
+                            </div>
+                            <div>
+                                <span className="font-medium block text-zinc-900 dark:text-zinc-100">Enable JSON Repair</span>
+                                <span className="text-sm text-zinc-500">Automatically attempt to fix malformed AI responses with a second LLM call.</span>
+                            </div>
+                        </label>
 
-                        {/* Price Confidence Threshold */}
-                        <div>
-                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
-                                Price Confidence Threshold ({(aiAdvancedConfig.confidence_threshold_price * 100).toFixed(0)}%)
-                            </label>
-                            <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.05"
-                                className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                                value={aiAdvancedConfig.confidence_threshold_price}
-                                onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, confidence_threshold_price: parseFloat(e.target.value) })}
-                            />
-                            <p className="text-xs text-zinc-400 mt-1">Minimum confidence to update price</p>
+                        <div className="flex justify-end pt-2">
+                            <button type="submit" className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-zinc-500/20">
+                                Save Advanced Settings
+                            </button>
                         </div>
-
-                        {/* Stock Confidence Threshold */}
-                        <div>
-                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
-                                Stock Confidence Threshold ({(aiAdvancedConfig.confidence_threshold_stock * 100).toFixed(0)}%)
-                            </label>
-                            <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.05"
-                                className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-600"
-                                value={aiAdvancedConfig.confidence_threshold_stock}
-                                onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, confidence_threshold_stock: parseFloat(e.target.value) })}
-                            />
-                            <p className="text-xs text-zinc-400 mt-1">Minimum confidence to update stock status</p>
-                        </div>
-                    </div>
-
-                    {/* Enable JSON Repair */}
-                    <label className="flex items-start gap-4 cursor-pointer group">
-                        <div className="relative flex items-center">
-                            <input
-                                type="checkbox"
-                                className="peer sr-only"
-                                checked={aiAdvancedConfig.enable_json_repair}
-                                onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, enable_json_repair: e.target.checked })}
-                            />
-                            <div className="w-11 h-6 bg-zinc-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:peer-focus:ring-purple-800 rounded-full peer dark:bg-zinc-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-purple-600"></div>
-                        </div>
-                        <div>
-                            <span className="font-medium block text-zinc-900 dark:text-zinc-100">Enable JSON Repair</span>
-                            <span className="text-sm text-zinc-500">Automatically attempt to fix malformed AI responses with a second LLM call.</span>
-                        </div>
-                    </label>
-
-                    <div className="flex justify-end pt-2">
-                        <button type="submit" className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-zinc-500/20">
-                            Save Advanced Settings
-                        </button>
-                    </div>
-                </form>
+                    </form>
+                )}
             </div>
 
             {/* Scraper Configuration */}
