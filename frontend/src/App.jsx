@@ -110,51 +110,30 @@ function MarqueeText({ text, className }) {
     const [isOverflowing, setIsOverflowing] = useState(false);
     const containerRef = useRef(null);
     const textRef = useRef(null);
-    const [duration, setDuration] = useState(0);
-    const [distance, setDistance] = useState(0);
 
     useEffect(() => {
         const checkOverflow = () => {
             if (containerRef.current && textRef.current) {
-                const containerWidth = containerRef.current.clientWidth;
-                const textWidth = textRef.current.scrollWidth;
-                const gap = 32; // 2rem gap
-
-                const isOver = textWidth > containerWidth;
+                const isOver = textRef.current.scrollWidth > containerRef.current.clientWidth;
                 setIsOverflowing(isOver);
-
                 if (isOver) {
-                    // Calculate duration based on width to ensure constant speed
-                    // Speed = pixels / second. Let's say 50px/s is a good reading speed
-                    const speed = 50;
-                    const totalDistance = textWidth + gap;
-                    setDistance(totalDistance);
-                    setDuration(totalDistance / speed);
+                    const distance = textRef.current.scrollWidth + 32; // 32px gap
+                    containerRef.current.style.setProperty('--marquee-duration', `${distance / 40}s`); // 40px/s speed
+                    containerRef.current.style.setProperty('--marquee-distance', `${distance}px`);
                 }
             }
         };
 
         checkOverflow();
-        // Add a small delay to ensure fonts are loaded and layout is stable
-        const timeoutId = setTimeout(checkOverflow, 100);
-
         window.addEventListener('resize', checkOverflow);
-        return () => {
-            window.removeEventListener('resize', checkOverflow);
-            clearTimeout(timeoutId);
-        };
+        return () => window.removeEventListener('resize', checkOverflow);
     }, [text]);
 
     return (
-        <div ref={containerRef} className={`overflow-hidden w-full ${className}`}>
+        <div ref={containerRef} className={`overflow-hidden w-full group ${className}`}>
             <div
                 ref={textRef}
-                className={`whitespace-nowrap flex gap-8 ${isOverflowing ? 'animate-marquee' : ''}`}
-                style={isOverflowing ? {
-                    '--marquee-duration': `${duration}s`,
-                    '--marquee-distance': `${distance}px`
-                } : {}}
-                title={text}
+                className={`whitespace-nowrap flex gap-8 ${isOverflowing ? 'group-hover:animate-marquee' : ''}`}
             >
                 <span>{text}</span>
                 {isOverflowing && <span aria-hidden="true">{text}</span>}
