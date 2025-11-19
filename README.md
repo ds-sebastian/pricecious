@@ -1,6 +1,6 @@
 # Pricecious 💍
 
-**Pricecious** is a self-hosted, AI-powered price tracking application. It uses [Ollama](https://ollama.com/) and an LLM vision model to visually analyze product pages, detect prices, and monitor stock status.
+**Pricecious** is a self-hosted, AI-powered price tracking application. It uses **GenAI Vision Models** (OpenAI, Anthropic, Gemini, Ollama, etc.) to visually analyze product pages, detect prices, and monitor stock status.
 
 <img width="1577" height="1188" alt="main_page" src="https://github.com/user-attachments/assets/8453838d-b1c0-45af-a3fc-4a13843bb3f8" />
 
@@ -17,7 +17,7 @@
 ## Prerequisites
 
 *   **Docker** and **Docker Compose**
-*   **Ollama**: You must have an Ollama instance running and accessible.
+*   **AI Provider**: An API key for OpenAI, Anthropic, Gemini, OR a local Ollama instance.
 *   **PostgreSQL**: A database for storing items and history (handled via Docker Compose).
 *   **Browserless**: A headless browser service for scraping (handled via Docker Compose).
 
@@ -35,8 +35,8 @@
           - "8000:8000"
         environment:
           - DATABASE_URL=postgresql://user:password@db:5432/pricewatch
-          - OLLAMA_BASE_URL=http://host.docker.internal:11434
-          - OLLAMA_MODEL=gemma3:4b
+          - OLLAMA_BASE_URL=http://host.docker.internal:11434 # Optional default
+          - OLLAMA_MODEL=moondream # Optional default
           - BROWSERLESS_URL=ws://browserless:3000
         depends_on:
           - db
@@ -83,8 +83,8 @@ The following environment variables can be configured in your `docker-compose.ym
 
 | Variable | Description | Default | Example |
 | :--- | :--- | :--- | :--- |
-| `OLLAMA_BASE_URL` | URL of the Ollama API | `http://ollama:11434` | `http://host.docker.internal:11434` |
-| `OLLAMA_MODEL` | Name of the Ollama model to use | `moondream` | `gemma3:4b` |
+| `OLLAMA_BASE_URL` | Default URL for Ollama (can be changed in UI) | `http://ollama:11434` | `http://host.docker.internal:11434` |
+| `OLLAMA_MODEL` | Default model name (can be changed in UI) | `moondream` | `gemma3:4b` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:password@db:5432/pricewatch` | `postgresql://u:p@localhost:5432/db` |
 | `BROWSERLESS_URL` | WebSocket URL for Browserless | `ws://browserless:3000` | `ws://browserless:3000` |
 | `LOG_LEVEL` | Application logging level | `INFO` | `DEBUG` |
@@ -93,6 +93,13 @@ The following environment variables can be configured in your `docker-compose.ym
 Navigate to the **Settings** page in the UI to configure:
 *   **Smart Scroll**: Enable to handle infinite scroll pages.
 *   **Text Context**: Enable to send page text to the AI for better accuracy.
+
+### AI Configuration
+Navigate to the **Settings** page to configure your AI provider:
+*   **Provider**: Choose between OpenAI, Anthropic, Gemini, Ollama, or Custom.
+*   **Model**: Specify the model name (e.g., `gpt-4o`, `claude-3-5-sonnet`, `moondream`).
+*   **API Key**: Enter your API key (not required for Ollama).
+*   **Base URL**: Required for Ollama or custom OpenAI-compatible endpoints.
 
 ### Notifications
 Create **Notification Profiles** in the Settings page using Apprise URLs.

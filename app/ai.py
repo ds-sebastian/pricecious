@@ -6,11 +6,14 @@ import logging
 from PIL import Image
 import io
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
-if not OLLAMA_BASE_URL.startswith(("http://", "https://")):
-    OLLAMA_BASE_URL = f"http://{OLLAMA_BASE_URL}"
+from litellm import completion
+from sqlalchemy.orm import Session
+from . import models, database
 
-MODEL_NAME = os.getenv("OLLAMA_MODEL", "moondream")
+# Default configuration (can be overridden by DB settings)
+DEFAULT_PROVIDER = "ollama"
+DEFAULT_MODEL = "moondream"
+DEFAULT_API_BASE = "http://ollama:11434"
 
 logger = logging.getLogger(__name__)
 
@@ -56,92 +59,121 @@ def clean_text(text: str) -> str:
     
     return text
 
+def get_ai_config():
+    """
+    Fetches AI configuration from the database.
+    Returns a tuple: (provider, model, api_key, api_base)
+    """
+    try:
+        # We need a new session here since this might be called from a background task
+        # where the original session might be closed or not available.
+        # However, creating a session every time might be expensive.
+        # For now, we'll create a lightweight session.
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            settings = db.query(models.Settings).all()
+            settings_map = {s.key: s.value for s in settings}
+            
+            provider = settings_map.get("ai_provider", DEFAULT_PROVIDER)
+            model = settings_map.get("ai_model", DEFAULT_MODEL)
+            api_key = settings_map.get("ai_api_key", "")
+            api_base = settings_map.get("ai_api_base", DEFAULT_API_BASE)
+            
+            # Normalize provider for litellm if needed
+            # litellm expects "ollama/modelname" for ollama, but we might store provider separately
+            
+            return provider, model, api_key, api_base
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error fetching AI config: {e}")
+        return DEFAULT_PROVIDER, DEFAULT_MODEL, "", DEFAULT_API_BASE
+
 def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is the price of the product in this image? If it is out of stock, say 'Out of Stock'; but if it shows Add to Cart or something similar say In Stock. Return a JSON object with keys 'price' (number or null) and 'in_stock' (boolean)."):
     try:
-        logger.info(f"Encoding image: {image_path}")
+        provider, model, api_key, api_base = get_ai_config()
+        
+        logger.info(f"Analyzing image with Provider: {provider}, Model: {model}")
+        
         base64_image = encode_image(image_path)
+        data_url = f"data:image/jpeg;base64,{base64_image}"
         
         final_prompt = prompt
         if page_text:
             cleaned_text = clean_text(page_text)
+            # Truncate text if too long to avoid token limits (rough estimate)
+            if len(cleaned_text) > 10000:
+                cleaned_text = cleaned_text[:10000] + "...(truncated)"
             final_prompt = f"{prompt}\n\nContext from webpage text:\n{cleaned_text}"
             logger.info(f"Added text context to prompt (original: {len(page_text)}, cleaned: {len(cleaned_text)})")
 
-        payload = {
-            "model": MODEL_NAME,
-            "prompt": final_prompt,
-            "images": [base64_image],
-            "stream": False,
-            "format": "json" 
+        # Construct messages for litellm
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": final_prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}}
+                ]
+            }
+        ]
+        
+        # Prepare kwargs for litellm
+        kwargs = {
+            "model": model if provider != "ollama" else f"ollama/{model}",
+            "messages": messages,
+            "max_tokens": 300,
         }
         
-        logger.info(f"Sending request to Ollama at {OLLAMA_BASE_URL} with model {MODEL_NAME}")
-        # Add timeout to prevent hanging indefinitely
-        try:
-            response = requests.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=120)
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
-                logger.warning(f"Model {MODEL_NAME} not found. Attempting to pull...")
-                pull_payload = {"name": MODEL_NAME}
-                # Pulling can take a long time, so we set a long timeout or stream it
-                # For simplicity here, we'll just wait a bit, but ideally we should stream
-                pull_response = requests.post(f"{OLLAMA_BASE_URL}/api/pull", json=pull_payload, stream=True)
-                pull_response.raise_for_status()
-                
-                # Consume the stream to ensure it finishes
-                for line in pull_response.iter_lines():
-                    if line:
-                        try:
-                            status = json.loads(line).get("status")
-                            if status:
-                                logger.info(f"Pull status: {status}")
-                        except:
-                            pass
-                
-                logger.info(f"Model {MODEL_NAME} pulled successfully. Retrying generation...")
-                response = requests.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=120)
-                response.raise_for_status()
-            else:
-                raise e
-        
-        result = response.json()
-        response_text = result.get("response", "")
-        
-        logger.info(f"Ollama response: {response_text}")
-        
-        # Attempt to parse JSON from the response
-        try:
-            data = json.loads(response_text)
+        if api_key:
+            kwargs["api_key"] = api_key
             
-            # Clean price if it's a string
-            if "price" in data and isinstance(data["price"], str):
-                try:
-                    import re
-                    # Extract number from string (e.g. "$99.95" -> 99.95)
+        if provider == "ollama":
+            kwargs["api_base"] = api_base
+        elif provider == "openai" and api_base:
+             # Allow custom base URL for OpenAI-compatible endpoints too
+             kwargs["api_base"] = api_base
+             
+        # Call litellm
+        logger.info(f"Sending request to {provider} ({model})...")
+        response = completion(**kwargs)
+        
+        response_text = response.choices[0].message.content
+        logger.info(f"AI Response: {response_text}")
+        
+        # Parse JSON
+        try:
+            # Try to find JSON block
+            import re
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                data = json.loads(json_str)
+            else:
+                data = json.loads(response_text)
+            
+            # Clean price
+            if "price" in data:
+                if isinstance(data["price"], str):
                     price_match = re.search(r'(\d+\.?\d*)', data["price"])
                     if price_match:
                         data["price"] = float(price_match.group(1))
                     else:
                         data["price"] = None
-                except ValueError:
-                    data["price"] = None
+                elif isinstance(data["price"], (int, float)):
+                    data["price"] = float(data["price"])
             
             return data
-        except json.JSONDecodeError:
-            # Fallback parsing if model didn't return pure JSON
-            import re
+            
+        except (json.JSONDecodeError, ValueError):
+            # Fallback parsing
+            logger.warning("Failed to parse JSON, attempting fallback parsing")
             price_match = re.search(r'\$?(\d+\.?\d*)', response_text)
             price = float(price_match.group(1)) if price_match else None
             in_stock = "out of stock" not in response_text.lower()
             return {"price": price, "in_stock": in_stock}
 
-    except requests.exceptions.Timeout:
-        logger.error("Ollama request timed out")
-        return None
-    except requests.exceptions.ConnectionError:
-        logger.error("Could not connect to Ollama")
-        return None
     except Exception as e:
-        logger.error(f"Error calling Ollama: {e}", exc_info=True)
+        logger.error(f"Error calling AI provider: {e}", exc_info=True)
         return None

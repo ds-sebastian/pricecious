@@ -569,6 +569,12 @@ function SettingsPage({ theme, toggleTheme }) {
         notify_on_stock_change: true
     });
     const [jobConfig, setJobConfig] = useState({ refresh_interval_minutes: 60, next_run: null, running: false });
+    const [aiConfig, setAiConfig] = useState({
+        ai_provider: 'ollama',
+        ai_model: 'moondream',
+        ai_api_key: '',
+        ai_api_base: 'http://ollama:11434'
+    });
     const [scraperConfig, setScraperConfig] = useState({
         smart_scroll_enabled: false,
         smart_scroll_pixels: 350,
@@ -581,7 +587,9 @@ function SettingsPage({ theme, toggleTheme }) {
     useEffect(() => {
         fetchProfiles();
         fetchJobConfig();
+        fetchJobConfig();
         fetchScraperConfig();
+        fetchAiConfig();
     }, []);
 
     const fetchProfiles = async () => {
@@ -606,8 +614,15 @@ function SettingsPage({ theme, toggleTheme }) {
                 text_context_length: parseInt(settingsMap['text_context_length'] || '5000'),
                 scraper_timeout: parseInt(settingsMap['scraper_timeout'] || '90000')
             });
+
+            setAiConfig({
+                ai_provider: settingsMap['ai_provider'] || 'ollama',
+                ai_model: settingsMap['ai_model'] || 'moondream',
+                ai_api_key: settingsMap['ai_api_key'] || '',
+                ai_api_base: settingsMap['ai_api_base'] || 'http://ollama:11434'
+            });
         } catch (error) {
-            console.error("Failed to fetch scraper config", error);
+            console.error("Failed to fetch settings", error);
         }
     };
 
@@ -645,6 +660,19 @@ function SettingsPage({ theme, toggleTheme }) {
             toast.success('Scraper configuration updated');
         } catch (error) {
             toast.error('Failed to update scraper config');
+        }
+    };
+
+    const handleUpdateAiConfig = async (e) => {
+        e.preventDefault();
+        try {
+            await axios.post(`${API_URL}/settings`, { key: 'ai_provider', value: aiConfig.ai_provider });
+            await axios.post(`${API_URL}/settings`, { key: 'ai_model', value: aiConfig.ai_model });
+            await axios.post(`${API_URL}/settings`, { key: 'ai_api_key', value: aiConfig.ai_api_key });
+            await axios.post(`${API_URL}/settings`, { key: 'ai_api_base', value: aiConfig.ai_api_base });
+            toast.success('AI configuration updated');
+        } catch (error) {
+            toast.error('Failed to update AI config');
         }
     };
 
@@ -734,6 +762,100 @@ function SettingsPage({ theme, toggleTheme }) {
                     <p>Status: <span className={`font-medium ${jobConfig.running ? "text-green-500" : "text-red-500"}`}>{jobConfig.running ? "Running" : "Stopped"}</span></p>
                     {jobConfig.next_run && <p className="mt-1">Next Run: {new Date(jobConfig.next_run).toLocaleString()}</p>}
                 </div>
+            </div>
+
+            {/* AI Configuration */}
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                    <span className="text-xl">🤖</span> AI Provider Configuration
+                </h3>
+                <form onSubmit={handleUpdateAiConfig} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Provider</label>
+                            <div className="relative">
+                                <select
+                                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all appearance-none"
+                                    value={aiConfig.ai_provider}
+                                    onChange={e => {
+                                        const provider = e.target.value;
+                                        let model = aiConfig.ai_model;
+                                        let base = aiConfig.ai_api_base;
+
+                                        // Set defaults when switching providers
+                                        if (provider === 'ollama') {
+                                            model = 'moondream';
+                                            base = 'http://ollama:11434';
+                                        } else if (provider === 'openai') {
+                                            model = 'gpt-4o';
+                                            base = '';
+                                        } else if (provider === 'anthropic') {
+                                            model = 'claude-3-5-sonnet-20240620';
+                                            base = '';
+                                        } else if (provider === 'gemini') {
+                                            model = 'gemini-1.5-flash';
+                                            base = '';
+                                        }
+
+                                        setAiConfig({ ...aiConfig, ai_provider: provider, ai_model: model, ai_api_base: base });
+                                    }}
+                                >
+                                    <option value="ollama">Ollama (Local)</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic</option>
+                                    <option value="gemini">Google Gemini</option>
+                                    <option value="custom">Custom / Other</option>
+                                </select>
+                                <ChevronRight className="absolute right-4 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400 rotate-90 pointer-events-none" />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Model Name</label>
+                            <input
+                                type="text"
+                                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all"
+                                value={aiConfig.ai_model}
+                                onChange={e => setAiConfig({ ...aiConfig, ai_model: e.target.value })}
+                                placeholder="e.g. gpt-4o, moondream"
+                            />
+                        </div>
+                    </div>
+
+                    {aiConfig.ai_provider !== 'ollama' && (
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">API Key</label>
+                            <input
+                                type="password"
+                                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all"
+                                value={aiConfig.ai_api_key}
+                                onChange={e => setAiConfig({ ...aiConfig, ai_api_key: e.target.value })}
+                                placeholder="sk-..."
+                            />
+                        </div>
+                    )}
+
+                    {(aiConfig.ai_provider === 'ollama' || aiConfig.ai_provider === 'custom' || aiConfig.ai_provider === 'openai') && (
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                                {aiConfig.ai_provider === 'ollama' ? 'Ollama Base URL' : 'API Base URL (Optional)'}
+                            </label>
+                            <input
+                                type="text"
+                                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all"
+                                value={aiConfig.ai_api_base}
+                                onChange={e => setAiConfig({ ...aiConfig, ai_api_base: e.target.value })}
+                                placeholder="http://localhost:11434"
+                            />
+                        </div>
+                    )}
+
+                    <div className="flex justify-end">
+                        <button type="submit" className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-zinc-500/20">
+                            Save AI Settings
+                        </button>
+                    </div>
+                </form>
             </div>
 
             {/* Scraper Configuration */}
