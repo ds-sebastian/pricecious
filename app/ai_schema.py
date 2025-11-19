@@ -112,7 +112,7 @@ class AIExtractionMetadata(BaseModel):
 EXTRACTION_PROMPT_TEMPLATE = """Extract product price and stock status from the image.
 
 **PRICE:**
-- Find the main current price (largest, most prominent)
+- Find the main current price
 - Ignore crossed-out prices
 - Extract number only (no symbols)
 - If unclear: set null and confidence < 0.5
