@@ -110,28 +110,54 @@ function MarqueeText({ text, className }) {
     const [isOverflowing, setIsOverflowing] = useState(false);
     const containerRef = useRef(null);
     const textRef = useRef(null);
+    const [duration, setDuration] = useState(0);
+    const [distance, setDistance] = useState(0);
 
     useEffect(() => {
         const checkOverflow = () => {
             if (containerRef.current && textRef.current) {
-                setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth);
+                const containerWidth = containerRef.current.clientWidth;
+                const textWidth = textRef.current.scrollWidth;
+                const gap = 32; // 2rem gap
+
+                const isOver = textWidth > containerWidth;
+                setIsOverflowing(isOver);
+
+                if (isOver) {
+                    // Calculate duration based on width to ensure constant speed
+                    // Speed = pixels / second. Let's say 50px/s is a good reading speed
+                    const speed = 50;
+                    const totalDistance = textWidth + gap;
+                    setDistance(totalDistance);
+                    setDuration(totalDistance / speed);
+                }
             }
         };
 
         checkOverflow();
+        // Add a small delay to ensure fonts are loaded and layout is stable
+        const timeoutId = setTimeout(checkOverflow, 100);
+
         window.addEventListener('resize', checkOverflow);
-        return () => window.removeEventListener('resize', checkOverflow);
+        return () => {
+            window.removeEventListener('resize', checkOverflow);
+            clearTimeout(timeoutId);
+        };
     }, [text]);
 
     return (
         <div ref={containerRef} className={`overflow-hidden w-full ${className}`}>
             <div
                 ref={textRef}
-                className={`whitespace-nowrap inline-block ${isOverflowing ? 'animate-marquee' : ''}`}
+                className={`whitespace-nowrap flex gap-8 ${isOverflowing ? 'animate-marquee' : ''}`}
+                style={isOverflowing ? {
+                    '--marquee-duration': `${duration}s`,
+                    '--marquee-distance': `${distance}px`
+                } : {}}
                 title={text}
             >
-                {text}
-                {isOverflowing && <span className="inline-block pl-8">{text}</span>}
+                <span>{text}</span>
+                {isOverflowing && <span aria-hidden="true">{text}</span>}
             </div>
         </div>
     );
@@ -222,7 +248,7 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                     <div key={item.id} className="group bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md dark:hover:border-zinc-700 transition-all duration-300 flex flex-col relative overflow-hidden">
 
                         <div className="flex justify-between items-start mb-4 z-10 relative">
-                            <div className="flex items-center gap-3 overflow-hidden flex-1 pr-16">
+                            <div className="flex items-center gap-3 overflow-hidden flex-1">
                                 <a
                                     href={item.url}
                                     target="_blank"
@@ -231,7 +257,7 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                                 >
                                     <ExternalLink className="w-4 h-4" />
                                 </a>
-                                <div className="overflow-hidden w-full">
+                                <div className="overflow-hidden w-full relative group/title">
                                     <MarqueeText
                                         text={item.name}
                                         className="font-semibold text-base leading-tight"
@@ -241,7 +267,7 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                                     </a>
                                 </div>
                             </div>
-                            <div className="absolute top-0 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-lg p-1 shadow-sm border border-zinc-100 dark:border-zinc-800">
+                            <div className="absolute top-0 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-lg p-1 shadow-sm border border-zinc-100 dark:border-zinc-800 z-20">
                                 <button onClick={() => setEditingItem(item)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
                                     <Edit2 className="w-3.5 h-3.5" />
                                 </button>
