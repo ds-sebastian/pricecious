@@ -5,17 +5,21 @@ Revises: initial_migration
 Create Date: 2025-11-19 12:53:09.412700
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
+
+from app.models import Base
+
+target_metadata = Base.metadata
 
 
 # revision identifiers, used by Alembic.
 revision: str = '6ecb6f39fd8c'
-down_revision: Union[str, None] = 'initial_migration'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = 'initial_migration'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

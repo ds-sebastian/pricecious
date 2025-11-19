@@ -105,11 +105,11 @@ def read_root():
 
 # --- Notification Profiles ---
 @api_router.get("/notification-profiles", response_model=list[NotificationProfileResponse])
-def get_notification_profiles(db: Session = Depends(database.get_db)):
+def get_notification_profiles(db: Session = Depends(database.get_db)):  # noqa: B008
     return db.query(models.NotificationProfile).all()
 
 @api_router.post("/notification-profiles", response_model=NotificationProfileResponse)
-def create_notification_profile(profile: NotificationProfileCreate, db: Session = Depends(database.get_db)):
+def create_notification_profile(profile: NotificationProfileCreate, db: Session = Depends(database.get_db)):  # noqa: B008
     db_profile = models.NotificationProfile(**profile.dict())
     db.add(db_profile)
     db.commit()
@@ -117,7 +117,7 @@ def create_notification_profile(profile: NotificationProfileCreate, db: Session 
     return db_profile
 
 @api_router.delete("/notification-profiles/{profile_id}")
-def delete_notification_profile(profile_id: int, db: Session = Depends(database.get_db)):
+def delete_notification_profile(profile_id: int, db: Session = Depends(database.get_db)):  # noqa: B008
     profile = db.query(models.NotificationProfile).filter(models.NotificationProfile.id == profile_id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -127,7 +127,7 @@ def delete_notification_profile(profile_id: int, db: Session = Depends(database.
 
 # --- Items ---
 @api_router.get("/items", response_model=list[ItemResponse])
-def get_items(db: Session = Depends(database.get_db)):
+def get_items(db: Session = Depends(database.get_db)):  # noqa: B008
     items = db.query(models.Item).all()
     # Manually inject screenshot URL since it's not in DB
     response_items = []
@@ -138,7 +138,7 @@ def get_items(db: Session = Depends(database.get_db)):
     return response_items
 
 @api_router.post("/items", response_model=ItemResponse)
-def create_item(item: ItemCreate, db: Session = Depends(database.get_db)):
+def create_item(item: ItemCreate, db: Session = Depends(database.get_db)):  # noqa: B008
     logger.info(f"Creating item: {item.name} - {item.url}")
     db_item = models.Item(**item.dict())
     db.add(db_item)
@@ -148,7 +148,7 @@ def create_item(item: ItemCreate, db: Session = Depends(database.get_db)):
     return db_item
 
 @api_router.put("/items/{item_id}", response_model=ItemResponse)
-def update_item(item_id: int, item_update: ItemCreate, db: Session = Depends(database.get_db)):
+def update_item(item_id: int, item_update: ItemCreate, db: Session = Depends(database.get_db)):  # noqa: B008
     db_item = db.query(models.Item).filter(models.Item.id == item_id).first()
     if not db_item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -161,7 +161,7 @@ def update_item(item_id: int, item_update: ItemCreate, db: Session = Depends(dat
     return db_item
 
 @api_router.delete("/items/{item_id}")
-def delete_item(item_id: int, db: Session = Depends(database.get_db)):
+def delete_item(item_id: int, db: Session = Depends(database.get_db)):  # noqa: B008
     item = db.query(models.Item).filter(models.Item.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -178,18 +178,18 @@ def delete_item(item_id: int, db: Session = Depends(database.get_db)):
     return {"ok": True}
 
 @api_router.post("/items/{item_id}/check")
-def check_item(item_id: int, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):
+def check_item(item_id: int, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):  # noqa: B008
     item = db.query(models.Item).filter(models.Item.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
     logger.info(f"Triggering check for item ID: {item_id}")
-    
+
     # Set refreshing state immediately
     item.is_refreshing = True
     item.last_error = None
     db.commit()
-    
+
     # Don't pass the request-scoped DB session to the background task
     background_tasks.add_task(process_item_check, item_id)
     return {"message": "Check triggered"}
@@ -199,7 +199,8 @@ scheduler = AsyncIOScheduler()
 
 async def scheduled_refresh():
     logger.info("Heartbeat: Checking for items due for refresh")
-    from app.database import SessionLocal
+    # Use module-level import
+    SessionLocal = database.SessionLocal
 
     loop = asyncio.get_running_loop()
 
@@ -259,7 +260,7 @@ async def start_scheduler():
     scheduler.start()
 
 @api_router.get("/jobs/config")
-def get_job_config(db: Session = Depends(database.get_db)):
+def get_job_config(db: Session = Depends(database.get_db)):  # noqa: B008
     setting = db.query(models.Settings).filter(models.Settings.key == "refresh_interval_minutes").first()
     interval = int(setting.value) if setting else 60
 
@@ -275,7 +276,7 @@ def get_job_config(db: Session = Depends(database.get_db)):
     }
 
 @api_router.post("/jobs/config")
-def update_job_config(config: SettingsUpdate, db: Session = Depends(database.get_db)):
+def update_job_config(config: SettingsUpdate, db: Session = Depends(database.get_db)):  # noqa: B008
     if config.key != "refresh_interval_minutes":
         raise HTTPException(status_code=400, detail="Invalid setting key for job config")
 
@@ -283,8 +284,8 @@ def update_job_config(config: SettingsUpdate, db: Session = Depends(database.get
         interval = int(config.value)
         if interval < 1:
             raise ValueError("Interval must be at least 1 minute")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid interval value")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid interval value") from e
 
     # Update DB
     setting = db.query(models.Settings).filter(models.Settings.key == "refresh_interval_minutes").first()
@@ -307,19 +308,20 @@ def update_job_config(config: SettingsUpdate, db: Session = Depends(database.get
     return {"message": "Job configuration updated", "refresh_interval_minutes": interval}
 
 @api_router.post("/jobs/refresh-all")
-def refresh_all_items(background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):
+def refresh_all_items(background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):  # noqa: B008
     items = db.query(models.Item).filter(models.Item.is_active).all()
     logger.info(f"Triggering refresh for all {len(items)} items")
     for item in items:
         background_tasks.add_task(process_item_check, item.id)
     return {"message": f"Triggered refresh for {len(items)} items"}
 
-async def process_item_check(item_id: int, db: Session = None):
+async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912, PLR0915
     """
     Background task to check an item's price/stock.
     Creates its own DB session to ensure thread safety and avoid closed session errors.
     """
-    from app.database import SessionLocal
+    # Use module-level import
+    SessionLocal = database.SessionLocal
 
     # Create a new session for this background task
     # We use run_in_executor for blocking DB operations until we switch to AsyncSession completely
@@ -366,7 +368,9 @@ async def process_item_check(item_id: int, db: Session = None):
                 "smart_scroll": settings_map.get("smart_scroll_enabled", "false").lower() == "true",
                 "smart_scroll_pixels": int(settings_map.get("smart_scroll_pixels", "350")),
                 "text_context_enabled": settings_map.get("text_context_enabled", "false").lower() == "true",
-                "text_length": int(settings_map.get("text_context_length", "5000")) if settings_map.get("text_context_enabled", "false").lower() == "true" else 0,
+                "text_length": int(settings_map.get("text_context_length", "5000"))
+                if settings_map.get("text_context_enabled", "false").lower() == "true"
+                else 0,
                 "scraper_timeout": int(settings_map.get("scraper_timeout", "90000"))
             }
 
@@ -495,13 +499,14 @@ async def process_item_check(item_id: int, db: Session = None):
     except Exception as e:
         logger.error(f"Error in process_item_check: {e}")
         # Update DB with error
+        error_str = str(e)
         def update_db_error():
             session = SessionLocal()
             try:
                 item = session.query(models.Item).filter(models.Item.id == item_id).first()
                 if item:
                     item.is_refreshing = False
-                    item.last_error = str(e)
+                    item.last_error = error_str
                     session.commit()
             finally:
                 session.close()
@@ -509,11 +514,11 @@ async def process_item_check(item_id: int, db: Session = None):
 
 
 @api_router.get("/settings")
-def get_settings(db: Session = Depends(database.get_db)):
+def get_settings(db: Session = Depends(database.get_db)):  # noqa: B008
     return db.query(models.Settings).all()
 
 @api_router.post("/settings", response_model=SettingsUpdate)
-def update_setting(setting: SettingsUpdate, db: Session = Depends(database.get_db)):
+def update_setting(setting: SettingsUpdate, db: Session = Depends(database.get_db)):  # noqa: B008
     db_setting = db.query(models.Settings).filter(models.Settings.key == setting.key).first()
     if db_setting:
         db_setting.value = setting.value
