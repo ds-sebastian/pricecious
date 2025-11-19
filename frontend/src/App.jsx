@@ -587,9 +587,7 @@ function SettingsPage({ theme, toggleTheme }) {
     useEffect(() => {
         fetchProfiles();
         fetchJobConfig();
-        fetchJobConfig();
         fetchScraperConfig();
-        fetchAiConfig();
     }, []);
 
     const fetchProfiles = async () => {

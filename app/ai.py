@@ -131,6 +131,7 @@ def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is t
             
         if provider == "ollama":
             kwargs["api_base"] = api_base
+            kwargs["format"] = "json" # Force JSON mode for Ollama
         elif provider == "openai" and api_base:
              # Allow custom base URL for OpenAI-compatible endpoints too
              kwargs["api_base"] = api_base
@@ -169,7 +170,12 @@ def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is t
         except (json.JSONDecodeError, ValueError):
             # Fallback parsing
             logger.warning("Failed to parse JSON, attempting fallback parsing")
-            price_match = re.search(r'\$?(\d+\.?\d*)', response_text)
+            # Look for price with $ symbol first
+            price_match = re.search(r'\$\s?(\d+(?:\.\d{1,2})?)', response_text)
+            if not price_match:
+                # If no $ found, look for "price is X" pattern
+                price_match = re.search(r'price\s+is\s+(\d+(?:\.\d{1,2})?)', response_text, re.IGNORECASE)
+            
             price = float(price_match.group(1)) if price_match else None
             in_stock = "out of stock" not in response_text.lower()
             return {"price": price, "in_stock": in_stock}
