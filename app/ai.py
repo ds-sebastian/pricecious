@@ -14,7 +14,7 @@ from . import models
 
 # Default configuration (can be overridden by DB settings)
 DEFAULT_PROVIDER = "ollama"
-DEFAULT_MODEL = "moondream"
+DEFAULT_MODEL = "gemma3:4b"
 DEFAULT_API_BASE = "http://ollama:11434"
 MAX_TEXT_LENGTH = 10000
 
@@ -182,6 +182,9 @@ def _parse_ai_response(response_text: str) -> dict | None:
         else:
             data = json.loads(response_text)
 
+        # Normalize keys to lower case
+        data = {k.lower().replace(" ", "_"): v for k, v in data.items()}
+
         # Clean price
         if "price" in data:
             if isinstance(data["price"], str):
@@ -192,6 +195,11 @@ def _parse_ai_response(response_text: str) -> dict | None:
                     data["price"] = None
             elif isinstance(data["price"], int | float):
                 data["price"] = float(data["price"])
+
+        # Clean in_stock
+        if "in_stock" in data:
+            if isinstance(data["in_stock"], str):
+                data["in_stock"] = data["in_stock"].lower() == "true"
 
         return data
 
