@@ -1,9 +1,10 @@
+import asyncio
 import base64
 import io
 import json
 import logging
 
-from litellm import completion
+from litellm import acompletion
 from PIL import Image
 
 from . import models
@@ -15,7 +16,10 @@ DEFAULT_API_BASE = "http://ollama:11434"
 
 logger = logging.getLogger(__name__)
 
-def encode_image(image_path):
+def _process_image(image_path):
+    """
+    Synchronous image processing function to be run in an executor.
+    """
     try:
         with Image.open(image_path) as img:
             # Resize if too large (e.g., max dimension 1024)
@@ -34,6 +38,13 @@ def encode_image(image_path):
     except Exception as e:
         logger.error(f"Error encoding image: {e}")
         raise
+
+async def encode_image(image_path):
+    """
+    Asynchronously encode image by running blocking code in a thread.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _process_image, image_path)
 
 def clean_text(text: str) -> str:
     """
@@ -81,13 +92,17 @@ def get_ai_config():
     finally:
         session.close()
 
-def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is the price of the product in this image? If it is out of stock, say 'Out of Stock'; but if it shows Add to Cart or something similar say In Stock. Return a JSON object with keys 'price' (number or null) and 'in_stock' (boolean)."):
+async def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is the price of the product in this image? If it is out of stock, say 'Out of Stock'; but if it shows Add to Cart or something similar say In Stock. Return a JSON object with keys 'price' (number or null) and 'in_stock' (boolean)."):
     try:
-        provider, model, api_key, api_base = get_ai_config()
+        # Note: get_ai_config is sync but fast (DB read), could be async if needed but acceptable for now
+        # or we could wrap it. For now, let's leave it as is or wrap it if we want to be strict.
+        # Given it creates a session, it's blocking. Let's wrap it.
+        loop = asyncio.get_running_loop()
+        provider, model, api_key, api_base = await loop.run_in_executor(None, get_ai_config)
 
         logger.info(f"Analyzing image with Provider: {provider}, Model: {model}")
 
-        base64_image = encode_image(image_path)
+        base64_image = await encode_image(image_path)
         data_url = f"data:image/jpeg;base64,{base64_image}"
 
         final_prompt = prompt
@@ -127,9 +142,9 @@ def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is t
              # Allow custom base URL for OpenAI-compatible endpoints too
              kwargs["api_base"] = api_base
 
-        # Call litellm
+        # Call litellm asynchronously
         logger.info(f"Sending request to {provider} ({model})...")
-        response = completion(**kwargs)
+        response = await acompletion(**kwargs)
 
         response_text = response.choices[0].message.content
         logger.info(f"AI Response: {response_text}")

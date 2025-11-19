@@ -1,8 +1,8 @@
 import asyncio
 import logging
 import os
-from typing import Optional, Tuple
 
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
 
 BROWSERLESS_URL = os.getenv("BROWSERLESS_URL", "ws://browserless:3000")
@@ -12,19 +12,21 @@ logger = logging.getLogger(__name__)
 
 async def scrape_item(
     url: str,
-    selector: Optional[str] = None,
-    item_id: Optional[int] = None,
+    selector: str | None = None,
+    item_id: int | None = None,
     smart_scroll: bool = False,
     scroll_pixels: int = 350,
     text_length: int = 0,
     timeout: int = 90000
-) -> Tuple[Optional[str], str]:
+) -> tuple[str | None, str]:
     """
     Scrapes the given URL using Browserless and Playwright.
     Returns a tuple: (screenshot_path, page_text)
     """
     async with async_playwright() as p:
+        browser = None
         try:
+            logger.info(f"Connecting to Browserless at {BROWSERLESS_URL}")
             browser = await p.chromium.connect_over_cdp(BROWSERLESS_URL)
             context = await browser.new_context(
                 viewport={'width': 1920, 'height': 1080},
@@ -37,22 +39,24 @@ async def scrape_item(
 
             # Stealth mode / Ad blocking attempts
             await context.route("**/*", lambda route: route.continue_())
-            # Block common ad domains if needed, but for now rely on simple navigation
 
             page = await context.new_page()
 
             logger.info(f"Navigating to {url} (Timeout: {timeout}ms)")
             try:
                 # Use networkidle to ensure heavy pages are fully loaded
+                # But fallback to load/domcontentloaded if networkidle times out
                 await page.goto(url, wait_until="networkidle", timeout=timeout)
-                logger.info(f"Page loaded: {url}")
-
-                # Wait a bit for dynamic content if needed
-                await page.wait_for_timeout(5000)
+                logger.info(f"Page loaded (networkidle): {url}")
+            except PlaywrightTimeoutError:
+                logger.warning(f"Timeout waiting for networkidle on {url}, proceeding anyway")
             except Exception as e:
                 logger.error(f"Error navigating to {url}: {e}")
                 # Try to take screenshot anyway if page partially loaded
                 pass
+
+            # Wait a bit for dynamic content if needed
+            await page.wait_for_timeout(2000)
 
             # Try to close common popups
             logger.info("Attempting to close popups...")
@@ -133,7 +137,7 @@ async def scrape_item(
                     logger.error(f"Text extraction failed: {e}")
 
             # Take screenshot
-            screenshot_dir = "/app/screenshots"
+            screenshot_dir = "screenshots"
             os.makedirs(screenshot_dir, exist_ok=True)
             if item_id:
                 filename = f"{screenshot_dir}/item_{item_id}.png"
@@ -145,9 +149,11 @@ async def scrape_item(
             await page.screenshot(path=filename, full_page=False)
             logger.info(f"Screenshot saved to {filename}")
 
-            await browser.close()
             return filename, page_text
 
         except Exception as e:
             logger.error(f"Error scraping {url}: {e}")
             return None, ""
+        finally:
+            if browser:
+                await browser.close()

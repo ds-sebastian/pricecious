@@ -1,3 +1,8 @@
+
+# Since we are using sync TestClient with async endpoints, FastAPI handles the loop.
+# However, if we want to test async functions directly, we need pytest-asyncio.
+# For API tests, TestClient is fine as it wraps the app.
+
 def test_read_main(client):
     response = client.get("/api/")
     assert response.status_code == 200
@@ -26,7 +31,7 @@ def test_create_item(client):
     profile_response = client.post(
         "/api/notification-profiles",
         json={
-            "name": "Test Profile",
+            "name": "Test Profile 2",
             "apprise_url": "mailto://test@example.com"
         },
     )
@@ -61,3 +66,21 @@ def test_update_setting(client):
     data = response.json()
     assert data["key"] == "test_key"
     assert data["value"] == "test_value"
+
+# Add test for check_item to ensure background task triggering works
+# Note: This doesn't verify the background task execution, just the endpoint
+def test_check_item_trigger(client):
+    # Create item first
+    response = client.post(
+        "/api/items",
+        json={
+            "url": "https://example.com/check",
+            "name": "Check Product",
+            "target_price": 100.0
+        },
+    )
+    item_id = response.json()["id"]
+
+    response = client.post(f"/api/items/{item_id}/check")
+    assert response.status_code == 200
+    assert response.json() == {"message": "Check triggered"}

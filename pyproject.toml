@@ -19,11 +19,22 @@ dependencies = [
     "pydantic-settings",
     "aiofiles",
     "litellm",
+    "alembic",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+  "httpx",
+]
 
 [tool.hatch.envs.default]
 dependencies = [
@@ -37,8 +48,12 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
+select = ["E", "F", "I", "W", "B", "UP", "PL", "RUF"]
 ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR2004"]
+
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
