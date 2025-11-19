@@ -1,13 +1,17 @@
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, APIRouter, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
-from typing import List, Optional
-from pydantic import BaseModel
-from datetime import datetime
-import os
 import logging
-from . import models, database, scraper, ai, notifications
+import os
+from datetime import datetime
+from typing import List, Optional
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from . import ai, database, models, notifications, scraper
 from .database import engine
 
 # Configure logging
@@ -27,13 +31,23 @@ def run_migrations():
             from sqlalchemy import text
             # Check if columns exist
             try:
-                conn.execute(text("ALTER TABLE notification_profiles ADD COLUMN notify_on_target_price BOOLEAN DEFAULT TRUE"))
+                conn.execute(
+                    text(
+                        "ALTER TABLE notification_profiles "
+                        "ADD COLUMN notify_on_target_price BOOLEAN DEFAULT TRUE"
+                    )
+                )
                 logger.info("Added notify_on_target_price column")
             except Exception:
                 pass
-            
+
             try:
-                conn.execute(text("ALTER TABLE notification_profiles ADD COLUMN price_drop_threshold_percent FLOAT DEFAULT 10.0"))
+                conn.execute(
+                    text(
+                        "ALTER TABLE notification_profiles "
+                        "ADD COLUMN price_drop_threshold_percent FLOAT DEFAULT 10.0"
+                    )
+                )
                 logger.info("Added price_drop_threshold_percent column")
             except Exception:
                 pass
@@ -98,7 +112,7 @@ class ItemResponse(ItemCreate):
     is_active: bool
     last_checked: Optional[datetime]
     screenshot_url: Optional[str] = None
-    
+
     class Config:
         orm_mode = True
 
@@ -169,10 +183,10 @@ def update_item(item_id: int, item_update: ItemCreate, db: Session = Depends(dat
     db_item = db.query(models.Item).filter(models.Item.id == item_id).first()
     if not db_item:
         raise HTTPException(status_code=404, detail="Item not found")
-    
+
     for key, value in item_update.dict().items():
         setattr(db_item, key, value)
-    
+
     db.commit()
     db.refresh(db_item)
     return db_item
@@ -182,7 +196,7 @@ def delete_item(item_id: int, db: Session = Depends(database.get_db)):
     item = db.query(models.Item).filter(models.Item.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    
+
     # Delete screenshot if exists
     try:
         if os.path.exists(f"/app/screenshots/item_{item_id}.png"):
@@ -199,16 +213,11 @@ def check_item(item_id: int, background_tasks: BackgroundTasks, db: Session = De
     item = db.query(models.Item).filter(models.Item.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    
+
     logger.info(f"Triggering check for item ID: {item_id}")
-    background_tasks.add_task(process_item_check, item_id, db)
+    # Don't pass the request-scoped DB session to the background task
+    background_tasks.add_task(process_item_check, item_id)
     return {"message": "Check triggered"}
-
-# ... (previous imports)
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-
-# ... (previous code)
 
 # Scheduler
 scheduler = AsyncIOScheduler()
@@ -218,35 +227,38 @@ async def scheduled_refresh():
     from app.database import SessionLocal
     db = SessionLocal()
     try:
-        items = db.query(models.Item).filter(models.Item.is_active == True).all()
-        
+        items = db.query(models.Item).filter(models.Item.is_active).all()
+
         # Get global default interval
         global_setting = db.query(models.Settings).filter(models.Settings.key == "refresh_interval_minutes").first()
         global_interval = int(global_setting.value) if global_setting else 60
-        
+
         triggered_count = 0
         for item in items:
             # Determine item's interval
             interval = global_interval
             if item.notification_profile and item.notification_profile.check_interval_minutes:
                 interval = item.notification_profile.check_interval_minutes
-            
+
             # Check if due
             if item.last_checked:
                 time_since_check = (datetime.utcnow() - item.last_checked).total_seconds() / 60
                 if time_since_check >= interval:
-                    logger.info(f"Item {item.id} due for check (Interval: {interval}m, Last check: {int(time_since_check)}m ago)")
-                    await process_item_check(item.id, db)
+                    logger.info(
+                        f"Item {item.id} due for check "
+                        f"(Interval: {interval}m, Last check: {int(time_since_check)}m ago)"
+                    )
+                    await process_item_check(item.id)
                     triggered_count += 1
             else:
                 # Never checked, check now
                 logger.info(f"Item {item.id} never checked, checking now")
-                await process_item_check(item.id, db)
+                await process_item_check(item.id)
                 triggered_count += 1
-                
+
         if triggered_count > 0:
             logger.info(f"Heartbeat: Triggered checks for {triggered_count} items")
-            
+
     except Exception as e:
         logger.error(f"Error in scheduled refresh: {e}")
     finally:
@@ -263,7 +275,7 @@ async def start_scheduler():
 def get_job_config(db: Session = Depends(database.get_db)):
     setting = db.query(models.Settings).filter(models.Settings.key == "refresh_interval_minutes").first()
     interval = int(setting.value) if setting else 60
-    
+
     next_run = None
     job = scheduler.get_job("refresh_job")
     if job:
@@ -279,7 +291,7 @@ def get_job_config(db: Session = Depends(database.get_db)):
 def update_job_config(config: SettingsUpdate, db: Session = Depends(database.get_db)):
     if config.key != "refresh_interval_minutes":
         raise HTTPException(status_code=400, detail="Invalid setting key for job config")
-    
+
     try:
         interval = int(config.value)
         if interval < 1:
@@ -309,72 +321,75 @@ def update_job_config(config: SettingsUpdate, db: Session = Depends(database.get
 
 @api_router.post("/jobs/refresh-all")
 def refresh_all_items(background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):
-    items = db.query(models.Item).filter(models.Item.is_active == True).all()
+    items = db.query(models.Item).filter(models.Item.is_active).all()
     logger.info(f"Triggering refresh for all {len(items)} items")
     for item in items:
-        background_tasks.add_task(process_item_check, item.id, db)
+        background_tasks.add_task(process_item_check, item.id)
     return {"message": f"Triggered refresh for {len(items)} items"}
 
-async def process_item_check(item_id: int, db: Session):
-    # Re-query item to ensure we have latest session attached
-    # Note: We need a new session for background tasks ideally, but here we are passing one.
-    # For simplicity in this design, we'll use the passed session but be careful.
-    # Actually, FastAPI dependency injection session might be closed. 
-    # Better to create a new session.
-    
+async def process_item_check(item_id: int, db: Session = None):
+    """
+    Background task to check an item's price/stock.
+    Creates its own DB session to ensure thread safety and avoid closed session errors.
+    """
     from app.database import SessionLocal
-    db = SessionLocal()
-    
+
+    # Create a new session for this background task
+    session = SessionLocal()
     try:
-        item = db.query(models.Item).filter(models.Item.id == item_id).first()
+        item = session.query(models.Item).filter(models.Item.id == item_id).first()
         if not item:
             logger.error(f"process_item_check: Item ID {item_id} not found")
             return
 
         # Fetch Settings
-        settings_map = {s.key: s.value for s in db.query(models.Settings).all()}
+        settings_map = {s.key: s.value for s in session.query(models.Settings).all()}
         smart_scroll = settings_map.get("smart_scroll_enabled", "false").lower() == "true"
         smart_scroll_pixels = int(settings_map.get("smart_scroll_pixels", "350"))
         text_context_enabled = settings_map.get("text_context_enabled", "false").lower() == "true"
         text_length = int(settings_map.get("text_context_length", "5000")) if text_context_enabled else 0
         scraper_timeout = int(settings_map.get("scraper_timeout", "90000"))
 
-        logger.info(f"Checking item: {item.name} ({item.url}) [Scroll: {smart_scroll} ({smart_scroll_pixels}px), Text: {text_length}, Timeout: {scraper_timeout}]")
-        
+        logger.info(
+            f"Checking item: {item.name} ({item.url}) "
+            f"[Scroll: {smart_scroll} ({smart_scroll_pixels}px), "
+            f"Text: {text_length}, Timeout: {scraper_timeout}]"
+        )
+
         screenshot_path, page_text = await scraper.scrape_item(
-            item.url, 
-            item.selector, 
-            item_id, 
-            smart_scroll=smart_scroll, 
+            item.url,
+            item.selector,
+            item_id,
+            smart_scroll=smart_scroll,
             scroll_pixels=smart_scroll_pixels,
             text_length=text_length,
             timeout=scraper_timeout
         )
-        
+
         if screenshot_path:
             logger.info(f"Screenshot captured: {screenshot_path}")
             result = ai.analyze_image(screenshot_path, page_text=page_text)
             if result:
                 price = result.get("price")
                 in_stock = result.get("in_stock")
-                
+
                 logger.info(f"Analysis result: Price={price}, Stock={in_stock}")
-                
+
                 # Update item
                 old_price = item.current_price
                 old_stock = item.in_stock
-                
+
                 if price is not None:
                     item.current_price = price
-                
+
                 if in_stock is not None:
                     item.in_stock = in_stock
 
                 # Save history
                 if price is not None:
                     history = models.PriceHistory(item_id=item.id, price=price, screenshot_path=screenshot_path)
-                    db.add(history)
-                
+                    session.add(history)
+
                 # Notifications
                 if item.notification_profile_id:
                     profile = item.notification_profile
@@ -385,22 +400,40 @@ async def process_item_check(item_id: int, db: Session):
                                 drop_percent = ((old_price - price) / old_price) * 100
                                 if drop_percent >= profile.price_drop_threshold_percent:
                                     notifications.send_notification(
-                                        [profile.apprise_url], 
-                                        f"Price Drop Alert: {item.name}", 
+                                        [profile.apprise_url],
+                                        f"Price Drop Alert: {item.name}",
                                         f"Price dropped by {drop_percent:.1f}%! Now ${price} (was ${old_price})"
                                     )
 
                         # Target Price
-                        if profile.notify_on_target_price and price is not None and item.target_price and price <= item.target_price:
-                             notifications.send_notification([profile.apprise_url], f"Target Price Alert: {item.name}", f"Price is ${price} (Target: ${item.target_price})")
-                        
+                        if (
+                            profile.notify_on_target_price
+                            and price is not None
+                            and item.target_price
+                            and price <= item.target_price
+                        ):
+                            notifications.send_notification(
+                                [profile.apprise_url],
+                                f"Target Price Alert: {item.name}",
+                                f"Price is ${price} (Target: ${item.target_price})",
+                            )
+
                         # Stock Change
-                        if profile.notify_on_stock_change and in_stock is not None and old_stock is not None and in_stock != old_stock:
+                        if (
+                            profile.notify_on_stock_change
+                            and in_stock is not None
+                            and old_stock is not None
+                            and in_stock != old_stock
+                        ):
                             status = "In Stock" if in_stock else "Out of Stock"
-                            notifications.send_notification([profile.apprise_url], f"Stock Alert: {item.name}", f"Item is now {status}")
+                            notifications.send_notification(
+                                [profile.apprise_url],
+                                f"Stock Alert: {item.name}",
+                                f"Item is now {status}",
+                            )
 
                 item.last_checked = datetime.utcnow()
-                db.commit()
+                session.commit()
             else:
                 logger.error("AI analysis failed to return a result")
         else:
@@ -408,7 +441,7 @@ async def process_item_check(item_id: int, db: Session):
     except Exception as e:
         logger.error(f"Error in process_item_check: {e}")
     finally:
-        db.close()
+        session.close()
 
 @api_router.get("/settings")
 def get_settings(db: Session = Depends(database.get_db)):

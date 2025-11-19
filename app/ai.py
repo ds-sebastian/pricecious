@@ -1,14 +1,12 @@
-import requests
 import base64
-import os
+import io
 import json
 import logging
-from PIL import Image
-import io
 
 from litellm import completion
-from sqlalchemy.orm import Session
-from . import models, database
+from PIL import Image
+
+from . import models
 
 # Default configuration (can be overridden by DB settings)
 DEFAULT_PROVIDER = "ollama"
@@ -25,7 +23,7 @@ def encode_image(image_path):
             if max(img.size) > max_size:
                 img.thumbnail((max_size, max_size))
                 logger.info(f"Resized image to {img.size}")
-            
+
             # Convert to RGB if necessary (e.g. for PNGs with alpha)
             if img.mode in ('RGBA', 'P'):
                 img = img.convert('RGB')
@@ -44,19 +42,19 @@ def clean_text(text: str) -> str:
     import re
     if not text:
         return ""
-    
+
     # Remove code blocks (```...```)
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
-    
+
     # Remove HTML tags (basic)
     text = re.sub(r'<[^>]+>', '', text)
-    
+
     # Remove non-printable characters (keep newlines and tabs)
     text = re.sub(r'[^\x20-\x7E\n\t]', '', text)
-    
+
     # Collapse excessive whitespace
     text = re.sub(r'\s+', ' ', text).strip()
-    
+
     return text
 
 def get_ai_config():
@@ -64,41 +62,34 @@ def get_ai_config():
     Fetches AI configuration from the database.
     Returns a tuple: (provider, model, api_key, api_base)
     """
+    from app.database import SessionLocal
+
+    session = SessionLocal()
     try:
-        # We need a new session here since this might be called from a background task
-        # where the original session might be closed or not available.
-        # However, creating a session every time might be expensive.
-        # For now, we'll create a lightweight session.
-        from app.database import SessionLocal
-        db = SessionLocal()
-        try:
-            settings = db.query(models.Settings).all()
-            settings_map = {s.key: s.value for s in settings}
-            
-            provider = settings_map.get("ai_provider", DEFAULT_PROVIDER)
-            model = settings_map.get("ai_model", DEFAULT_MODEL)
-            api_key = settings_map.get("ai_api_key", "")
-            api_base = settings_map.get("ai_api_base", DEFAULT_API_BASE)
-            
-            # Normalize provider for litellm if needed
-            # litellm expects "ollama/modelname" for ollama, but we might store provider separately
-            
-            return provider, model, api_key, api_base
-        finally:
-            db.close()
+        settings = session.query(models.Settings).all()
+        settings_map = {s.key: s.value for s in settings}
+
+        provider = settings_map.get("ai_provider", DEFAULT_PROVIDER)
+        model = settings_map.get("ai_model", DEFAULT_MODEL)
+        api_key = settings_map.get("ai_api_key", "")
+        api_base = settings_map.get("ai_api_base", DEFAULT_API_BASE)
+
+        return provider, model, api_key, api_base
     except Exception as e:
         logger.error(f"Error fetching AI config: {e}")
         return DEFAULT_PROVIDER, DEFAULT_MODEL, "", DEFAULT_API_BASE
+    finally:
+        session.close()
 
 def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is the price of the product in this image? If it is out of stock, say 'Out of Stock'; but if it shows Add to Cart or something similar say In Stock. Return a JSON object with keys 'price' (number or null) and 'in_stock' (boolean)."):
     try:
         provider, model, api_key, api_base = get_ai_config()
-        
+
         logger.info(f"Analyzing image with Provider: {provider}, Model: {model}")
-        
+
         base64_image = encode_image(image_path)
         data_url = f"data:image/jpeg;base64,{base64_image}"
-        
+
         final_prompt = prompt
         if page_text:
             cleaned_text = clean_text(page_text)
@@ -118,31 +109,31 @@ def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is t
                 ]
             }
         ]
-        
+
         # Prepare kwargs for litellm
         kwargs = {
             "model": model if provider != "ollama" else f"ollama/{model}",
             "messages": messages,
             "max_tokens": 300,
         }
-        
+
         if api_key:
             kwargs["api_key"] = api_key
-            
+
         if provider == "ollama":
             kwargs["api_base"] = api_base
             kwargs["format"] = "json" # Force JSON mode for Ollama
         elif provider == "openai" and api_base:
              # Allow custom base URL for OpenAI-compatible endpoints too
              kwargs["api_base"] = api_base
-             
+
         # Call litellm
         logger.info(f"Sending request to {provider} ({model})...")
         response = completion(**kwargs)
-        
+
         response_text = response.choices[0].message.content
         logger.info(f"AI Response: {response_text}")
-        
+
         # Parse JSON
         try:
             # Try to find JSON block
@@ -153,7 +144,7 @@ def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is t
                 data = json.loads(json_str)
             else:
                 data = json.loads(response_text)
-            
+
             # Clean price
             if "price" in data:
                 if isinstance(data["price"], str):
@@ -164,9 +155,9 @@ def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is t
                         data["price"] = None
                 elif isinstance(data["price"], (int, float)):
                     data["price"] = float(data["price"])
-            
+
             return data
-            
+
         except (json.JSONDecodeError, ValueError):
             # Fallback parsing
             logger.warning("Failed to parse JSON, attempting fallback parsing")
@@ -175,7 +166,7 @@ def analyze_image(image_path: str, page_text: str = "", prompt: str = "What is t
             if not price_match:
                 # If no $ found, look for "price is X" pattern
                 price_match = re.search(r'price\s+is\s+(\d+(?:\.\d{1,2})?)', response_text, re.IGNORECASE)
-            
+
             price = float(price_match.group(1)) if price_match else None
             in_stock = "out of stock" not in response_text.lower()
             return {"price": price, "in_stock": in_stock}
