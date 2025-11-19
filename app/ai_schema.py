@@ -66,7 +66,7 @@ class AIExtractionResponse(BaseModel):
     @classmethod
     def normalize_price(cls, v):
         """Normalize price to float or None."""
-        if v is None or v == "null" or v == "":
+        if v is None or v in ("null", ""):
             return None
         if isinstance(v, str):
             # Remove currency symbols and commas

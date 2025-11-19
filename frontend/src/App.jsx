@@ -292,16 +292,40 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                         </div>
 
                         <div className="space-y-3 flex-grow">
-                            <div className="flex justify-between items-baseline">
-                                <span className="text-zinc-500 text-sm font-medium">Current Price</span>
-                                <span className={`text-2xl font-bold tracking-tight ${item.target_price && item.current_price <= item.target_price
-                                    ? 'text-green-600 dark:text-green-400'
-                                    : item.target_price && item.current_price > item.target_price
-                                        ? 'text-red-600 dark:text-red-400'
-                                        : 'text-zinc-900 dark:text-white'
-                                    }`}>
-                                    {item.current_price ? `$${item.current_price}` : '---'}
-                                </span>
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-baseline">
+                                    <span className="text-zinc-500 text-sm font-medium">Current Price</span>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className={`text-2xl font-bold tracking-tight ${item.target_price && item.current_price <= item.target_price
+                                            ? 'text-green-600 dark:text-green-400'
+                                            : item.target_price && item.current_price > item.target_price
+                                                ? 'text-red-600 dark:text-red-400'
+                                                : 'text-zinc-900 dark:text-white'
+                                            }`}>
+                                            {item.current_price ? `$${item.current_price}` : '---'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Confidence Badges */}
+                                {(item.current_price_confidence !== null && item.current_price_confidence !== undefined) && (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-100 to-indigo-100 dark:from-purple-900/30 dark:to-indigo-900/30 border border-purple-200/50 dark:border-purple-700/50">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 animate-pulse"></div>
+                                            <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wide">
+                                                Price: {Math.round(item.current_price_confidence * 100)}%
+                                            </span>
+                                        </div>
+                                        {(item.in_stock_confidence !== null && item.in_stock_confidence !== undefined) && (
+                                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gradient-to-r from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30 border border-emerald-200/50 dark:border-emerald-700/50">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 animate-pulse"></div>
+                                                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
+                                                    Stock: {Math.round(item.in_stock_confidence * 100)}%
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             {item.target_price ? (
@@ -559,6 +583,13 @@ function SettingsPage({ theme, toggleTheme }) {
         ai_api_key: '',
         ai_api_base: 'http://ollama:11434'
     });
+    const [aiAdvancedConfig, setAiAdvancedConfig] = useState({
+        ai_temperature: 0.1,
+        ai_max_tokens: 300,
+        confidence_threshold_price: 0.5,
+        confidence_threshold_stock: 0.5,
+        enable_json_repair: true
+    });
     const [scraperConfig, setScraperConfig] = useState({
         smart_scroll_enabled: false,
         smart_scroll_pixels: 350,
@@ -602,6 +633,14 @@ function SettingsPage({ theme, toggleTheme }) {
                 ai_model: settingsMap['ai_model'] || 'moondream',
                 ai_api_key: settingsMap['ai_api_key'] || '',
                 ai_api_base: settingsMap['ai_api_base'] || 'http://ollama:11434'
+            });
+
+            setAiAdvancedConfig({
+                ai_temperature: parseFloat(settingsMap['ai_temperature'] || '0.1'),
+                ai_max_tokens: parseInt(settingsMap['ai_max_tokens'] || '300'),
+                confidence_threshold_price: parseFloat(settingsMap['confidence_threshold_price'] || '0.5'),
+                confidence_threshold_stock: parseFloat(settingsMap['confidence_threshold_stock'] || '0.5'),
+                enable_json_repair: settingsMap['enable_json_repair'] !== 'false'
             });
         } catch (error) {
             console.error("Failed to fetch settings", error);
@@ -655,6 +694,20 @@ function SettingsPage({ theme, toggleTheme }) {
             toast.success('AI configuration updated');
         } catch (error) {
             toast.error('Failed to update AI config');
+        }
+    };
+
+    const handleUpdateAiAdvancedConfig = async (e) => {
+        e.preventDefault();
+        try {
+            await axios.post(`${API_URL}/settings`, { key: 'ai_temperature', value: aiAdvancedConfig.ai_temperature.toString() });
+            await axios.post(`${API_URL}/settings`, { key: 'ai_max_tokens', value: aiAdvancedConfig.ai_max_tokens.toString() });
+            await axios.post(`${API_URL}/settings`, { key: 'confidence_threshold_price', value: aiAdvancedConfig.confidence_threshold_price.toString() });
+            await axios.post(`${API_URL}/settings`, { key: 'confidence_threshold_stock', value: aiAdvancedConfig.confidence_threshold_stock.toString() });
+            await axios.post(`${API_URL}/settings`, { key: 'enable_json_repair', value: aiAdvancedConfig.enable_json_repair.toString() });
+            toast.success('AI Advanced settings updated');
+        } catch (error) {
+            toast.error('Failed to update AI advanced config');
         }
     };
 
@@ -835,6 +888,109 @@ function SettingsPage({ theme, toggleTheme }) {
                     <div className="flex justify-end">
                         <button type="submit" className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-zinc-500/20">
                             Save AI Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            {/* AI Advanced Settings */}
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                <div className="flex items-start justify-between mb-6">
+                    <div>
+                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                            <span className="text-xl">⚙️</span> AI Advanced Settings
+                        </h3>
+                        <p className="text-xs text-zinc-500 mt-1">Configure AI extraction parameters and confidence thresholds</p>
+                    </div>
+                </div>
+                <form onSubmit={handleUpdateAiAdvancedConfig} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Temperature */}
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                                Temperature ({aiAdvancedConfig.ai_temperature})
+                            </label>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.1"
+                                className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                value={aiAdvancedConfig.ai_temperature}
+                                onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, ai_temperature: parseFloat(e.target.value) })}
+                            />
+                            <p className="text-xs text-zinc-400 mt-1">Lower = more deterministic, Higher = more creative</p>
+                        </div>
+
+                        {/* Max Tokens */}
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Max Tokens</label>
+                            <input
+                                type="number"
+                                min="100"
+                                max="1000"
+                                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all"
+                                value={aiAdvancedConfig.ai_max_tokens}
+                                onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, ai_max_tokens: parseInt(e.target.value) })}
+                            />
+                            <p className="text-xs text-zinc-400 mt-1">Maximum tokens for AI responses</p>
+                        </div>
+
+                        {/* Price Confidence Threshold */}
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                                Price Confidence Threshold ({(aiAdvancedConfig.confidence_threshold_price * 100).toFixed(0)}%)
+                            </label>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.05"
+                                className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                value={aiAdvancedConfig.confidence_threshold_price}
+                                onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, confidence_threshold_price: parseFloat(e.target.value) })}
+                            />
+                            <p className="text-xs text-zinc-400 mt-1">Minimum confidence to update price</p>
+                        </div>
+
+                        {/* Stock Confidence Threshold */}
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                                Stock Confidence Threshold ({(aiAdvancedConfig.confidence_threshold_stock * 100).toFixed(0)}%)
+                            </label>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.05"
+                                className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                                value={aiAdvancedConfig.confidence_threshold_stock}
+                                onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, confidence_threshold_stock: parseFloat(e.target.value) })}
+                            />
+                            <p className="text-xs text-zinc-400 mt-1">Minimum confidence to update stock status</p>
+                        </div>
+                    </div>
+
+                    {/* Enable JSON Repair */}
+                    <label className="flex items-start gap-4 cursor-pointer group">
+                        <div className="relative flex items-center">
+                            <input
+                                type="checkbox"
+                                className="peer sr-only"
+                                checked={aiAdvancedConfig.enable_json_repair}
+                                onChange={e => setAiAdvancedConfig({ ...aiAdvancedConfig, enable_json_repair: e.target.checked })}
+                            />
+                            <div className="w-11 h-6 bg-zinc-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:peer-focus:ring-purple-800 rounded-full peer dark:bg-zinc-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-purple-600"></div>
+                        </div>
+                        <div>
+                            <span className="font-medium block text-zinc-900 dark:text-zinc-100">Enable JSON Repair</span>
+                            <span className="text-sm text-zinc-500">Automatically attempt to fix malformed AI responses with a second LLM call.</span>
+                        </div>
+                    </label>
+
+                    <div className="flex justify-end pt-2">
+                        <button type="submit" className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-zinc-500/20">
+                            Save Advanced Settings
                         </button>
                     </div>
                 </form>
