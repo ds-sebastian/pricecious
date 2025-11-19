@@ -34,7 +34,7 @@ DEFAULT_MODEL = "gemma3:4b"
 DEFAULT_API_BASE = "http://ollama:11434"
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_MAX_TOKENS = 300
-MAX_TEXT_LENGTH = 10000
+MAX_TEXT_LENGTH = 5000  # Will be filtered to ~1500-2000 relevant chars
 
 logger = logging.getLogger(__name__)
 

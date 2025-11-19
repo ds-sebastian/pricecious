@@ -5,6 +5,7 @@ This module defines the canonical schema for all AI model responses,
 including confidence scores and metadata tracking.
 """
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -70,8 +71,6 @@ class AIExtractionResponse(BaseModel):
             return None
         if isinstance(v, str):
             # Remove currency symbols and commas
-            import re
-
             cleaned = re.sub(r"[^\d.]", "", v)
             if cleaned:
                 return float(cleaned)
@@ -110,40 +109,32 @@ class AIExtractionMetadata(BaseModel):
 
 
 # Prompt template for schema-first extraction
-EXTRACTION_PROMPT_TEMPLATE = """You are a price extraction assistant. Extract the product price and stock status from the provided image and optional text context.
+EXTRACTION_PROMPT_TEMPLATE = """Extract product price and stock status from the image.
 
-**Extraction Rules:**
-1. **Price**:
-   - Choose the main current price (usually the largest, most prominent price)
-   - Ignore crossed-out/struck-through prices (those are old prices)
-   - If multiple prices (e.g., sale price and regular price), choose the current/sale price
-   - If no clear price is visible, set price to null and price_confidence below 0.5
-   - Extract only the numeric value (no currency symbols)
+**PRICE:**
+- Find the main current price (largest, most prominent)
+- Ignore crossed-out prices
+- Extract number only (no symbols)
+- If unclear: set null and confidence < 0.5
 
-2. **Stock Status**:
-   - Set in_stock to true if: "Add to Cart", "Buy Now", "Available", "In Stock" buttons/text are visible
-   - Set in_stock to false if: "Out of Stock", "Unavailable", "Sold Out", "Notify Me" are shown
-   - Set in_stock to null if stock status is unclear or not shown
-   - If unclear, set in_stock_confidence below 0.5
+**STOCK:**
+- TRUE if: "Add to Cart", "Buy Now", "In Stock", "Available"
+- FALSE if: "Out of Stock", "Sold Out", "Unavailable", "Notify Me"
+- NULL if unclear or not shown
 
-3. **Confidence Scores**:
-   - price_confidence: Your subjective probability (0.0 to 1.0) that the extracted price is correct
-   - in_stock_confidence: Your subjective probability (0.0 to 1.0) that the stock status is correct
-   - Be honest: if the image is blurry, text is unclear, or multiple prices are confusing, use lower confidence
-   - Confidence of 0.9-1.0 means you're very certain
-   - Confidence of 0.5-0.8 means you're moderately certain
-   - Confidence below 0.5 means you're unsure
+**CONFIDENCE (0.0 to 1.0):**
+- 0.9-1.0: Very certain
+- 0.5-0.8: Moderately certain
+- Below 0.5: Unsure
 
-**Output Format:**
-Respond ONLY with valid JSON matching this exact schema. No markdown, no prose, no explanation.
-
+Respond ONLY with valid JSON:
 {{
   "price": <number or null>,
-  "currency": "<ISO currency code, default USD>",
+  "currency": "USD",
   "in_stock": <true, false, or null>,
-  "price_confidence": <number from 0.0 to 1.0>,
-  "in_stock_confidence": <number from 0.0 to 1.0>,
-  "source_type": "<image, text, or both>"
+  "price_confidence": <0.0 to 1.0>,
+  "in_stock_confidence": <0.0 to 1.0>,
+  "source_type": "both"
 }}
 
 {context_section}"""
@@ -170,6 +161,117 @@ Text to convert:
 {raw_output}"""
 
 
+def filter_relevant_text(text: str, max_length: int = 2000) -> str:
+    """
+    Filter text to extract only relevant snippets around price and stock indicators.
+
+    Args:
+        text: Full cleaned webpage text
+        max_length: Maximum total length of filtered output
+
+    Returns:
+        Filtered text containing only relevant snippets
+    """
+    if not text:
+        return ""
+
+    # Keywords to search for (case-insensitive)
+    price_keywords = [
+        r"\$\d+\.?\d*",  # $XX.XX pattern
+        r"\d+\.\d{2}\s*(usd|eur|gbp|cad)",  # XX.XX USD pattern
+        "price:",
+        "cost:",
+        "sale:",
+        "msrp:",
+        "save:",
+        "discount:",
+        r"\$",  # Any dollar sign
+    ]
+
+    stock_keywords = [
+        "add to cart",
+        "buy now",
+        "purchase",
+        "order now",
+        "in stock",
+        "out of stock",
+        "available",
+        "unavailable",
+        "sold out",
+        "notify me",
+        "back in stock",
+        "pre-order",
+        "ships",
+        "delivery",
+        "get it by",
+    ]
+
+    all_keywords = price_keywords + stock_keywords
+    snippets = []
+    context_window = 100  # Characters before and after match
+
+    text_lower = text.lower()
+
+    # Find all matches and extract context
+    for keyword in all_keywords:
+        # Use regex for pattern-based keywords
+        if keyword.startswith("r\\"):
+            pattern = keyword[1:]  # Remove 'r' prefix
+            for match in re.finditer(pattern, text_lower, re.IGNORECASE):
+                start = max(0, match.start() - context_window)
+                end = min(len(text), match.end() + context_window)
+                snippet = text[start:end].strip()
+                if snippet and len(snippet) > 10:  # Avoid tiny snippets
+                    snippets.append((start, snippet))
+        else:
+            # Simple substring search
+            pos = 0
+            while True:
+                pos = text_lower.find(keyword.lower(), pos)
+                if pos == -1:
+                    break
+                start = max(0, pos - context_window)
+                end = min(len(text), pos + len(keyword) + context_window)
+                snippet = text[start:end].strip()
+                if snippet and len(snippet) > 10:
+                    snippets.append((start, snippet))
+                pos += 1
+
+    if not snippets:
+        # No matches found, return beginning of text
+        return text[:max_length]
+
+    # Sort by position and deduplicate overlapping snippets
+    snippets.sort(key=lambda x: x[0])
+    merged_snippets = []
+    current_start, current_text = snippets[0]
+    current_end = current_start + len(current_text)
+
+    for start, snippet in snippets[1:]:
+        end = start + len(snippet)
+        # If overlapping or close together (within 50 chars), merge
+        if start <= current_end + 50:
+            # Extend current snippet
+            if end > current_end:
+                # Merge overlapping text
+                current_text = current_text + " " + snippet[max(0, current_end - start) :]
+                current_end = end
+        else:
+            # Save current and start new
+            merged_snippets.append(current_text)
+            current_start, current_text = start, snippet
+            current_end = end
+
+    merged_snippets.append(current_text)
+
+    # Join snippets with separator and limit total length
+    result = " ... ".join(merged_snippets)
+    if len(result) > max_length:
+        result = result[:max_length] + "...(truncated)"
+
+    return result
+
+
 def get_extraction_prompt(page_text: str | None = None) -> str:
     """
     Generate the extraction prompt with optional text context.
@@ -181,8 +283,10 @@ def get_extraction_prompt(page_text: str | None = None) -> str:
         Formatted prompt string
     """
     if page_text:
-        context_section = f"""**Context from webpage text:**
-{page_text[:2000]}{"...(truncated)" if len(page_text) > 2000 else ""}"""
+        # Apply smart filtering to extract only relevant snippets
+        filtered_text = filter_relevant_text(page_text, max_length=1500)
+        context_section = f"""**Relevant text from page:**
+{filtered_text}"""
     else:
         context_section = ""
 
