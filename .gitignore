@@ -1,6 +1,6 @@
 # Custom
 screenshots/*
-
+walkthrough.md
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
