@@ -110,6 +110,7 @@ function Dashboard({ items, refreshItems, searchTerm }) {
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [zoomedImage, setZoomedImage] = useState(null);
+    const [itemToDelete, setItemToDelete] = useState(null);
 
     const filteredItems = items.filter(item => {
         const term = searchTerm.toLowerCase();
@@ -144,12 +145,17 @@ function Dashboard({ items, refreshItems, searchTerm }) {
         }
     };
 
-    const handleDelete = async (id) => {
-        if (!confirm('Are you sure?')) return;
+    const handleDelete = (item) => {
+        setItemToDelete(item);
+    };
+
+    const confirmDelete = async () => {
+        if (!itemToDelete) return;
         try {
-            await axios.delete(`${API_URL}/items/${id}`);
+            await axios.delete(`${API_URL}/items/${itemToDelete.id}`);
             toast.success('Item deleted');
             refreshItems();
+            setItemToDelete(null);
         } catch (error) {
             console.error('Error deleting item:', error);
             toast.error('Failed to delete item');
@@ -186,11 +192,20 @@ function Dashboard({ items, refreshItems, searchTerm }) {
 
                         <div className="flex justify-between items-start mb-4 z-10 relative">
                             <div className="flex items-center gap-3 overflow-hidden flex-1">
-                                <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-500">
+                                <a
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                                >
                                     <ExternalLink className="w-4 h-4" />
-                                </div>
-                                <div className="overflow-hidden">
-                                    <h3 className="font-semibold text-base truncate leading-tight" title={item.name}>{item.name}</h3>
+                                </a>
+                                <div className="overflow-hidden w-full">
+                                    <div className="w-full overflow-hidden">
+                                        <h3 className="font-semibold text-base truncate leading-tight hover:animate-marquee whitespace-nowrap inline-block" title={item.name}>
+                                            {item.name}
+                                        </h3>
+                                    </div>
                                     <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-xs text-zinc-400 hover:text-purple-500 truncate block mt-0.5 transition-colors">
                                         {new URL(item.url).hostname.replace('www.', '')}
                                     </a>
@@ -203,7 +218,7 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                                 <button onClick={() => handleCheck(item.id)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
                                     <RefreshCw className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => handleDelete(item.id)} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-zinc-400 hover:text-red-500 transition-colors">
+                                <button onClick={() => handleDelete(item)} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-zinc-400 hover:text-red-500 transition-colors">
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                             </div>
@@ -239,16 +254,29 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                         <div className="space-y-3 flex-grow">
                             <div className="flex justify-between items-baseline">
                                 <span className="text-zinc-500 text-sm font-medium">Current Price</span>
-                                <span className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">
+                                <span className={`text-2xl font-bold tracking-tight ${item.target_price && item.current_price <= item.target_price
+                                    ? 'text-green-600 dark:text-green-400'
+                                    : item.target_price && item.current_price > item.target_price
+                                        ? 'text-red-600 dark:text-red-400'
+                                        : 'text-zinc-900 dark:text-white'
+                                    }`}>
                                     {item.current_price ? `$${item.current_price}` : '---'}
                                 </span>
                             </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Target</span>
-                                <span className="text-zinc-600 dark:text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-sm">
-                                    {item.target_price ? `$${item.target_price}` : '---'}
-                                </span>
-                            </div>
+
+                            {item.target_price ? (
+                                <div className="flex justify-between items-center">
+                                    <span className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Target</span>
+                                    <span className="text-zinc-600 dark:text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-sm">
+                                        ${item.target_price}
+                                    </span>
+                                </div>
+                            ) : (
+                                <div className="flex justify-between items-center">
+                                    <span className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Target</span>
+                                    <span className="text-zinc-400 text-xs italic">Not set</span>
+                                </div>
+                            )}
 
                             {/* Tags */}
                             {item.tags && (
@@ -305,6 +333,14 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                         <X className="w-6 h-6" />
                     </button>
                 </div>
+            )}
+
+            {itemToDelete && (
+                <DeleteConfirmationModal
+                    item={itemToDelete}
+                    onClose={() => setItemToDelete(null)}
+                    onConfirm={confirmDelete}
+                />
             )}
         </div>
     );
@@ -880,6 +916,38 @@ function SettingsPage({ theme, toggleTheme }) {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+function DeleteConfirmationModal({ item, onClose, onConfirm }) {
+    return (
+        <div className="fixed inset-0 bg-black/20 dark:bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm border border-zinc-200 dark:border-zinc-800 shadow-2xl">
+                <div className="flex flex-col items-center text-center mb-6">
+                    <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mb-4 text-red-600 dark:text-red-400">
+                        <Trash2 className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Delete Item?</h3>
+                    <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-2">
+                        Are you sure you want to delete <span className="font-medium text-zinc-900 dark:text-zinc-100">{item.name}</span>? This action cannot be undone.
+                    </p>
+                </div>
+                <div className="flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={onConfirm}
+                        className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors shadow-lg shadow-red-500/20"
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
