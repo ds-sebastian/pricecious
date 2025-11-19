@@ -44,12 +44,18 @@ async def scrape_item(
 
             logger.info(f"Navigating to {url} (Timeout: {timeout}ms)")
             try:
-                # Use networkidle to ensure heavy pages are fully loaded
-                # But fallback to load/domcontentloaded if networkidle times out
-                await page.goto(url, wait_until="networkidle", timeout=timeout)
-                logger.info(f"Page loaded (networkidle): {url}")
-            except PlaywrightTimeoutError:
-                logger.warning(f"Timeout waiting for networkidle on {url}, proceeding anyway")
+                # First wait for domcontentloaded - this is the minimum we need
+                await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+                logger.info(f"Page loaded (domcontentloaded): {url}")
+
+                # Then try to wait for networkidle, but don't fail if it times out
+                # This helps with heavy pages that never fully settle
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=5000)
+                    logger.info("Network idle reached")
+                except PlaywrightTimeoutError:
+                    logger.info("Network idle timed out (non-critical), proceeding...")
+
             except Exception as e:
                 logger.error(f"Error navigating to {url}: {e}")
                 # Try to take screenshot anyway if page partially loaded
