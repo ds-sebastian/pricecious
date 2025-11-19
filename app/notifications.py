@@ -5,6 +5,7 @@ import apprise
 
 logger = logging.getLogger(__name__)
 
+
 def _send_sync(urls: list, title: str, body: str):
     """
     Synchronous notification sending.
@@ -25,6 +26,7 @@ def _send_sync(urls: list, title: str, body: str):
         logger.info(f"Notification sent: {title}")
     except Exception as e:
         logger.error(f"Error sending notification: {e}")
+
 
 async def send_notification(urls: list, title: str, body: str):
     """

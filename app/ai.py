@@ -20,6 +20,7 @@ MAX_TEXT_LENGTH = 10000
 
 logger = logging.getLogger(__name__)
 
+
 def _process_image(image_path):
     """
     Synchronous image processing function to be run in an executor.
@@ -34,17 +35,18 @@ def _process_image(image_path):
 
             # Convert to RGB if necessary (e.g. for PNGs with alpha)
             # Convert to RGB if necessary (e.g. for PNGs with alpha)
-            if img.mode in ('RGBA', 'P'):
-                img_to_process = img.convert('RGB')
+            if img.mode in ("RGBA", "P"):
+                img_to_process = img.convert("RGB")
             else:
                 img_to_process = img
 
             buffered = io.BytesIO()
             img_to_process.save(buffered, format="JPEG", quality=85)
-            return base64.b64encode(buffered.getvalue()).decode('utf-8')
+            return base64.b64encode(buffered.getvalue()).decode("utf-8")
     except Exception as e:
         logger.error(f"Error encoding image: {e}")
         raise
+
 
 async def encode_image(image_path):
     """
@@ -52,6 +54,7 @@ async def encode_image(image_path):
     """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _process_image, image_path)
+
 
 def clean_text(text: str) -> str:
     """
@@ -62,18 +65,19 @@ def clean_text(text: str) -> str:
         return ""
 
     # Remove code blocks (```...```)
-    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
 
     # Remove HTML tags (basic)
-    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r"<[^>]+>", "", text)
 
     # Remove non-printable characters (keep newlines and tabs)
-    text = re.sub(r'[^\x20-\x7E\n\t]', '', text)
+    text = re.sub(r"[^\x20-\x7E\n\t]", "", text)
 
     # Collapse excessive whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
 
     return text
+
 
 def get_ai_config():
     """
@@ -97,6 +101,7 @@ def get_ai_config():
     finally:
         session.close()
 
+
 async def analyze_image(
     image_path: str,
     page_text: str = "",
@@ -104,7 +109,7 @@ async def analyze_image(
         "What is the price of the product in this image? If it is out of stock, say 'Out of Stock'; "
         "but if it shows Add to Cart or something similar say In Stock. "
         "Return a JSON object with keys 'price' (number or null) and 'in_stock' (boolean)."
-    )
+    ),
 ):
     try:
         # Note: get_ai_config is sync but fast (DB read), could be async if needed but acceptable for now
@@ -134,8 +139,8 @@ async def analyze_image(
                 "role": "user",
                 "content": [
                     {"type": "text", "text": final_prompt},
-                    {"type": "image_url", "image_url": {"url": data_url}}
-                ]
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
             }
         ]
 
@@ -151,10 +156,10 @@ async def analyze_image(
 
         if provider == "ollama":
             kwargs["api_base"] = api_base
-            kwargs["format"] = "json" # Force JSON mode for Ollama
+            kwargs["format"] = "json"  # Force JSON mode for Ollama
         elif provider == "openai" and api_base:
-             # Allow custom base URL for OpenAI-compatible endpoints too
-             kwargs["api_base"] = api_base
+            # Allow custom base URL for OpenAI-compatible endpoints too
+            kwargs["api_base"] = api_base
 
         # Call litellm asynchronously
         logger.info(f"Sending request to {provider} ({model})...")
@@ -171,11 +176,12 @@ async def analyze_image(
         logger.error(f"Error calling AI provider: {e}", exc_info=True)
         return None
 
+
 def _parse_ai_response(response_text: str) -> dict | None:
     """Helper to parse AI response text into a dictionary."""
     try:
         # Try to find JSON block
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
         if json_match:
             json_str = json_match.group(0)
             data = json.loads(json_str)
@@ -188,7 +194,7 @@ def _parse_ai_response(response_text: str) -> dict | None:
         # Clean price
         if "price" in data:
             if isinstance(data["price"], str):
-                price_match = re.search(r'(\d+\.?\d*)', data["price"])
+                price_match = re.search(r"(\d+\.?\d*)", data["price"])
                 if price_match:
                     data["price"] = float(price_match.group(1))
                 else:
@@ -207,10 +213,10 @@ def _parse_ai_response(response_text: str) -> dict | None:
         # Fallback parsing
         logger.warning("Failed to parse JSON, attempting fallback parsing")
         # Look for price with $ symbol first
-        price_match = re.search(r'\$\s?(\d+(?:\.\d{1,2})?)', response_text)
+        price_match = re.search(r"\$\s?(\d+(?:\.\d{1,2})?)", response_text)
         if not price_match:
             # If no $ found, look for "price is X" pattern
-            price_match = re.search(r'price\s+is\s+(\d+(?:\.\d{1,2})?)', response_text, re.IGNORECASE)
+            price_match = re.search(r"price\s+is\s+(\d+(?:\.\d{1,2})?)", response_text, re.IGNORECASE)
 
         price = float(price_match.group(1)) if price_match else None
         in_stock = "out of stock" not in response_text.lower()

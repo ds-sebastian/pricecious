@@ -28,6 +28,7 @@ VERSION = "0.1.0"
 
 app = FastAPI(title="Pricecious API", version=VERSION)
 
+
 # Middleware for logging requests
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -35,6 +36,7 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     logger.debug(f"Response: {response.status_code}")
     return response
+
 
 # Mount static files
 if os.path.exists("static"):
@@ -47,6 +49,7 @@ else:
 os.makedirs("screenshots", exist_ok=True)
 app.mount("/screenshots", StaticFiles(directory="screenshots"), name="screenshots")
 
+
 # Pydantic models
 class NotificationProfileCreate(BaseModel):
     name: str
@@ -57,10 +60,13 @@ class NotificationProfileCreate(BaseModel):
     notify_on_stock_change: bool = True
     check_interval_minutes: int = 60
 
+
 class NotificationProfileResponse(NotificationProfileCreate):
     id: int
+
     class Config:
         orm_mode = True
+
 
 class ItemCreate(BaseModel):
     url: str
@@ -71,6 +77,7 @@ class ItemCreate(BaseModel):
     tags: str | None = None
     description: str | None = None
     notification_profile_id: int | None = None
+
 
 class ItemResponse(ItemCreate):
     id: int
@@ -92,21 +99,26 @@ class ItemResponse(ItemCreate):
             return f"/screenshots/item_{item_id}.png"
         return None
 
+
 class SettingsUpdate(BaseModel):
     key: str
     value: str
 
+
 # API Router
 api_router = APIRouter(prefix="/api")
+
 
 @api_router.get("/")
 def read_root():
     return {"message": "Welcome to Pricecious API"}
 
+
 # --- Notification Profiles ---
 @api_router.get("/notification-profiles", response_model=list[NotificationProfileResponse])
 def get_notification_profiles(db: Session = Depends(database.get_db)):  # noqa: B008
     return db.query(models.NotificationProfile).all()
+
 
 @api_router.post("/notification-profiles", response_model=NotificationProfileResponse)
 def create_notification_profile(profile: NotificationProfileCreate, db: Session = Depends(database.get_db)):  # noqa: B008
@@ -115,6 +127,7 @@ def create_notification_profile(profile: NotificationProfileCreate, db: Session 
     db.commit()
     db.refresh(db_profile)
     return db_profile
+
 
 @api_router.delete("/notification-profiles/{profile_id}")
 def delete_notification_profile(profile_id: int, db: Session = Depends(database.get_db)):  # noqa: B008
@@ -125,6 +138,7 @@ def delete_notification_profile(profile_id: int, db: Session = Depends(database.
     db.commit()
     return {"ok": True}
 
+
 # --- Items ---
 @api_router.get("/items", response_model=list[ItemResponse])
 def get_items(db: Session = Depends(database.get_db)):  # noqa: B008
@@ -133,9 +147,10 @@ def get_items(db: Session = Depends(database.get_db)):  # noqa: B008
     response_items = []
     for item in items:
         item_dict = item.__dict__
-        item_dict['screenshot_url'] = ItemResponse.resolve_screenshot_url(item.id)
+        item_dict["screenshot_url"] = ItemResponse.resolve_screenshot_url(item.id)
         response_items.append(item_dict)
     return response_items
+
 
 @api_router.post("/items", response_model=ItemResponse)
 def create_item(item: ItemCreate, db: Session = Depends(database.get_db)):  # noqa: B008
@@ -146,6 +161,7 @@ def create_item(item: ItemCreate, db: Session = Depends(database.get_db)):  # no
     db.refresh(db_item)
     logger.info(f"Item created with ID: {db_item.id}")
     return db_item
+
 
 @api_router.put("/items/{item_id}", response_model=ItemResponse)
 def update_item(item_id: int, item_update: ItemCreate, db: Session = Depends(database.get_db)):  # noqa: B008
@@ -159,6 +175,7 @@ def update_item(item_id: int, item_update: ItemCreate, db: Session = Depends(dat
     db.commit()
     db.refresh(db_item)
     return db_item
+
 
 @api_router.delete("/items/{item_id}")
 def delete_item(item_id: int, db: Session = Depends(database.get_db)):  # noqa: B008
@@ -177,6 +194,7 @@ def delete_item(item_id: int, db: Session = Depends(database.get_db)):  # noqa: 
     db.commit()
     return {"ok": True}
 
+
 @api_router.post("/items/{item_id}/check")
 def check_item(item_id: int, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):  # noqa: B008
     item = db.query(models.Item).filter(models.Item.id == item_id).first()
@@ -194,8 +212,10 @@ def check_item(item_id: int, background_tasks: BackgroundTasks, db: Session = De
     background_tasks.add_task(process_item_check, item_id)
     return {"message": "Check triggered"}
 
+
 # Scheduler
 scheduler = AsyncIOScheduler()
+
 
 async def scheduled_refresh():
     logger.info("Heartbeat: Checking for items due for refresh")
@@ -259,6 +279,7 @@ async def start_scheduler():
     scheduler.add_job(scheduled_refresh, IntervalTrigger(minutes=1), id="refresh_job", replace_existing=True)
     scheduler.start()
 
+
 @api_router.get("/jobs/config")
 def get_job_config(db: Session = Depends(database.get_db)):  # noqa: B008
     setting = db.query(models.Settings).filter(models.Settings.key == "refresh_interval_minutes").first()
@@ -269,11 +290,8 @@ def get_job_config(db: Session = Depends(database.get_db)):  # noqa: B008
     if job:
         next_run = job.next_run_time
 
-    return {
-        "refresh_interval_minutes": interval,
-        "next_run": next_run,
-        "running": scheduler.running
-    }
+    return {"refresh_interval_minutes": interval, "next_run": next_run, "running": scheduler.running}
+
 
 @api_router.post("/jobs/config")
 def update_job_config(config: SettingsUpdate, db: Session = Depends(database.get_db)):  # noqa: B008
@@ -307,6 +325,7 @@ def update_job_config(config: SettingsUpdate, db: Session = Depends(database.get
 
     return {"message": "Job configuration updated", "refresh_interval_minutes": interval}
 
+
 @api_router.post("/jobs/refresh-all")
 def refresh_all_items(background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):  # noqa: B008
     items = db.query(models.Item).filter(models.Item.is_active).all()
@@ -314,6 +333,7 @@ def refresh_all_items(background_tasks: BackgroundTasks, db: Session = Depends(d
     for item in items:
         background_tasks.add_task(process_item_check, item.id)
     return {"message": f"Triggered refresh for {len(items)} items"}
+
 
 async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912, PLR0915
     """
@@ -360,8 +380,10 @@ async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912
                     "notify_on_price_drop": profile.notify_on_price_drop,
                     "price_drop_threshold_percent": profile.price_drop_threshold_percent,
                     "notify_on_target_price": profile.notify_on_target_price,
-                    "notify_on_stock_change": profile.notify_on_stock_change
-                } if profile else None
+                    "notify_on_stock_change": profile.notify_on_stock_change,
+                }
+                if profile
+                else None,
             }
 
             config = {
@@ -371,7 +393,7 @@ async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912
                 "text_length": int(settings_map.get("text_context_length", "5000"))
                 if settings_map.get("text_context_enabled", "false").lower() == "true"
                 else 0,
-                "scraper_timeout": int(settings_map.get("scraper_timeout", "90000"))
+                "scraper_timeout": int(settings_map.get("scraper_timeout", "90000")),
             }
 
             return item_data, config
@@ -396,13 +418,13 @@ async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912
         )
 
         screenshot_path, page_text = await scraper.scrape_item(
-            item_data['url'],
-            item_data['selector'],
+            item_data["url"],
+            item_data["selector"],
             item_id,
-            smart_scroll=config['smart_scroll'],
-            scroll_pixels=config['smart_scroll_pixels'],
-            text_length=config['text_length'],
-            timeout=config['scraper_timeout']
+            smart_scroll=config["smart_scroll"],
+            scroll_pixels=config["smart_scroll_pixels"],
+            text_length=config["text_length"],
+            timeout=config["scraper_timeout"],
         )
 
         if screenshot_path:
@@ -437,8 +459,8 @@ async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912
                             session.add(history)
 
                         item.last_checked = datetime.utcnow()
-                        item.is_refreshing = False # Reset refreshing state
-                        item.last_error = None # Clear error
+                        item.is_refreshing = False  # Reset refreshing state
+                        item.last_error = None  # Clear error
                         session.commit()
 
                         return old_price, old_stock
@@ -448,42 +470,42 @@ async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912
                 old_price, old_stock = await loop.run_in_executor(None, update_db)
 
                 # Notifications
-                profile = item_data['notification_profile']
+                profile = item_data["notification_profile"]
                 if profile:
                     # Price Drop (Percentage)
-                    if profile['notify_on_price_drop'] and price is not None and old_price is not None:
+                    if profile["notify_on_price_drop"] and price is not None and old_price is not None:
                         if price < old_price:
                             drop_percent = ((old_price - price) / old_price) * 100
-                            if drop_percent >= profile['price_drop_threshold_percent']:
+                            if drop_percent >= profile["price_drop_threshold_percent"]:
                                 await notifications.send_notification(
-                                    [profile['apprise_url']],
+                                    [profile["apprise_url"]],
                                     f"Price Drop Alert: {item_data['name']}",
-                                    f"Price dropped by {drop_percent:.1f}%! Now ${price} (was ${old_price})"
+                                    f"Price dropped by {drop_percent:.1f}%! Now ${price} (was ${old_price})",
                                 )
 
                     # Target Price
                     if (
-                        profile['notify_on_target_price']
+                        profile["notify_on_target_price"]
                         and price is not None
-                        and item_data['target_price']
-                        and price <= item_data['target_price']
+                        and item_data["target_price"]
+                        and price <= item_data["target_price"]
                     ):
                         await notifications.send_notification(
-                            [profile['apprise_url']],
+                            [profile["apprise_url"]],
                             f"Target Price Alert: {item_data['name']}",
                             f"Price is ${price} (Target: ${item_data['target_price']})",
                         )
 
                     # Stock Change
                     if (
-                        profile['notify_on_stock_change']
+                        profile["notify_on_stock_change"]
                         and in_stock is not None
                         and old_stock is not None
                         and in_stock != old_stock
                     ):
                         status = "In Stock" if in_stock else "Out of Stock"
                         await notifications.send_notification(
-                            [profile['apprise_url']],
+                            [profile["apprise_url"]],
                             f"Stock Alert: {item_data['name']}",
                             f"Item is now {status}",
                         )
@@ -500,6 +522,7 @@ async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912
         logger.error(f"Error in process_item_check: {e}")
         # Update DB with error
         error_str = str(e)
+
         def update_db_error():
             session = SessionLocal()
             try:
@@ -510,12 +533,14 @@ async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912
                     session.commit()
             finally:
                 session.close()
+
         await loop.run_in_executor(None, update_db_error)
 
 
 @api_router.get("/settings")
 def get_settings(db: Session = Depends(database.get_db)):  # noqa: B008
     return db.query(models.Settings).all()
+
 
 @api_router.post("/settings", response_model=SettingsUpdate)
 def update_setting(setting: SettingsUpdate, db: Session = Depends(database.get_db)):  # noqa: B008
@@ -528,7 +553,9 @@ def update_setting(setting: SettingsUpdate, db: Session = Depends(database.get_d
     db.commit()
     return db_setting
 
+
 app.include_router(api_router)
+
 
 # Serve index.html at root
 @app.get("/")
@@ -536,6 +563,7 @@ async def serve_index():
     if os.path.exists("static/index.html"):
         return FileResponse("static/index.html")
     return {"message": "Frontend not built or not found"}
+
 
 # Catch-all for SPA
 @app.get("/{full_path:path}")

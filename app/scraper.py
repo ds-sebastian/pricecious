@@ -29,11 +29,11 @@ async def scrape_item(  # noqa: PLR0913, PLR0912, PLR0915
             logger.info(f"Connecting to Browserless at {BROWSERLESS_URL}")
             browser = await p.chromium.connect_over_cdp(BROWSERLESS_URL)
             context = await browser.new_context(
-                viewport={'width': 1920, 'height': 1080},
+                viewport={"width": 1920, "height": 1080},
                 user_agent=(
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                    'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/91.0.4472.124 Safari/537.36'
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/91.0.4472.124 Safari/537.36"
                 ),
             )
 
@@ -45,9 +45,7 @@ async def scrape_item(  # noqa: PLR0913, PLR0912, PLR0915
             logger.info(f"Navigating to {url} (Timeout: {timeout}ms)")
             try:
                 # First wait for domcontentloaded - this is the minimum we need
-                await page.goto(
-                    url, wait_until="domcontentloaded", timeout=timeout
-                )
+                await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
                 logger.info(f"Page loaded (domcontentloaded): {url}")
 
                 # Then try to wait for networkidle, but don't fail if it times out
@@ -79,7 +77,7 @@ async def scrape_item(  # noqa: PLR0913, PLR0912, PLR0915
                 "button:has-text('No, thanks')",
                 "button:has-text('No thanks')",
                 "a:has-text('No, thanks')",
-                "div[role='dialog'] button[aria-label='Close']"
+                "div[role='dialog'] button[aria-label='Close']",
             ]
 
             for popup_selector in popup_selectors:
@@ -88,13 +86,13 @@ async def scrape_item(  # noqa: PLR0913, PLR0912, PLR0915
                         logger.info(f"Found popup close button: {popup_selector}")
                         # Try to click it. If it fails, catch and continue
                         await page.locator(popup_selector).first.click(timeout=2000)
-                        await page.wait_for_timeout(1000) # Wait for animation
+                        await page.wait_for_timeout(1000)  # Wait for animation
                 except Exception:
                     pass
 
             # Also try pressing Escape
             try:
-                await page.keyboard.press('Escape')
+                await page.keyboard.press("Escape")
             except Exception:
                 pass
 
@@ -137,7 +135,7 @@ async def scrape_item(  # noqa: PLR0913, PLR0912, PLR0915
                 try:
                     logger.info(f"Extracting text (limit: {text_length} chars)...")
                     # Get text from body
-                    raw_text = await page.inner_text('body')
+                    raw_text = await page.inner_text("body")
                     # Simple truncation
                     page_text = raw_text[:text_length]
                     logger.info(f"Extracted {len(page_text)} characters")
@@ -150,7 +148,7 @@ async def scrape_item(  # noqa: PLR0913, PLR0912, PLR0915
             if item_id:
                 filename = f"{screenshot_dir}/item_{item_id}.png"
             else:
-                url_part = url.split('//')[-1].replace('/', '_')
+                url_part = url.split("//")[-1].replace("/", "_")
                 timestamp = asyncio.get_event_loop().time()
                 filename = f"{screenshot_dir}/{url_part}_{timestamp}.png"
 
@@ -166,4 +164,3 @@ async def scrape_item(  # noqa: PLR0913, PLR0912, PLR0915
         finally:
             if browser:
                 await browser.close()
-

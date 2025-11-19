@@ -20,6 +20,7 @@ class NotificationProfile(Base):
 
     items = relationship("Item", back_populates="notification_profile")
 
+
 class Item(Base):
     __tablename__ = "items"
 
@@ -33,7 +34,7 @@ class Item(Base):
     # New fields
     current_price = Column(Float, nullable=True)
     in_stock = Column(Boolean, nullable=True)
-    tags = Column(String, nullable=True) # Comma separated
+    tags = Column(String, nullable=True)  # Comma separated
     description = Column(String, nullable=True)
 
     is_active = Column(Boolean, default=True)
@@ -46,6 +47,7 @@ class Item(Base):
 
     price_history = relationship("PriceHistory", back_populates="item", cascade="all, delete-orphan")
 
+
 class PriceHistory(Base):
     __tablename__ = "price_history"
 
@@ -56,6 +58,7 @@ class PriceHistory(Base):
     screenshot_path = Column(String, nullable=True)
 
     item = relationship("Item", back_populates="price_history")
+
 
 class Settings(Base):
     __tablename__ = "settings"

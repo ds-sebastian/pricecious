@@ -17,6 +17,7 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 @pytest.fixture(scope="function")
 def db():
     # Create tables
@@ -28,6 +29,7 @@ def db():
         session.close()
         # Drop tables
         Base.metadata.drop_all(bind=engine)
+
 
 @pytest.fixture(scope="function")
 def client(db):
@@ -54,9 +56,11 @@ def client(db):
     # But we are using StaticPool, so all sessions share the same connection.
     # So we just need SessionLocal to return a session from TestingSessionLocal.
 
-    with patch("app.main.scheduler.start"), \
-         patch("app.main.scheduler.shutdown"), \
-         patch("app.database.SessionLocal", side_effect=TestingSessionLocal):
+    with (
+        patch("app.main.scheduler.start"),
+        patch("app.main.scheduler.shutdown"),
+        patch("app.database.SessionLocal", side_effect=TestingSessionLocal),
+    ):
         with TestClient(app) as c:
             yield c
 
