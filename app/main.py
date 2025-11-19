@@ -337,8 +337,9 @@ async def process_item_check(item_id: int, db: Session):
         smart_scroll_pixels = int(settings_map.get("smart_scroll_pixels", "350"))
         text_context_enabled = settings_map.get("text_context_enabled", "false").lower() == "true"
         text_length = int(settings_map.get("text_context_length", "5000")) if text_context_enabled else 0
+        scraper_timeout = int(settings_map.get("scraper_timeout", "90000"))
 
-        logger.info(f"Checking item: {item.name} ({item.url}) [Scroll: {smart_scroll} ({smart_scroll_pixels}px), Text: {text_length}]")
+        logger.info(f"Checking item: {item.name} ({item.url}) [Scroll: {smart_scroll} ({smart_scroll_pixels}px), Text: {text_length}, Timeout: {scraper_timeout}]")
         
         screenshot_path, page_text = await scraper.scrape_item(
             item.url, 
@@ -346,7 +347,8 @@ async def process_item_check(item_id: int, db: Session):
             item_id, 
             smart_scroll=smart_scroll, 
             scroll_pixels=smart_scroll_pixels,
-            text_length=text_length
+            text_length=text_length,
+            timeout=scraper_timeout
         )
         
         if screenshot_path:

@@ -7,7 +7,7 @@ BROWSERLESS_URL = os.getenv("BROWSERLESS_URL", "ws://browserless:3000")
 
 logger = logging.getLogger(__name__)
 
-async def scrape_item(url: str, selector: str = None, item_id: int = None, smart_scroll: bool = False, scroll_pixels: int = 350, text_length: int = 0):
+async def scrape_item(url: str, selector: str = None, item_id: int = None, smart_scroll: bool = False, scroll_pixels: int = 350, text_length: int = 0, timeout: int = 90000):
     """
     Scrapes the given URL using Browserless and Playwright.
     Returns a tuple: (screenshot_path, page_text)
@@ -26,10 +26,10 @@ async def scrape_item(url: str, selector: str = None, item_id: int = None, smart
             
             page = await context.new_page()
             
-            logger.info(f"Navigating to {url}")
-            # Use domcontentloaded instead of networkidle as it's faster and less prone to timeouts on heavy sites
+            logger.info(f"Navigating to {url} (Timeout: {timeout}ms)")
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                # Use networkidle to ensure heavy pages are fully loaded
+                await page.goto(url, wait_until="networkidle", timeout=timeout)
                 logger.info(f"Page loaded: {url}")
                 
                 # Wait a bit for dynamic content if needed

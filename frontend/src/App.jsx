@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { Plus, Trash2, RefreshCw, ExternalLink, Settings as SettingsIcon, Save, X, Edit2, Bell, Search, Clock, AlertTriangle, Moon, Sun, ChevronRight, Check } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
@@ -106,6 +106,37 @@ function App() {
     );
 }
 
+function MarqueeText({ text, className }) {
+    const [isOverflowing, setIsOverflowing] = useState(false);
+    const containerRef = useRef(null);
+    const textRef = useRef(null);
+
+    useEffect(() => {
+        const checkOverflow = () => {
+            if (containerRef.current && textRef.current) {
+                setIsOverflowing(textRef.current.scrollWidth > containerRef.current.clientWidth);
+            }
+        };
+
+        checkOverflow();
+        window.addEventListener('resize', checkOverflow);
+        return () => window.removeEventListener('resize', checkOverflow);
+    }, [text]);
+
+    return (
+        <div ref={containerRef} className={`overflow-hidden w-full ${className}`}>
+            <div
+                ref={textRef}
+                className={`whitespace-nowrap inline-block ${isOverflowing ? 'animate-marquee' : ''}`}
+                title={text}
+            >
+                {text}
+                {isOverflowing && <span className="inline-block pl-8">{text}</span>}
+            </div>
+        </div>
+    );
+}
+
 function Dashboard({ items, refreshItems, searchTerm }) {
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
@@ -191,34 +222,33 @@ function Dashboard({ items, refreshItems, searchTerm }) {
                     <div key={item.id} className="group bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md dark:hover:border-zinc-700 transition-all duration-300 flex flex-col relative overflow-hidden">
 
                         <div className="flex justify-between items-start mb-4 z-10 relative">
-                            <div className="flex items-center gap-3 overflow-hidden flex-1">
+                            <div className="flex items-center gap-3 overflow-hidden flex-1 pr-16">
                                 <a
                                     href={item.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                                    className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex-shrink-0"
                                 >
                                     <ExternalLink className="w-4 h-4" />
                                 </a>
                                 <div className="overflow-hidden w-full">
-                                    <div className="w-full overflow-hidden">
-                                        <h3 className="font-semibold text-base truncate leading-tight hover:animate-marquee whitespace-nowrap inline-block" title={item.name}>
-                                            {item.name}
-                                        </h3>
-                                    </div>
+                                    <MarqueeText
+                                        text={item.name}
+                                        className="font-semibold text-base leading-tight"
+                                    />
                                     <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-xs text-zinc-400 hover:text-purple-500 truncate block mt-0.5 transition-colors">
                                         {new URL(item.url).hostname.replace('www.', '')}
                                     </a>
                                 </div>
                             </div>
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => setEditingItem(item)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
+                            <div className="absolute top-0 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-lg p-1 shadow-sm border border-zinc-100 dark:border-zinc-800">
+                                <button onClick={() => setEditingItem(item)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
                                     <Edit2 className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => handleCheck(item.id)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
+                                <button onClick={() => handleCheck(item.id)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
                                     <RefreshCw className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => handleDelete(item)} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-zinc-400 hover:text-red-500 transition-colors">
+                                <button onClick={() => handleDelete(item)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md text-zinc-400 hover:text-red-500 transition-colors">
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                             </div>
@@ -517,7 +547,8 @@ function SettingsPage({ theme, toggleTheme }) {
         smart_scroll_enabled: false,
         smart_scroll_pixels: 350,
         text_context_enabled: false,
-        text_context_length: 5000
+        text_context_length: 5000,
+        scraper_timeout: 90000
     });
     const [deleteProfileId, setDeleteProfileId] = useState(null);
 
@@ -546,7 +577,8 @@ function SettingsPage({ theme, toggleTheme }) {
                 smart_scroll_enabled: settingsMap['smart_scroll_enabled'] === 'true',
                 smart_scroll_pixels: parseInt(settingsMap['smart_scroll_pixels'] || '350'),
                 text_context_enabled: settingsMap['text_context_enabled'] === 'true',
-                text_context_length: parseInt(settingsMap['text_context_length'] || '5000')
+                text_context_length: parseInt(settingsMap['text_context_length'] || '5000'),
+                scraper_timeout: parseInt(settingsMap['scraper_timeout'] || '90000')
             });
         } catch (error) {
             console.error("Failed to fetch scraper config", error);
@@ -583,6 +615,7 @@ function SettingsPage({ theme, toggleTheme }) {
             await axios.post(`${API_URL}/settings`, { key: 'smart_scroll_pixels', value: scraperConfig.smart_scroll_pixels.toString() });
             await axios.post(`${API_URL}/settings`, { key: 'text_context_enabled', value: scraperConfig.text_context_enabled.toString() });
             await axios.post(`${API_URL}/settings`, { key: 'text_context_length', value: scraperConfig.text_context_length.toString() });
+            await axios.post(`${API_URL}/settings`, { key: 'scraper_timeout', value: scraperConfig.scraper_timeout.toString() });
             toast.success('Scraper configuration updated');
         } catch (error) {
             toast.error('Failed to update scraper config');
@@ -743,6 +776,19 @@ function SettingsPage({ theme, toggleTheme }) {
                                 />
                             </div>
                         )}
+
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Scraper Timeout (ms)</label>
+                            <input
+                                type="number"
+                                min="1000"
+                                max="300000"
+                                className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none w-40 transition-all"
+                                value={scraperConfig.scraper_timeout}
+                                onChange={e => setScraperConfig({ ...scraperConfig, scraper_timeout: e.target.value })}
+                            />
+                            <p className="text-xs text-zinc-500 mt-1">Maximum time to wait for a page to load (default: 90000ms).</p>
+                        </div>
                     </div>
                     <button type="submit" className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-black hover:bg-zinc-800 dark:hover:bg-zinc-200 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-zinc-500/20">
                         Save Scraper Config
