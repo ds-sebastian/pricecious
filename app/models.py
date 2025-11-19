@@ -37,6 +37,10 @@ class Item(Base):
     tags = Column(String, nullable=True)  # Comma separated
     description = Column(String, nullable=True)
 
+    # Confidence scores for latest extraction
+    current_price_confidence = Column(Float, nullable=True)
+    in_stock_confidence = Column(Float, nullable=True)
+
     is_active = Column(Boolean, default=True)
     last_checked = Column(DateTime, nullable=True)
     is_refreshing = Column(Boolean, default=False)
@@ -56,6 +60,14 @@ class PriceHistory(Base):
     price = Column(Float)
     timestamp = Column(DateTime, default=datetime.utcnow)
     screenshot_path = Column(String, nullable=True)
+
+    # Confidence scores and AI metadata
+    price_confidence = Column(Float, nullable=True)
+    in_stock_confidence = Column(Float, nullable=True)
+    ai_model = Column(String, nullable=True)
+    ai_provider = Column(String, nullable=True)
+    prompt_version = Column(String, nullable=True)
+    repair_used = Column(Boolean, nullable=True, default=False)
 
     item = relationship("Item", back_populates="price_history")
 

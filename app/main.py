@@ -83,6 +83,8 @@ class ItemResponse(ItemCreate):
     id: int
     current_price: float | None
     in_stock: bool | None
+    current_price_confidence: float | None = None
+    in_stock_confidence: float | None = None
     is_active: bool
     last_checked: datetime | None
     is_refreshing: bool = False
@@ -429,38 +431,102 @@ async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912
 
         if screenshot_path:
             logger.info(f"Screenshot captured: {screenshot_path}")
-            result = await ai.analyze_image(screenshot_path, page_text=page_text)
-            if result:
-                price = result.get("price")
-                in_stock = result.get("in_stock")
+            ai_result = await ai.analyze_image(screenshot_path, page_text=page_text)
+            if ai_result:
+                extraction, metadata = ai_result
+                price = extraction.price
+                in_stock = extraction.in_stock
+                price_confidence = extraction.price_confidence
+                in_stock_confidence = extraction.in_stock_confidence
 
-                logger.info(f"Analysis result: Price={price}, Stock={in_stock}")
+                logger.info(
+                    f"Analysis result: Price={price} (conf={price_confidence:.2f}), "
+                    f"Stock={in_stock} (conf={in_stock_confidence:.2f}), "
+                    f"Model={metadata.model_name}, Repair={metadata.repair_used}"
+                )
 
-                # Update DB
+                # Get confidence thresholds from settings
+                def get_thresholds():
+                    session = SessionLocal()
+                    try:
+                        settings = session.query(models.Settings).all()
+                        settings_map = {s.key: s.value for s in settings}
+                        return {
+                            "price": float(settings_map.get("confidence_threshold_price", "0.5")),
+                            "stock": float(settings_map.get("confidence_threshold_stock", "0.5")),
+                        }
+                    finally:
+                        session.close()
+
+                thresholds = await loop.run_in_executor(None, get_thresholds)
+
+                # Update DB with confidence-based business rules
                 def update_db():
                     session = SessionLocal()
                     try:
                         item = session.query(models.Item).filter(models.Item.id == item_id).first()
                         if not item:
-                            return
+                            return None, None
 
                         old_price = item.current_price
                         old_stock = item.in_stock
 
+                        # Business rule: Only update price if confidence is above threshold
                         if price is not None:
-                            item.current_price = price
+                            if price_confidence >= thresholds["price"]:
+                                # Check for large price change with low confidence
+                                if old_price is not None:
+                                    price_change_pct = abs(price - old_price) / old_price * 100
+                                    if price_change_pct > 20 and price_confidence < 0.7:
+                                        logger.warning(
+                                            f"Large price change ({price_change_pct:.1f}%) with low confidence "
+                                            f"({price_confidence:.2f}), flagging for review"
+                                        )
+                                        item.last_error = (
+                                            f"Uncertain: Large price change ({price_change_pct:.1f}%) "
+                                            f"with low confidence ({price_confidence:.2f})"
+                                        )
+                                        # Still update but flag it
+                                        item.current_price = price
+                                        item.current_price_confidence = price_confidence
+                                    else:
+                                        item.current_price = price
+                                        item.current_price_confidence = price_confidence
+                                else:
+                                    item.current_price = price
+                                    item.current_price_confidence = price_confidence
+                            else:
+                                logger.info(
+                                    f"Price confidence ({price_confidence:.2f}) below threshold "
+                                    f"({thresholds['price']}), not updating current_price"
+                                )
+                                # Log observation but don't overwrite
 
-                        if in_stock is not None:
+                        # Business rule: Only update stock if confidence is above threshold
+                        if in_stock is not None and in_stock_confidence >= thresholds["stock"]:
                             item.in_stock = in_stock
+                            item.in_stock_confidence = in_stock_confidence
 
-                        # Save history
+                        # Save history with all metadata (always save, regardless of confidence)
                         if price is not None:
-                            history = models.PriceHistory(item_id=item.id, price=price, screenshot_path=screenshot_path)
+                            history = models.PriceHistory(
+                                item_id=item.id,
+                                price=price,
+                                screenshot_path=screenshot_path,
+                                price_confidence=price_confidence,
+                                in_stock_confidence=in_stock_confidence,
+                                ai_model=metadata.model_name,
+                                ai_provider=metadata.provider,
+                                prompt_version=metadata.prompt_version,
+                                repair_used=metadata.repair_used,
+                            )
                             session.add(history)
 
                         item.last_checked = datetime.utcnow()
                         item.is_refreshing = False  # Reset refreshing state
-                        item.last_error = None  # Clear error
+                        # Only clear error if no new error was set
+                        if not item.last_error or not item.last_error.startswith("Uncertain:"):
+                            item.last_error = None
                         session.commit()
 
                         return old_price, old_stock
