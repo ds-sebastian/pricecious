@@ -40,6 +40,8 @@ export default function Settings() {
         notify_on_stock_change: true
     });
 
+    const [editingProfileId, setEditingProfileId] = useState(null);
+
     useEffect(() => {
         fetchAll();
     }, []);
@@ -102,11 +104,17 @@ export default function Settings() {
         }
     };
 
-    const createProfile = async (e) => {
+    const handleProfileSubmit = async (e) => {
         e.preventDefault();
         try {
-            await axios.post(`${API_URL}/notification-profiles`, newProfile);
-            toast.success('Profile created');
+            if (editingProfileId) {
+                await axios.put(`${API_URL}/notification-profiles/${editingProfileId}`, newProfile);
+                toast.success('Profile updated');
+            } else {
+                await axios.post(`${API_URL}/notification-profiles`, newProfile);
+                toast.success('Profile created');
+            }
+
             setNewProfile({
                 name: '',
                 apprise_url: '',
@@ -116,19 +124,52 @@ export default function Settings() {
                 price_drop_threshold_percent: 10,
                 notify_on_stock_change: true
             });
+            setEditingProfileId(null);
             fetchAll();
         } catch (error) {
-            toast.error('Failed to create profile');
+            toast.error(editingProfileId ? 'Failed to update profile' : 'Failed to create profile');
         }
     };
 
+    const editProfile = (profile) => {
+        setNewProfile({
+            name: profile.name,
+            apprise_url: profile.apprise_url,
+            check_interval_minutes: profile.check_interval_minutes,
+            notify_on_price_drop: profile.notify_on_price_drop,
+            notify_on_target_price: profile.notify_on_target_price,
+            price_drop_threshold_percent: profile.price_drop_threshold_percent,
+            notify_on_stock_change: profile.notify_on_stock_change
+        });
+        setEditingProfileId(profile.id);
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    };
+
+    const cancelEdit = () => {
+        setNewProfile({
+            name: '',
+            apprise_url: '',
+            check_interval_minutes: 60,
+            notify_on_price_drop: true,
+            notify_on_target_price: true,
+            price_drop_threshold_percent: 10,
+            notify_on_stock_change: true
+        });
+        setEditingProfileId(null);
+    };
+
     const deleteProfile = async (id) => {
-        try {
-            await axios.delete(`${API_URL}/notification-profiles/${id}`);
-            toast.success('Profile deleted');
-            fetchAll();
-        } catch (error) {
-            toast.error('Failed to delete profile');
+        if (confirm('Are you sure you want to delete this profile?')) {
+            try {
+                await axios.delete(`${API_URL}/notification-profiles/${id}`);
+                toast.success('Profile deleted');
+                if (editingProfileId === id) {
+                    cancelEdit();
+                }
+                fetchAll();
+            } catch (error) {
+                toast.error('Failed to delete profile');
+            }
         }
     };
 
@@ -262,8 +303,13 @@ export default function Settings() {
                     <CardDescription>Manage notification settings for different groups of items.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                    <form onSubmit={createProfile} className="space-y-4 border-b pb-6">
-                        <h4 className="text-sm font-medium">Create New Profile</h4>
+                    <form onSubmit={handleProfileSubmit} className="space-y-4 border-b pb-6">
+                        <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium">{editingProfileId ? 'Edit Profile' : 'Create New Profile'}</h4>
+                            {editingProfileId && (
+                                <Button type="button" variant="ghost" size="sm" onClick={cancelEdit}>Cancel Edit</Button>
+                            )}
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label>Name</Label>
@@ -298,7 +344,7 @@ export default function Settings() {
                                 <Label>Notify on Stock Change</Label>
                             </div>
                         </div>
-                        <Button type="submit">Create Profile</Button>
+                        <Button type="submit">{editingProfileId ? 'Update Profile' : 'Create Profile'}</Button>
                     </form>
 
                     <div className="space-y-4">
@@ -308,14 +354,19 @@ export default function Settings() {
                         ) : (
                             <div className="grid gap-4">
                                 {profiles.map(profile => (
-                                    <div key={profile.id} className="flex items-center justify-between rounded-lg border p-4">
+                                    <div key={profile.id} className={`flex items-center justify-between rounded-lg border p-4 ${editingProfileId === profile.id ? 'border-primary bg-primary/5' : ''}`}>
                                         <div>
                                             <p className="font-medium">{profile.name}</p>
                                             <p className="text-xs text-muted-foreground truncate max-w-[200px]">{profile.apprise_url}</p>
                                         </div>
-                                        <Button variant="ghost" size="icon" onClick={() => deleteProfile(profile.id)}>
-                                            <Trash2 className="h-4 w-4 text-destructive" />
-                                        </Button>
+                                        <div className="flex items-center gap-2">
+                                            <Button variant="outline" size="sm" onClick={() => editProfile(profile)}>
+                                                Edit
+                                            </Button>
+                                            <Button variant="ghost" size="icon" onClick={() => deleteProfile(profile.id)}>
+                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

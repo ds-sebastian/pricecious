@@ -14,6 +14,10 @@ class NotificationProfileCreate(BaseModel):
     check_interval_minutes: int = 60
 
 
+class NotificationProfileUpdate(NotificationProfileCreate):
+    pass
+
+
 class NotificationProfileResponse(NotificationProfileCreate):
     id: int
 

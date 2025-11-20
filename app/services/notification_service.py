@@ -24,7 +24,22 @@ class NotificationService:
             raise HTTPException(status_code=404, detail="Profile not found")
         db.delete(profile)
         db.commit()
+        db.delete(profile)
+        db.commit()
         return {"ok": True}
+
+    @staticmethod
+    def update_notification_profile(db: Session, profile_id: int, profile_data: schemas.NotificationProfileUpdate):
+        profile = db.query(models.NotificationProfile).filter(models.NotificationProfile.id == profile_id).first()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        for key, value in profile_data.model_dump().items():
+            setattr(profile, key, value)
+
+        db.commit()
+        db.refresh(profile)
+        return profile
 
     @staticmethod
     async def send_item_notifications(

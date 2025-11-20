@@ -28,6 +28,34 @@ def test_create_notification_profile(client):
     assert "id" in data
 
 
+def test_update_notification_profile(client):
+    # Create a profile first
+    response = client.post(
+        "/api/notification-profiles",
+        json={
+            "name": "Update Test Profile",
+            "apprise_url": "mailto://test@example.com",
+        },
+    )
+    profile_id = response.json()["id"]
+
+    # Update the profile
+    response = client.put(
+        f"/api/notification-profiles/{profile_id}",
+        json={
+            "name": "Updated Profile Name",
+            "apprise_url": "mailto://updated@example.com",
+            "notify_on_price_drop": False,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Updated Profile Name"
+    assert data["apprise_url"] == "mailto://updated@example.com"
+    assert data["notify_on_price_drop"] is False
+    assert data["id"] == profile_id
+
+
 def test_create_item(client):
     # First create a profile
     profile_response = client.post(
