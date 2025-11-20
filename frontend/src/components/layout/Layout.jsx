@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Settings, Moon, Sun } from 'lucide-react';
+import { LayoutDashboard, Settings, Moon, Sun, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 
 const Layout = ({ children, theme, toggleTheme }) => {
     const location = useLocation();
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -66,6 +68,58 @@ const Layout = ({ children, theme, toggleTheme }) => {
 
             {/* Mobile Header */}
             <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-6 md:hidden">
+                <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                    <SheetTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                            <Menu className="h-5 w-5" />
+                        </Button>
+                    </SheetTrigger>
+                    <SheetContent side="left" className="w-64 p-0">
+                        <div className="flex h-full flex-col">
+                            <div className="flex h-14 items-center border-b px-6">
+                                <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                                    Pricecious
+                                </span>
+                            </div>
+                            <nav className="flex-1 space-y-1 p-4">
+                                {navItems.map((item) => {
+                                    const Icon = item.icon;
+                                    const isActive = location.pathname === item.path;
+                                    return (
+                                        <Link key={item.path} to={item.path} onClick={() => setMobileMenuOpen(false)}>
+                                            <Button
+                                                variant={isActive ? "secondary" : "ghost"}
+                                                className={cn("w-full justify-start gap-2", isActive && "bg-secondary")}
+                                            >
+                                                <Icon className="h-4 w-4" />
+                                                {item.label}
+                                            </Button>
+                                        </Link>
+                                    );
+                                })}
+                            </nav>
+                            <div className="border-t p-4">
+                                <Button
+                                    variant="ghost"
+                                    onClick={toggleTheme}
+                                    className="w-full justify-start gap-2"
+                                >
+                                    {theme === 'dark' ? (
+                                        <>
+                                            <Sun className="h-4 w-4" />
+                                            <span>Light Mode</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Moon className="h-4 w-4" />
+                                            <span>Dark Mode</span>
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+                        </div>
+                    </SheetContent>
+                </Sheet>
                 <Link to="/" className="font-semibold">
                     Pricecious
                 </Link>
