@@ -24,6 +24,7 @@ PRIVATE_IP_PATTERNS = [
     re.compile(r"^fc00:"),  # IPv6 private
     re.compile(r"^fe80:"),  # IPv6 link-local
     re.compile(r"^localhost$", re.IGNORECASE),
+    re.compile(r"^0\.0\.0\.0$"),  # Any address
 ]
 
 

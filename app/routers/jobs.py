@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app import database, models, schemas
 from app.limiter import limiter
-from app.services.scheduler_service import process_item_check, scheduler
+from app.services.scheduler_service import process_item_check, scheduled_refresh, scheduler
 from app.services.settings_service import SettingsService
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -39,8 +39,6 @@ def update_job_config(config: schemas.SettingsUpdate, db: Session = Depends(data
     try:
         scheduler.reschedule_job("refresh_job", trigger=IntervalTrigger(minutes=interval))
     except Exception:
-        from app.services.scheduler_service import scheduled_refresh
-
         scheduler.add_job(scheduled_refresh, IntervalTrigger(minutes=interval), id="refresh_job", replace_existing=True)
 
     return {"message": "Job configuration updated", "refresh_interval_minutes": interval}

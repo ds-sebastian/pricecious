@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.scraper import scrape_item
+from app.services.scraper_service import ScraperService
 
 
 class TestScraperInputValidation:
@@ -15,7 +15,7 @@ class TestScraperInputValidation:
     @pytest.mark.asyncio
     async def test_invalid_scroll_pixels(self, caplog):
         """Test that invalid scroll_pixels is corrected."""
-        with patch("app.scraper.async_playwright") as mock_playwright:
+        with patch("app.services.scraper_service.async_playwright") as mock_playwright:
             # Mock the playwright context
             mock_browser = AsyncMock()
             mock_context = AsyncMock()
@@ -31,7 +31,7 @@ class TestScraperInputValidation:
             mock_playwright.return_value.__aenter__.return_value = mock_pw
 
             # Test with negative scroll_pixels
-            await scrape_item("https://example.com", scroll_pixels=-100)
+            await ScraperService.scrape_item("https://example.com", scroll_pixels=-100)
 
             # Check that warning was logged
             assert "Invalid scroll_pixels value" in caplog.text
@@ -39,7 +39,7 @@ class TestScraperInputValidation:
     @pytest.mark.asyncio
     async def test_invalid_timeout(self, caplog):
         """Test that invalid timeout is corrected."""
-        with patch("app.scraper.async_playwright") as mock_playwright:
+        with patch("app.services.scraper_service.async_playwright") as mock_playwright:
             mock_browser = AsyncMock()
             mock_context = AsyncMock()
             mock_page = AsyncMock()
@@ -54,7 +54,7 @@ class TestScraperInputValidation:
             mock_playwright.return_value.__aenter__.return_value = mock_pw
 
             # Test with zero timeout
-            await scrape_item("https://example.com", timeout=0)
+            await ScraperService.scrape_item("https://example.com", timeout=0)
 
             # Check that warning was logged
             assert "Invalid timeout value" in caplog.text
@@ -66,7 +66,7 @@ class TestScraperScreenshot:
     @pytest.mark.asyncio
     async def test_screenshot_path_generation(self):
         """Test that screenshot paths are generated correctly."""
-        with patch("app.scraper.async_playwright") as mock_playwright:
+        with patch("app.services.scraper_service.async_playwright") as mock_playwright:
             mock_browser = AsyncMock()
             mock_context = AsyncMock()
             mock_page = AsyncMock()
@@ -82,7 +82,7 @@ class TestScraperScreenshot:
             mock_playwright.return_value.__aenter__.return_value = mock_pw
 
             # Test with item_id
-            path, text = await scrape_item("https://example.com", item_id=123)
+            path, _ = await ScraperService.scrape_item("https://example.com", item_id=123)
 
             assert path == "screenshots/item_123.png"
             mock_page.screenshot.assert_called_once_with(path="screenshots/item_123.png", full_page=False)
@@ -94,13 +94,13 @@ class TestScraperErrorHandling:
     @pytest.mark.asyncio
     async def test_connection_failure(self):
         """Test handling of connection failures."""
-        with patch("app.scraper.async_playwright") as mock_playwright:
+        with patch("app.services.scraper_service.async_playwright") as mock_playwright:
             mock_pw = AsyncMock()
             mock_pw.chromium.connect_over_cdp = AsyncMock(side_effect=Exception("Connection failed"))
             mock_playwright.return_value.__aenter__.return_value = mock_pw
 
             # Should return None on error
-            result, text = await scrape_item("https://example.com")
+            result, text = await ScraperService.scrape_item("https://example.com")
 
             assert result is None
             assert text == ""
@@ -108,7 +108,7 @@ class TestScraperErrorHandling:
     @pytest.mark.asyncio
     async def test_page_load_timeout(self):
         """Test handling of page load timeout."""
-        with patch("app.scraper.async_playwright") as mock_playwright:
+        with patch("app.services.scraper_service.async_playwright") as mock_playwright:
             mock_browser = AsyncMock()
             mock_context = AsyncMock()
             mock_page = AsyncMock()
@@ -123,7 +123,7 @@ class TestScraperErrorHandling:
             mock_playwright.return_value.__aenter__.return_value = mock_pw
 
             # Should continue and try to screenshot
-            result, text = await scrape_item("https://example.com", item_id=1)
+            await ScraperService.scrape_item("https://example.com", item_id=1)
 
             # Even with timeout, should attempt screenshot
             mock_page.screenshot.assert_called_once()

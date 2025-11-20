@@ -1,10 +1,12 @@
 import logging
 import os
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.services.settings_service import SettingsService
 from app.url_validation import URLValidationError, validate_url
 
 logger = logging.getLogger(__name__)
@@ -74,3 +76,67 @@ class ItemService:
         if not item:
             return None
         return item
+
+    @staticmethod
+    def get_item_data_for_checking(db: Session, item_id: int):
+        item = db.query(models.Item).filter(models.Item.id == item_id).first()
+        if not item:
+            return None, None
+
+        profile = item.notification_profile
+        settings_map = {s.key: s.value for s in db.query(models.Settings).all()}
+
+        item_data = {
+            "id": item.id,
+            "url": item.url,
+            "selector": item.selector,
+            "name": item.name,
+            "current_price": item.current_price,
+            "in_stock": item.in_stock,
+            "target_price": item.target_price,
+            "notification_profile": {
+                "apprise_url": profile.apprise_url,
+                "notify_on_price_drop": profile.notify_on_price_drop,
+                "price_drop_threshold_percent": profile.price_drop_threshold_percent,
+                "notify_on_target_price": profile.notify_on_target_price,
+                "notify_on_stock_change": profile.notify_on_stock_change,
+            }
+            if profile
+            else None,
+        }
+
+        config = {
+            "smart_scroll": settings_map.get("smart_scroll_enabled", "false").lower() == "true",
+            "smart_scroll_pixels": int(settings_map.get("smart_scroll_pixels", "350")),
+            "text_context_enabled": settings_map.get("text_context_enabled", "false").lower() == "true",
+            "text_length": int(settings_map.get("text_context_length", "5000"))
+            if settings_map.get("text_context_enabled", "false").lower() == "true"
+            else 0,
+            "scraper_timeout": int(settings_map.get("scraper_timeout", "90000")),
+        }
+        return item_data, config
+
+    @staticmethod
+    def get_due_items(db: Session):
+        items = db.query(models.Item).filter(models.Item.is_active).all()
+        global_interval = int(SettingsService.get_setting_value(db, "refresh_interval_minutes", "60"))
+
+        due_items = []
+        for item in items:
+            if item.is_refreshing:
+                continue
+
+            interval = global_interval
+            if item.notification_profile and item.notification_profile.check_interval_minutes:
+                interval = item.notification_profile.check_interval_minutes
+
+            if item.last_checked:
+                last_checked_aware = (
+                    item.last_checked.replace(tzinfo=UTC) if item.last_checked.tzinfo is None else item.last_checked
+                )
+                time_since_check = (datetime.now(UTC) - last_checked_aware).total_seconds() / 60
+                if time_since_check >= interval:
+                    due_items.append((item.id, interval, int(time_since_check)))
+            else:
+                due_items.append((item.id, interval, -1))
+        return due_items

@@ -192,24 +192,24 @@ class TestPromptGeneration:
     def test_extraction_prompt_without_text(self):
         """Test extraction prompt without text context."""
         prompt = get_extraction_prompt(None)
-        assert "Extract the product price" in prompt
+        assert "Extract product price" in prompt
         assert "JSON" in prompt
         assert "price_confidence" in prompt
-        assert "Context from webpage text" not in prompt
+        assert "**Relevant text from page:**" not in prompt
 
     def test_extraction_prompt_with_text(self):
         """Test extraction prompt with text context."""
         page_text = "Product is in stock for $99.99"
         prompt = get_extraction_prompt(page_text)
-        assert "Extract the product price" in prompt
-        assert "Context from webpage text" in prompt
+        assert "Extract product price" in prompt
+        assert "**Relevant text from page:**" in prompt
         assert "$99.99" in prompt
 
     def test_extraction_prompt_with_long_text(self):
         """Test that long text is truncated."""
         page_text = "A" * 5000
         prompt = get_extraction_prompt(page_text)
-        assert "Context from webpage text" in prompt
+        assert "**Relevant text from page:**" in prompt
         assert "truncated" in prompt
 
     def test_repair_prompt(self):

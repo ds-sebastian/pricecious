@@ -52,7 +52,7 @@ class TestURLValidation:
 
     def test_blocked_scheme_ftp(self):
         """Test that FTP URLs are blocked."""
-        with pytest.raises(URLValidationError, match="Only HTTP/HTTPS"):
+        with pytest.raises(URLValidationError, match="Blocked URL scheme"):
             validate_url("ftp://example.com/file")
 
     def test_localhost_blocked(self):

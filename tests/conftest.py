@@ -1,8 +1,14 @@
+import os
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
+# Set env var before importing app.database
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 from app.database import Base, get_db
 from app.main import app
@@ -42,8 +48,6 @@ def client(db):
     app.dependency_overrides[get_db] = override_get_db
 
     # Mock scheduler to prevent event loop issues
-    from unittest.mock import patch
-
     # Mock SessionLocal to return the test session
     # We need a factory that returns the session, but SessionLocal() creates a new session.
     # So we mock SessionLocal to return a mock that acts like a session but is actually our test session.
