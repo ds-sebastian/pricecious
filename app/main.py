@@ -286,6 +286,11 @@ async def scheduled_refresh():
 
             due_items = []
             for item in items:
+                # Skip if already refreshing (prevents duplicate checks)
+                if item.is_refreshing:
+                    logger.debug(f"Item {item.id} already refreshing, skipping scheduler check")
+                    continue
+                
                 # Determine item's interval
                 interval = global_interval
                 if item.notification_profile and item.notification_profile.check_interval_minutes:
