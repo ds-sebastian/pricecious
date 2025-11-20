@@ -16,32 +16,31 @@ depends_on = None
 
 
 def upgrade():
-    # Add index on price_history.timestamp for time-based queries
-    op.create_index(
-        "ix_price_history_timestamp",
-        "price_history",
-        ["timestamp"],
-        unique=False,
+    # Add indexes only if they don't exist
+    # Using raw SQL with IF NOT EXISTS for safety
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_price_history_timestamp 
+        ON price_history (timestamp)
+        """
     )
-
-    # Add composite index on (item_id, timestamp) for efficient history queries
-    op.create_index(
-        "ix_price_history_item_timestamp",
-        "price_history",
-        ["item_id", "timestamp"],
-        unique=False,
+    
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_price_history_item_timestamp 
+        ON price_history (item_id, timestamp)
+        """
     )
-
-    # Add index on items.is_active for faster active item queries
-    op.create_index(
-        "ix_items_is_active",
-        "items",
-        ["is_active"],
-        unique=False,
+    
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_items_is_active 
+        ON items (is_active)
+        """
     )
 
 
 def downgrade():
-    op.drop_index("ix_items_is_active", table_name="items")
-    op.drop_index("ix_price_history_item_timestamp", table_name="price_history")
-    op.drop_index("ix_price_history_timestamp", table_name="price_history")
+    op.drop_index("ix_items_is_active", table_name="items", if_exists=True)
+    op.drop_index("ix_price_history_item_timestamp", table_name="price_history", if_exists=True)
+    op.drop_index("ix_price_history_timestamp", table_name="price_history", if_exists=True)
