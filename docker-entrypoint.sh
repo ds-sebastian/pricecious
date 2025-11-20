@@ -3,7 +3,6 @@ set -e
 
 echo "Setting up screenshots directory..."
 mkdir -p screenshots
-chmod 755 screenshots
 
 echo "Running database migrations..."
 alembic upgrade head

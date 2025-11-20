@@ -14,9 +14,6 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Create non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
@@ -38,11 +35,8 @@ RUN chmod +x docker-entrypoint.sh
 # Copy built frontend static files
 COPY --from=frontend-build /app/frontend/dist /app/static
 
-# Create screenshots directory and set permissions
-RUN mkdir -p screenshots && chown -R appuser:appuser /app
-
-# Switch to non-root user
-USER appuser
+# Create screenshots directory
+RUN mkdir -p screenshots
 
 # Expose port
 EXPOSE 8000
