@@ -22,7 +22,24 @@ async def scrape_item(  # noqa: PLR0913, PLR0912, PLR0915
     """
     Scrapes the given URL using Browserless and Playwright.
     Returns a tuple: (screenshot_path, page_text)
+
+    Args:
+        url: Target URL to scrape
+        selector: Optional CSS selector to focus on
+        item_id: Optional item ID for screenshot naming
+        smart_scroll: Enable scrolling to load lazy content
+        scroll_pixels: Number of pixels to scroll (must be positive)
+        text_length: Number of characters to extract (0 = disabled)
+        timeout: Page load timeout in milliseconds
     """
+    # Input validation
+    if scroll_pixels <= 0:
+        logger.warning(f"Invalid scroll_pixels value: {scroll_pixels}, using default 350")
+        scroll_pixels = 350
+
+    if timeout <= 0:
+        logger.warning(f"Invalid timeout value: {timeout}, using default 90000")
+        timeout = 90000
     async with async_playwright() as p:
         browser = None
         try:
@@ -33,7 +50,7 @@ async def scrape_item(  # noqa: PLR0913, PLR0912, PLR0915
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/91.0.4472.124 Safari/537.36"
+                    "Chrome/120.0.0.0 Safari/537.36"
                 ),
             )
 
@@ -87,14 +104,14 @@ async def scrape_item(  # noqa: PLR0913, PLR0912, PLR0915
                         # Try to click it. If it fails, catch and continue
                         await page.locator(popup_selector).first.click(timeout=2000)
                         await page.wait_for_timeout(1000)  # Wait for animation
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Could not close popup with selector {popup_selector}: {e}")
 
             # Also try pressing Escape
             try:
                 await page.keyboard.press("Escape")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Could not press Escape key: {e}")
 
             if selector:
                 try:

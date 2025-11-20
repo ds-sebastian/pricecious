@@ -20,6 +20,8 @@ dependencies = [
     "aiofiles",
     "litellm",
     "alembic",
+    "tenacity",
+    "slowapi",
 ]
 
 [build-system]
@@ -39,6 +41,7 @@ dev = [
   "mypy",
   "bandit",
   "pip-audit",
+  "pre-commit",
 ]
 
 [tool.hatch.envs.default]

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -10,6 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from . import ai, database, models, notifications, scraper
@@ -27,7 +31,33 @@ logger = logging.getLogger(__name__)
 
 VERSION = "0.1.0"
 
-app = FastAPI(title="Pricecious API", version=VERSION)
+# Scheduler
+scheduler = AsyncIOScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Modern FastAPI lifespan context manager for startup and shutdown events."""
+    # Startup
+    logger.info("Starting smart scheduler (Heartbeat: 1 minute)")
+    scheduler.add_job(scheduled_refresh, IntervalTrigger(minutes=1), id="refresh_job", replace_existing=True)
+    scheduler.start()
+    logger.info("Application started")
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down scheduler...")
+    scheduler.shutdown(wait=True)
+    logger.info("Application shutdown complete")
+
+
+app = FastAPI(title="Pricecious API", version=VERSION, lifespan=lifespan)
+
+# Rate Limiting
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS Configuration
 # In production, replace ["*"] with your frontend domain
@@ -134,7 +164,7 @@ def get_notification_profiles(db: Session = Depends(database.get_db)):  # noqa: 
 
 @api_router.post("/notification-profiles", response_model=NotificationProfileResponse)
 def create_notification_profile(profile: NotificationProfileCreate, db: Session = Depends(database.get_db)):  # noqa: B008
-    db_profile = models.NotificationProfile(**profile.dict())
+    db_profile = models.NotificationProfile(**profile.model_dump())
     db.add(db_profile)
     db.commit()
     db.refresh(db_profile)
@@ -176,7 +206,7 @@ def create_item(item: ItemCreate, db: Session = Depends(database.get_db)):  # no
     except URLValidationError as e:
         raise HTTPException(status_code=400, detail=f"Invalid URL: {e}") from e
 
-    db_item = models.Item(**item.dict())
+    db_item = models.Item(**item.model_dump())
     db.add(db_item)
     db.commit()
     db.refresh(db_item)
@@ -190,7 +220,7 @@ def update_item(item_id: int, item_update: ItemCreate, db: Session = Depends(dat
     if not db_item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    for key, value in item_update.dict().items():
+    for key, value in item_update.model_dump().items():
         setattr(db_item, key, value)
 
     db.commit()
@@ -217,7 +247,10 @@ def delete_item(item_id: int, db: Session = Depends(database.get_db)):  # noqa: 
 
 
 @api_router.post("/items/{item_id}/check")
-def check_item(item_id: int, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):  # noqa: B008
+@limiter.limit("10/minute")
+def check_item(
+    request: Request, item_id: int, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)
+):  # noqa: B008
     item = db.query(models.Item).filter(models.Item.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -234,11 +267,8 @@ def check_item(item_id: int, background_tasks: BackgroundTasks, db: Session = De
     return {"message": "Check triggered"}
 
 
-# Scheduler
-scheduler = AsyncIOScheduler()
-
-
 async def scheduled_refresh():
+    """Background job that runs every minute to check for items due for refresh."""
     logger.info("Heartbeat: Checking for items due for refresh")
     # Use module-level import
     SessionLocal = database.SessionLocal
@@ -264,7 +294,9 @@ async def scheduled_refresh():
                 # Check if due
                 if item.last_checked:
                     # Ensure last_checked is timezone-aware for comparison
-                    last_checked_aware = item.last_checked.replace(tzinfo=UTC) if item.last_checked.tzinfo is None else item.last_checked
+                    last_checked_aware = (
+                        item.last_checked.replace(tzinfo=UTC) if item.last_checked.tzinfo is None else item.last_checked
+                    )
                     time_since_check = (datetime.now(UTC) - last_checked_aware).total_seconds() / 60
                     if time_since_check >= interval:
                         due_items.append((item.id, interval, int(time_since_check)))
@@ -292,15 +324,7 @@ async def scheduled_refresh():
             logger.info(f"Heartbeat: Triggered checks for {triggered_count} items")
 
     except Exception as e:
-        logger.error(f"Error in scheduled refresh: {e}")
-
-
-@app.on_event("startup")
-async def start_scheduler():
-    logger.info("Starting smart scheduler (Heartbeat: 1 minute)")
-    # Run every minute to check if any items are due
-    scheduler.add_job(scheduled_refresh, IntervalTrigger(minutes=1), id="refresh_job", replace_existing=True)
-    scheduler.start()
+        logger.error(f"Error in scheduled refresh: {e}", exc_info=True)
 
 
 @api_router.get("/jobs/config")
@@ -350,7 +374,8 @@ def update_job_config(config: SettingsUpdate, db: Session = Depends(database.get
 
 
 @api_router.post("/jobs/refresh-all")
-def refresh_all_items(background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):  # noqa: B008
+@limiter.limit("5/minute")
+def refresh_all_items(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):  # noqa: B008
     items = db.query(models.Item).filter(models.Item.is_active).all()
     logger.info(f"Triggering refresh for all {len(items)} items")
     for item in items:

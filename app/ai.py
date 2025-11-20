@@ -11,11 +11,13 @@ import io
 import json
 import logging
 import re
+import time
 from typing import Any
 
 from litellm import acompletion
 from PIL import Image
 from pydantic import ValidationError
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.ai_schema import (
     PROMPT_VERSION,
@@ -34,9 +36,21 @@ DEFAULT_MODEL = "gemma3:4b"
 DEFAULT_API_BASE = "http://ollama:11434"
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_MAX_TOKENS = 300
+DEFAULT_TIMEOUT = 30  # seconds
 MAX_TEXT_LENGTH = 5000  # Will be filtered to ~1500-2000 relevant chars
 
+# Config caching
+_config_cache = {"data": None, "timestamp": 0}
+CONFIG_CACHE_TTL = 60  # seconds
+
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_api_key(key: str) -> str:
+    """Redact API key for logging (show first/last 4 chars only)."""
+    if not key or len(key) < 12:
+        return "***"
+    return f"{key[:4]}...{key[-4:]}"
 
 
 def _process_image(image_path):
@@ -97,25 +111,40 @@ def clean_text(text: str) -> str:
 
 def get_ai_config():
     """
-    Fetches AI configuration from the database.
-    Returns a dict with: provider, model, api_key, api_base, temperature, max_tokens
+    Fetches AI configuration from the database with caching.
+    Returns a dict with: provider, model, api_key, api_base, temperature, max_tokens, timeout
     """
+    global _config_cache
+
+    # Check cache
+    now = time.time()
+    if _config_cache["data"] and (now - _config_cache["timestamp"]) < CONFIG_CACHE_TTL:
+        return _config_cache["data"]
+
+    # Fetch from DB
     session = SessionLocal()
     try:
         settings = session.query(models.Settings).all()
         settings_map = {s.key: s.value for s in settings}
 
-        return {
+        config = {
             "provider": settings_map.get("ai_provider", DEFAULT_PROVIDER),
             "model": settings_map.get("ai_model", DEFAULT_MODEL),
             "api_key": settings_map.get("ai_api_key", ""),
             "api_base": settings_map.get("ai_api_base", DEFAULT_API_BASE),
             "temperature": float(settings_map.get("ai_temperature", str(DEFAULT_TEMPERATURE))),
             "max_tokens": int(settings_map.get("ai_max_tokens", str(DEFAULT_MAX_TOKENS))),
+            "timeout": int(settings_map.get("ai_timeout", str(DEFAULT_TIMEOUT))),
             "enable_json_repair": settings_map.get("enable_json_repair", "true").lower() == "true",
             "enable_multi_sample": settings_map.get("enable_multi_sample", "false").lower() == "true",
             "multi_sample_threshold": float(settings_map.get("multi_sample_confidence_threshold", "0.6")),
         }
+
+        # Update cache
+        _config_cache["data"] = config
+        _config_cache["timestamp"] = now
+
+        return config
     except Exception as e:
         logger.error(f"Error fetching AI config: {e}")
         return {
@@ -125,6 +154,7 @@ def get_ai_config():
             "api_base": DEFAULT_API_BASE,
             "temperature": DEFAULT_TEMPERATURE,
             "max_tokens": DEFAULT_MAX_TOKENS,
+            "timeout": DEFAULT_TIMEOUT,
             "enable_json_repair": True,
             "enable_multi_sample": False,
             "multi_sample_threshold": 0.6,
@@ -166,7 +196,7 @@ def parse_and_validate_response(response_text: str) -> AIExtractionResponse:
 
 
 async def repair_json_response(
-    raw_output: str, provider: str, model: str, api_key: str, api_base: str, temperature: float
+    raw_output: str, provider: str, model: str, api_key: str, api_base: str, temperature: float, timeout: int
 ) -> AIExtractionResponse:
     """
     Attempt to repair invalid JSON using a second LLM call.
@@ -178,6 +208,7 @@ async def repair_json_response(
         api_key: API key
         api_base: API base URL
         temperature: Temperature setting
+        timeout: Request timeout in seconds
 
     Returns:
         Validated AIExtractionResponse
@@ -196,6 +227,7 @@ async def repair_json_response(
         "messages": [{"role": "user", "content": repair_prompt}],
         "max_tokens": 300,
         "temperature": 0.0,  # Very deterministic for repair
+        "timeout": timeout,
     }
 
     if api_key:
@@ -214,6 +246,12 @@ async def repair_json_response(
     return parse_and_validate_response(repaired_text)
 
 
+@retry(
+    retry=retry_if_exception_type((TimeoutError, ConnectionError)),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    reraise=True,
+)
 async def call_llm(
     prompt: str,
     image_data_url: str,
@@ -223,12 +261,17 @@ async def call_llm(
     api_base: str,
     temperature: float,
     max_tokens: int,
+    timeout: int,
 ) -> str:
     """
-    Call LLM with structured output settings.
+    Call LLM with structured output settings and retry logic.
 
     Returns:
         Raw response text from the model
+
+    Raises:
+        TimeoutError: If request times out after retries
+        ConnectionError: If connection fails after retries
     """
     messages = [
         {
@@ -246,6 +289,7 @@ async def call_llm(
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": temperature,
+        "timeout": timeout,
     }
 
     if api_key:
@@ -269,7 +313,10 @@ async def call_llm(
         kwargs["api_base"] = api_base
 
     # Call litellm asynchronously
-    logger.info(f"Calling {provider}/{model} (temp={temperature}, max_tokens={max_tokens})")
+    sanitized_key = _sanitize_api_key(api_key) if api_key else "(none)"
+    logger.info(
+        f"Calling {provider}/{model} (temp={temperature}, max_tokens={max_tokens}, timeout={timeout}s, key={sanitized_key})"
+    )
     response = await acompletion(**kwargs)
 
     return response.choices[0].message.content
@@ -300,9 +347,10 @@ async def analyze_image(
         api_base = config["api_base"]
         temperature = config["temperature"]
         max_tokens = config["max_tokens"]
+        timeout = config["timeout"]
         enable_repair = config["enable_json_repair"]
 
-        logger.info(f"Analyzing image with Provider: {provider}, Model: {model}")
+        logger.info(f"Analyzing image with Provider: {provider}, Model: {model}, Timeout: {timeout}s")
 
         # Encode image
         base64_image = await encode_image(image_path)
@@ -319,7 +367,9 @@ async def analyze_image(
         prompt = get_extraction_prompt(cleaned_text if cleaned_text else None)
 
         # Call LLM
-        response_text = await call_llm(prompt, data_url, provider, model, api_key, api_base, temperature, max_tokens)
+        response_text = await call_llm(
+            prompt, data_url, provider, model, api_key, api_base, temperature, max_tokens, timeout
+        )
 
         logger.info(f"AI Response: {response_text[:200]}...")
 
@@ -333,7 +383,7 @@ async def analyze_image(
             if enable_repair:
                 try:
                     extraction_result = await repair_json_response(
-                        response_text, provider, model, api_key, api_base, temperature
+                        response_text, provider, model, api_key, api_base, temperature, timeout
                     )
                     repair_used = True
                     logger.info("JSON repair successful")

@@ -1,10 +1,12 @@
 """URL validation utilities for security."""
+
 import re
 from urllib.parse import urlparse
 
 
 class URLValidationError(Exception):
     """Raised when URL validation fails."""
+
     pass
 
 
@@ -28,11 +30,11 @@ PRIVATE_IP_PATTERNS = [
 def validate_url(url: str, allow_private: bool = False) -> None:
     """
     Validate URL for security (SSRF prevention).
-    
+
     Args:
         url: URL to validate
         allow_private: Allow private/internal IPs (default: False)
-        
+
     Raises:
         URLValidationError: If URL is invalid or blocked
     """
