@@ -1,6 +1,6 @@
 """Add confidence and AI metadata
 
-Revision ID: add_confidence_metadata
+Revision ID: a1b2c3d4e5f6
 Revises: 6ecb6f39fd8c
 Create Date: 2025-11-19 13:55:00.000000
 
@@ -17,7 +17,7 @@ target_metadata = Base.metadata
 
 
 # revision identifiers, used by Alembic.
-revision: str = "add_confidence_metadata"
+revision: str = "a1b2c3d4e5f6"
 down_revision: str | None = "6ecb6f39fd8c"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

@@ -30,6 +30,10 @@ RUN uv pip install --system --no-cache .
 # Copy backend code
 COPY app/ ./app
 COPY alembic.ini ./
+COPY docker-entrypoint.sh ./
+
+# Make entrypoint executable
+RUN chmod +x docker-entrypoint.sh
 
 # Copy built frontend static files
 COPY --from=frontend-build /app/frontend/dist /app/static
@@ -47,4 +51,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/')" || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["./docker-entrypoint.sh"]

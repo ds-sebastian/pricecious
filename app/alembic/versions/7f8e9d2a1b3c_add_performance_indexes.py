@@ -1,15 +1,17 @@
 """add_performance_indexes
 
 Revision ID: 7f8e9d2a1b3c
-Revises: 6ecb6f39fd8c
+Revises: a1b2c3d4e5f6
 Create Date: 2025-11-19 19:14:00.000000
 
 """
 from alembic import op
+import sqlalchemy as sa
+
 
 # revision identifiers, used by Alembic.
 revision = '7f8e9d2a1b3c'
-down_revision = '6ecb6f39fd8c'
+down_revision = 'a1b2c3d4e5f6'
 branch_labels = None
 depends_on = None
 
