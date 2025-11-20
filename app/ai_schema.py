@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.utils.text import filter_relevant_text
+
 # Schema version for tracking prompt/schema changes
 PROMPT_VERSION = "v2.0"
 
@@ -176,8 +178,6 @@ def get_extraction_prompt(page_text: str | None = None) -> str:
     Returns:
         Formatted prompt string
     """
-    from app.utils.text import filter_relevant_text
-
     if page_text:
         # Apply smart filtering to extract only relevant snippets
         filtered_text = filter_relevant_text(page_text, max_length=1500)
