@@ -37,4 +37,4 @@ README.md
 tests/
 .env
 docker-compose.yml
-alembic.ini
+
