@@ -32,8 +32,6 @@ screenshots/*.png
 .git/
 .github/
 .gitignore
-README.md
-*.md
 tests/
 .env
 docker-compose.yml

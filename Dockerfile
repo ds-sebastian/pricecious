@@ -20,7 +20,10 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# Copy build files
 COPY pyproject.toml .
+COPY README.md .
+
 # Use uv for faster installation (fixed syntax)
 RUN uv pip install --system --no-cache .
 
