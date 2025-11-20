@@ -18,6 +18,11 @@ DEFAULT_PRICE_CONFIDENCE_THRESHOLD = 0.5
 DEFAULT_STOCK_CONFIDENCE_THRESHOLD = 0.5
 DEFAULT_MULTI_SAMPLE_THRESHOLD = 0.6
 
+# Text filtering constants
+MIN_SNIPPET_LENGTH = 10
+SNIPPET_MERGE_DISTANCE = 50
+SNIPPET_CONTEXT_WINDOW = 100
+
 
 class AIExtractionResponse(BaseModel):
     """
@@ -161,6 +166,31 @@ Text to convert:
 {raw_output}"""
 
 
+def _find_matches(text: str, text_lower: str, keyword: str) -> list[tuple[int, str]]:
+    snippets = []
+    if keyword.startswith("r\\"):
+        pattern = keyword[1:]  # Remove 'r' prefix
+        for match in re.finditer(pattern, text_lower, re.IGNORECASE):
+            start = max(0, match.start() - SNIPPET_CONTEXT_WINDOW)
+            end = min(len(text), match.end() + SNIPPET_CONTEXT_WINDOW)
+            snippet = text[start:end].strip()
+            if snippet and len(snippet) > MIN_SNIPPET_LENGTH:
+                snippets.append((start, snippet))
+    else:
+        pos = 0
+        while True:
+            pos = text_lower.find(keyword.lower(), pos)
+            if pos == -1:
+                break
+            start = max(0, pos - SNIPPET_CONTEXT_WINDOW)
+            end = min(len(text), pos + len(keyword) + SNIPPET_CONTEXT_WINDOW)
+            snippet = text[start:end].strip()
+            if snippet and len(snippet) > MIN_SNIPPET_LENGTH:
+                snippets.append((start, snippet))
+            pos += 1
+    return snippets
+
+
 def filter_relevant_text(text: str, max_length: int = 2000) -> str:
     """
     Filter text to extract only relevant snippets around price and stock indicators.
@@ -208,34 +238,12 @@ def filter_relevant_text(text: str, max_length: int = 2000) -> str:
 
     all_keywords = price_keywords + stock_keywords
     snippets = []
-    context_window = 100  # Characters before and after match
 
     text_lower = text.lower()
 
     # Find all matches and extract context
     for keyword in all_keywords:
-        # Use regex for pattern-based keywords
-        if keyword.startswith("r\\"):
-            pattern = keyword[1:]  # Remove 'r' prefix
-            for match in re.finditer(pattern, text_lower, re.IGNORECASE):
-                start = max(0, match.start() - context_window)
-                end = min(len(text), match.end() + context_window)
-                snippet = text[start:end].strip()
-                if snippet and len(snippet) > 10:  # Avoid tiny snippets
-                    snippets.append((start, snippet))
-        else:
-            # Simple substring search
-            pos = 0
-            while True:
-                pos = text_lower.find(keyword.lower(), pos)
-                if pos == -1:
-                    break
-                start = max(0, pos - context_window)
-                end = min(len(text), pos + len(keyword) + context_window)
-                snippet = text[start:end].strip()
-                if snippet and len(snippet) > 10:
-                    snippets.append((start, snippet))
-                pos += 1
+        snippets.extend(_find_matches(text, text_lower, keyword))
 
     if not snippets:
         # No matches found, return beginning of text
@@ -249,8 +257,8 @@ def filter_relevant_text(text: str, max_length: int = 2000) -> str:
 
     for start, snippet in snippets[1:]:
         end = start + len(snippet)
-        # If overlapping or close together (within 50 chars), merge
-        if start <= current_end + 50:
+        # If overlapping or close together, merge
+        if start <= current_end + SNIPPET_MERGE_DISTANCE:
             # Extend current snippet
             if end > current_end:
                 # Merge overlapping text

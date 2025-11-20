@@ -61,6 +61,8 @@ ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["PLR2004"]
+"app/routers/*" = ["B008"]
+"app/main.py" = ["B008"]
 
 
 [tool.pytest.ini_options]
