@@ -32,8 +32,13 @@ packages = ["app"]
 [project.optional-dependencies]
 dev = [
   "pytest",
+  "pytest-asyncio",
+  "pytest-cov",
   "ruff",
   "httpx",
+  "mypy",
+  "bandit",
+  "pip-audit",
 ]
 
 [tool.hatch.envs.default]
@@ -58,3 +63,30 @@ ignore = []
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+addopts = "--cov=app --cov-report=html --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["*/tests/*", "*/alembic/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # Enable gradually
+ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = ["tests", "app/alembic"]
+skips = ["B101"]  # Skip assert_used (common in tests)

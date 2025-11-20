@@ -1,11 +1,12 @@
 import asyncio
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -27,6 +28,17 @@ logger = logging.getLogger(__name__)
 VERSION = "0.1.0"
 
 app = FastAPI(title="Pricecious API", version=VERSION)
+
+# CORS Configuration
+# In production, replace ["*"] with your frontend domain
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # Middleware for logging requests
@@ -64,8 +76,7 @@ class NotificationProfileCreate(BaseModel):
 class NotificationProfileResponse(NotificationProfileCreate):
     id: int
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class ItemCreate(BaseModel):
@@ -91,8 +102,7 @@ class ItemResponse(ItemCreate):
     last_error: str | None = None
     screenshot_url: str | None = None
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
     @staticmethod
     def resolve_screenshot_url(item_id: int):
@@ -157,6 +167,15 @@ def get_items(db: Session = Depends(database.get_db)):  # noqa: B008
 @api_router.post("/items", response_model=ItemResponse)
 def create_item(item: ItemCreate, db: Session = Depends(database.get_db)):  # noqa: B008
     logger.info(f"Creating item: {item.name} - {item.url}")
+
+    # Validate URL for security (SSRF prevention)
+    from .url_validation import URLValidationError, validate_url
+
+    try:
+        validate_url(item.url)
+    except URLValidationError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid URL: {e}") from e
+
     db_item = models.Item(**item.dict())
     db.add(db_item)
     db.commit()
@@ -244,7 +263,7 @@ async def scheduled_refresh():
 
                 # Check if due
                 if item.last_checked:
-                    time_since_check = (datetime.utcnow() - item.last_checked).total_seconds() / 60
+                    time_since_check = (datetime.now(UTC) - item.last_checked).total_seconds() / 60
                     if time_since_check >= interval:
                         due_items.append((item.id, interval, int(time_since_check)))
                 else:
@@ -337,7 +356,7 @@ def refresh_all_items(background_tasks: BackgroundTasks, db: Session = Depends(d
     return {"message": f"Triggered refresh for {len(items)} items"}
 
 
-async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912, PLR0915
+async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0915
     """
     Background task to check an item's price/stock.
     Creates its own DB session to ensure thread safety and avoid closed session errors.
@@ -403,10 +422,6 @@ async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912
             session.close()
 
     item_data, config = await loop.run_in_executor(None, get_item_data)
-
-    if not item_data:
-        logger.error(f"process_item_check: Item ID {item_id} not found")
-        return
 
     if not item_data:
         logger.error(f"process_item_check: Item ID {item_id} not found")
@@ -522,7 +537,7 @@ async def process_item_check(item_id: int, db: Session = None):  # noqa: PLR0912
                             )
                             session.add(history)
 
-                        item.last_checked = datetime.utcnow()
+                        item.last_checked = datetime.now(UTC)
                         item.is_refreshing = False  # Reset refreshing state
                         # Only clear error if no new error was set
                         if not item.last_error or not item.last_error.startswith("Uncertain:"):
