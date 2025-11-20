@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Sun, Clock, Cpu, Settings as SettingsIcon, Bell, Trash2 } from 'lucide-react';
+import { Sun, Clock, Cpu, Settings as SettingsIcon, Bell, Trash2, ChevronDown, ChevronUp, Edit2, CheckCircle2, AlertCircle, TrendingDown, DollarSign, Package } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
+import { cn } from '@/lib/utils';
 
 const API_URL = '/api';
 
@@ -41,6 +43,7 @@ export default function Settings() {
     });
 
     const [editingProfileId, setEditingProfileId] = useState(null);
+    const [showAdvancedAI, setShowAdvancedAI] = useState(false);
 
     useEffect(() => {
         fetchAll();
@@ -174,7 +177,7 @@ export default function Settings() {
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500 max-w-5xl mx-auto">
+        <div className="space-y-6 animate-in fade-in duration-500 max-w-5xl mx-auto pb-10">
             <div>
                 <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
                 <p className="text-muted-foreground">Configure application preferences and notifications.</p>
@@ -186,7 +189,7 @@ export default function Settings() {
                     <CardTitle className="flex items-center gap-2"><Cpu className="h-5 w-5" />AI Configuration</CardTitle>
                     <CardDescription>Configure the AI model used for analyzing product pages.</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label>Provider</Label>
@@ -205,35 +208,85 @@ export default function Settings() {
                         </div>
                     </div>
                     <div className="space-y-2">
-                        <Label>API Base URL</Label>
-                        <Input value={config.ai_api_base} onChange={(e) => updateSetting('ai_api_base', e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
                         <Label>API Key</Label>
                         <Input type="password" value={config.ai_api_key} onChange={(e) => updateSetting('ai_api_key', e.target.value)} placeholder="Optional for local models" />
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
-                        <div className="space-y-2">
-                            <Label>Temperature</Label>
-                            <Input type="number" step="0.1" min="0" max="1" value={config.ai_temperature} onChange={(e) => updateSetting('ai_temperature', parseFloat(e.target.value))} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Max Tokens</Label>
-                            <Input type="number" value={config.ai_max_tokens} onChange={(e) => updateSetting('ai_max_tokens', parseInt(e.target.value))} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Price Confidence</Label>
-                            <Input type="number" step="0.1" min="0" max="1" value={config.confidence_threshold_price} onChange={(e) => updateSetting('confidence_threshold_price', parseFloat(e.target.value))} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Stock Confidence</Label>
-                            <Input type="number" step="0.1" min="0" max="1" value={config.confidence_threshold_stock} onChange={(e) => updateSetting('confidence_threshold_stock', parseFloat(e.target.value))} />
-                        </div>
+
+                    <div className="pt-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full flex items-center justify-between"
+                            onClick={() => setShowAdvancedAI(!showAdvancedAI)}
+                        >
+                            <span>Advanced Settings</span>
+                            {showAdvancedAI ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </Button>
                     </div>
-                    <div className="flex items-center justify-between pt-2">
-                        <Label htmlFor="json_repair">Enable JSON Repair</Label>
-                        <Switch id="json_repair" checked={config.enable_json_repair} onCheckedChange={(checked) => updateSetting('enable_json_repair', checked)} />
-                    </div>
+
+                    {showAdvancedAI && (
+                        <div className="space-y-6 pt-4 animate-in slide-in-from-top-2 duration-200">
+                            <div className="space-y-2">
+                                <Label>API Base URL</Label>
+                                <Input value={config.ai_api_base} onChange={(e) => updateSetting('ai_api_base', e.target.value)} />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between">
+                                            <Label>Temperature</Label>
+                                            <span className="text-xs text-muted-foreground">{config.ai_temperature}</span>
+                                        </div>
+                                        <Slider
+                                            min={0}
+                                            max={1}
+                                            step={0.1}
+                                            value={config.ai_temperature}
+                                            onChange={(e) => updateSetting('ai_temperature', parseFloat(e.target.value))}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between">
+                                            <Label>Price Confidence Threshold</Label>
+                                            <span className="text-xs text-muted-foreground">{config.confidence_threshold_price}</span>
+                                        </div>
+                                        <Slider
+                                            min={0}
+                                            max={1}
+                                            step={0.1}
+                                            value={config.confidence_threshold_price}
+                                            onChange={(e) => updateSetting('confidence_threshold_price', parseFloat(e.target.value))}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between">
+                                            <Label>Stock Confidence Threshold</Label>
+                                            <span className="text-xs text-muted-foreground">{config.confidence_threshold_stock}</span>
+                                        </div>
+                                        <Slider
+                                            min={0}
+                                            max={1}
+                                            step={0.1}
+                                            value={config.confidence_threshold_stock}
+                                            onChange={(e) => updateSetting('confidence_threshold_stock', parseFloat(e.target.value))}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label>Max Tokens</Label>
+                                        <Input type="number" value={config.ai_max_tokens} onChange={(e) => updateSetting('ai_max_tokens', parseInt(e.target.value))} />
+                                    </div>
+                                    <div className="flex items-center justify-between pt-2">
+                                        <Label htmlFor="json_repair">Enable JSON Repair</Label>
+                                        <Switch id="json_repair" checked={config.enable_json_repair} onCheckedChange={(checked) => updateSetting('enable_json_repair', checked)} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 
@@ -302,8 +355,8 @@ export default function Settings() {
                     <CardTitle className="flex items-center gap-2"><Bell className="h-5 w-5" />Notification Profiles</CardTitle>
                     <CardDescription>Manage notification settings for different groups of items.</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6">
-                    <form onSubmit={handleProfileSubmit} className="space-y-4 border-b pb-6">
+                <CardContent className="space-y-8">
+                    <form onSubmit={handleProfileSubmit} className="space-y-4 border-b pb-8">
                         <div className="flex items-center justify-between">
                             <h4 className="text-sm font-medium">{editingProfileId ? 'Edit Profile' : 'Create New Profile'}</h4>
                             {editingProfileId && (
@@ -352,20 +405,59 @@ export default function Settings() {
                         {profiles.length === 0 ? (
                             <p className="text-sm text-muted-foreground">No profiles created yet.</p>
                         ) : (
-                            <div className="grid gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {profiles.map(profile => (
-                                    <div key={profile.id} className={`flex items-center justify-between rounded-lg border p-4 ${editingProfileId === profile.id ? 'border-primary bg-primary/5' : ''}`}>
-                                        <div>
-                                            <p className="font-medium">{profile.name}</p>
-                                            <p className="text-xs text-muted-foreground truncate max-w-[200px]">{profile.apprise_url}</p>
+                                    <div key={profile.id} className={cn(
+                                        "relative group overflow-hidden rounded-xl border bg-card text-card-foreground shadow transition-all hover:shadow-md",
+                                        editingProfileId === profile.id && "ring-2 ring-primary"
+                                    )}>
+                                        <div className="p-6 space-y-4">
+                                            <div className="flex items-start justify-between">
+                                                <div>
+                                                    <h3 className="font-semibold leading-none tracking-tight">{profile.name}</h3>
+                                                    <p className="text-sm text-muted-foreground mt-1 truncate max-w-[200px]" title={profile.apprise_url}>{profile.apprise_url}</p>
+                                                </div>
+                                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => editProfile(profile)}>
+                                                        <Edit2 className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => deleteProfile(profile.id)}>
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4 text-sm">
+                                                <div className="flex items-center gap-2">
+                                                    <Clock className="h-4 w-4 text-muted-foreground" />
+                                                    <span>{profile.check_interval_minutes}m interval</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <TrendingDown className="h-4 w-4 text-muted-foreground" />
+                                                    <span>{profile.price_drop_threshold_percent}% drop</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-wrap gap-2 pt-2">
+                                                {profile.notify_on_price_drop && (
+                                                    <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80">
+                                                        <DollarSign className="mr-1 h-3 w-3" /> Price Drop
+                                                    </span>
+                                                )}
+                                                {profile.notify_on_target_price && (
+                                                    <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80">
+                                                        <CheckCircle2 className="mr-1 h-3 w-3" /> Target Hit
+                                                    </span>
+                                                )}
+                                                {profile.notify_on_stock_change && (
+                                                    <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80">
+                                                        <Package className="mr-1 h-3 w-3" /> Stock Change
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <Button variant="outline" size="sm" onClick={() => editProfile(profile)}>
-                                                Edit
-                                            </Button>
-                                            <Button variant="ghost" size="icon" onClick={() => deleteProfile(profile.id)}>
-                                                <Trash2 className="h-4 w-4 text-destructive" />
-                                            </Button>
+                                        <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+                                            <Bell className="h-24 w-24" />
                                         </div>
                                     </div>
                                 ))}
