@@ -1,14 +1,14 @@
 import logging
 import os
-from datetime import UTC, datetime
 
-from sqlalchemy.orm import Session
 from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.url_validation import URLValidationError, validate_url
 
 logger = logging.getLogger(__name__)
+
 
 class ItemService:
     @staticmethod

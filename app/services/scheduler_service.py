@@ -3,15 +3,14 @@ import logging
 from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy.orm import Session
 
-from app import models, database, ai, scraper, notifications
+from app import ai, database, models, notifications, scraper
 from app.services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
+
 
 async def process_item_check(item_id: int):
     """
@@ -45,14 +44,18 @@ async def process_item_check(item_id: int):
                     "price_drop_threshold_percent": profile.price_drop_threshold_percent,
                     "notify_on_target_price": profile.notify_on_target_price,
                     "notify_on_stock_change": profile.notify_on_stock_change,
-                } if profile else None,
+                }
+                if profile
+                else None,
             }
 
             config = {
                 "smart_scroll": settings_map.get("smart_scroll_enabled", "false").lower() == "true",
                 "smart_scroll_pixels": int(settings_map.get("smart_scroll_pixels", "350")),
                 "text_context_enabled": settings_map.get("text_context_enabled", "false").lower() == "true",
-                "text_length": int(settings_map.get("text_context_length", "5000")) if settings_map.get("text_context_enabled", "false").lower() == "true" else 0,
+                "text_length": int(settings_map.get("text_context_length", "5000"))
+                if settings_map.get("text_context_enabled", "false").lower() == "true"
+                else 0,
                 "scraper_timeout": int(settings_map.get("scraper_timeout", "90000")),
             }
             return item_data, config
@@ -67,7 +70,7 @@ async def process_item_check(item_id: int):
 
     try:
         logger.info(f"Checking item: {item_data['name']} ({item_data['url']})")
-        
+
         screenshot_path, page_text = await scraper.scrape_item(
             item_data["url"],
             item_data["selector"],
@@ -170,14 +173,24 @@ async def process_item_check(item_id: int):
                                     f"Price dropped by {drop_percent:.1f}%! Now ${price} (was ${old_price})",
                                 )
 
-                    if profile["notify_on_target_price"] and price is not None and item_data["target_price"] and price <= item_data["target_price"]:
+                    if (
+                        profile["notify_on_target_price"]
+                        and price is not None
+                        and item_data["target_price"]
+                        and price <= item_data["target_price"]
+                    ):
                         await notifications.send_notification(
                             [profile["apprise_url"]],
                             f"Target Price Alert: {item_data['name']}",
                             f"Price is ${price} (Target: ${item_data['target_price']})",
                         )
 
-                    if profile["notify_on_stock_change"] and in_stock is not None and old_stock is not None and in_stock != old_stock:
+                    if (
+                        profile["notify_on_stock_change"]
+                        and in_stock is not None
+                        and old_stock is not None
+                        and in_stock != old_stock
+                    ):
                         status = "In Stock" if in_stock else "Out of Stock"
                         await notifications.send_notification(
                             [profile["apprise_url"]],
@@ -191,6 +204,7 @@ async def process_item_check(item_id: int):
 
     except Exception as e:
         logger.error(f"Error in process_item_check: {e}")
+
         def update_db_error():
             session = SessionLocal()
             try:
@@ -201,6 +215,7 @@ async def process_item_check(item_id: int):
                     session.commit()
             finally:
                 session.close()
+
         await loop.run_in_executor(None, update_db_error)
 
 
@@ -220,13 +235,15 @@ async def scheduled_refresh():
             for item in items:
                 if item.is_refreshing:
                     continue
-                
+
                 interval = global_interval
                 if item.notification_profile and item.notification_profile.check_interval_minutes:
                     interval = item.notification_profile.check_interval_minutes
 
                 if item.last_checked:
-                    last_checked_aware = item.last_checked.replace(tzinfo=UTC) if item.last_checked.tzinfo is None else item.last_checked
+                    last_checked_aware = (
+                        item.last_checked.replace(tzinfo=UTC) if item.last_checked.tzinfo is None else item.last_checked
+                    )
                     time_since_check = (datetime.now(UTC) - last_checked_aware).total_seconds() / 60
                     if time_since_check >= interval:
                         due_items.append((item.id, interval, int(time_since_check)))

@@ -1,7 +1,8 @@
-from sqlalchemy.orm import Session
 from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
 from app import models, schemas
+
 
 class NotificationService:
     @staticmethod

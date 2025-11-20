@@ -1,6 +1,8 @@
-from datetime import datetime
 import os
+from datetime import datetime
+
 from pydantic import BaseModel
+
 
 class NotificationProfileCreate(BaseModel):
     name: str

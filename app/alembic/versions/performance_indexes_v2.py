@@ -20,21 +20,21 @@ def upgrade():
     # Using raw SQL with IF NOT EXISTS for safety
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS ix_price_history_timestamp 
+        CREATE INDEX IF NOT EXISTS ix_price_history_timestamp
         ON price_history (timestamp)
         """
     )
-    
+
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS ix_price_history_item_timestamp 
+        CREATE INDEX IF NOT EXISTS ix_price_history_item_timestamp
         ON price_history (item_id, timestamp)
         """
     )
-    
+
     op.execute(
         """
-        CREATE INDEX IF NOT EXISTS ix_items_is_active 
+        CREATE INDEX IF NOT EXISTS ix_items_is_active
         ON items (is_active)
         """
     )

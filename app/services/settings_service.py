@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
+
 from app import models, schemas
+
 
 class SettingsService:
     @staticmethod
@@ -16,8 +18,8 @@ class SettingsService:
             db.add(db_setting)
         db.commit()
         return db_setting
-    
+
     @staticmethod
-    def get_setting_value(db: Session, key: str, default: str = None):
+    def get_setting_value(db: Session, key: str, default: str | None = None):
         setting = db.query(models.Settings).filter(models.Settings.key == key).first()
         return setting.value if setting else default

@@ -105,7 +105,7 @@ async def serve_index():
 async def serve_spa(full_path: str):
     if full_path.startswith("api") or full_path.startswith("screenshots") or full_path.startswith("assets"):
         return {"message": "Not found"}
-        
+
     if os.path.exists("static/index.html"):
         return FileResponse("static/index.html")
     return {"message": "Frontend not built or not found"}
