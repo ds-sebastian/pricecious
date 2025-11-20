@@ -1,7 +1,6 @@
-import os
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class NotificationProfileCreate(BaseModel):
@@ -20,8 +19,7 @@ class NotificationProfileUpdate(NotificationProfileCreate):
 
 class NotificationProfileResponse(NotificationProfileCreate):
     id: int
-
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ItemCreate(BaseModel):
@@ -46,15 +44,7 @@ class ItemResponse(ItemCreate):
     is_refreshing: bool = False
     last_error: str | None = None
     screenshot_url: str | None = None
-
-    model_config = {"from_attributes": True}
-
-    @staticmethod
-    def resolve_screenshot_url(item_id: int):
-        # Check if file exists
-        if os.path.exists(f"screenshots/item_{item_id}.png"):
-            return f"/screenshots/item_{item_id}.png"
-        return None
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SettingsUpdate(BaseModel):

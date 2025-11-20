@@ -12,25 +12,19 @@ from app.services.notification_service import NotificationService
 from app.services.scraper_service import ScraperService
 
 logger = logging.getLogger(__name__)
-
 scheduler = AsyncIOScheduler()
 
-# Constants
 PRICE_CHANGE_THRESHOLD_PERCENT = 20.0
 LOW_CONFIDENCE_THRESHOLD = 0.7
 
 
 def _get_thresholds():
-    SessionLocal = database.SessionLocal
-    session = SessionLocal()
-    try:
-        settings_map = {s.key: s.value for s in session.query(models.Settings).all()}
+    with database.SessionLocal() as session:
+        settings = {s.key: s.value for s in session.query(models.Settings).all()}
         return {
-            "price": float(settings_map.get("confidence_threshold_price", "0.5")),
-            "stock": float(settings_map.get("confidence_threshold_stock", "0.5")),
+            "price": float(settings.get("confidence_threshold_price", "0.5")),
+            "stock": float(settings.get("confidence_threshold_stock", "0.5")),
         }
-    finally:
-        session.close()
 
 
 def _update_db_result(
@@ -40,98 +34,67 @@ def _update_db_result(
     thresholds: dict,
     screenshot_path: str,
 ):
-    SessionLocal = database.SessionLocal
-    session = SessionLocal()
-    try:
+    with database.SessionLocal() as session:
         item = session.query(models.Item).filter(models.Item.id == item_id).first()
         if not item:
             return None, None
 
-        old_price = item.current_price
-        old_stock = item.in_stock
-
-        price = extraction.price
-        in_stock = extraction.in_stock
-        price_confidence = extraction.price_confidence
-        in_stock_confidence = extraction.in_stock_confidence
+        old_price, old_stock = item.current_price, item.in_stock
+        price, in_stock = extraction.price, extraction.in_stock
+        p_conf, s_conf = extraction.price_confidence, extraction.in_stock_confidence
 
         if price is not None:
-            if price_confidence >= thresholds["price"]:
-                # Check for large price change with low confidence
-                if old_price is not None:
-                    price_change_pct = abs(price - old_price) / old_price * 100
-                    if (
-                        price_change_pct > PRICE_CHANGE_THRESHOLD_PERCENT
-                        and price_confidence < LOW_CONFIDENCE_THRESHOLD
-                    ):
-                        item.last_error = (
-                            f"Uncertain: Large price change ({price_change_pct:.1f}%) "
-                            f"with low confidence ({price_confidence:.2f})"
-                        )
-                        item.current_price = price
-                        item.current_price_confidence = price_confidence
-                    else:
-                        item.current_price = price
-                        item.current_price_confidence = price_confidence
+            if p_conf >= thresholds["price"]:
+                if (
+                    old_price
+                    and (abs(price - old_price) / old_price * 100 > PRICE_CHANGE_THRESHOLD_PERCENT)
+                    and p_conf < LOW_CONFIDENCE_THRESHOLD
+                ):
+                    item.last_error = f"Uncertain: Large price change with low confidence ({p_conf:.2f})"
                 else:
-                    item.current_price = price
-                    item.current_price_confidence = price_confidence
+                    item.last_error = None
+                item.current_price = price
+                item.current_price_confidence = p_conf
 
-        if in_stock is not None and in_stock_confidence >= thresholds["stock"]:
-            item.in_stock = in_stock
-            item.in_stock_confidence = in_stock_confidence
-
-        if price is not None:
-            history = models.PriceHistory(
-                item_id=item.id,
-                price=price,
-                screenshot_path=screenshot_path,
-                price_confidence=price_confidence,
-                in_stock_confidence=in_stock_confidence,
-                ai_model=metadata.model_name,
-                ai_provider=metadata.provider,
-                prompt_version=metadata.prompt_version,
-                repair_used=metadata.repair_used,
+            session.add(
+                models.PriceHistory(
+                    item_id=item.id,
+                    price=price,
+                    screenshot_path=screenshot_path,
+                    price_confidence=p_conf,
+                    in_stock_confidence=s_conf,
+                    ai_model=metadata.model_name,
+                    ai_provider=metadata.provider,
+                    prompt_version=metadata.prompt_version,
+                    repair_used=metadata.repair_used,
+                )
             )
-            session.add(history)
+
+        if in_stock is not None and s_conf >= thresholds["stock"]:
+            item.in_stock = in_stock
+            item.in_stock_confidence = s_conf
 
         item.last_checked = datetime.now(UTC)
         item.is_refreshing = False
-        if not item.last_error or not item.last_error.startswith("Uncertain:"):
+        if item.last_error and not item.last_error.startswith("Uncertain:"):
             item.last_error = None
+
         session.commit()
         return old_price, old_stock
-    finally:
-        session.close()
 
 
 def _update_db_error(item_id, error_msg):
-    SessionLocal = database.SessionLocal
-    session = SessionLocal()
-    try:
-        item = session.query(models.Item).filter(models.Item.id == item_id).first()
-        if item:
+    with database.SessionLocal() as session:
+        if item := session.query(models.Item).filter(models.Item.id == item_id).first():
             item.is_refreshing = False
             item.last_error = error_msg
             session.commit()
-    finally:
-        session.close()
 
 
 async def process_item_check(item_id: int):
-    """
-    Background task to check an item's price/stock.
-    Creates its own DB session to ensure thread safety.
-    """
     loop = asyncio.get_running_loop()
-
-    # Use a new session for this operation
-    SessionLocal = database.SessionLocal
-    session = SessionLocal()
-    try:
+    with database.SessionLocal() as session:
         item_data, config = await loop.run_in_executor(None, ItemService.get_item_data_for_checking, session, item_id)
-    finally:
-        session.close()
 
     if not item_data:
         logger.error(f"process_item_check: Item ID {item_id} not found")
@@ -139,7 +102,6 @@ async def process_item_check(item_id: int):
 
     try:
         logger.info(f"Checking item: {item_data['name']} ({item_data['url']})")
-
         screenshot_path, page_text = await ScraperService.scrape_item(
             item_data["url"],
             item_data["selector"],
@@ -153,25 +115,15 @@ async def process_item_check(item_id: int):
         if not screenshot_path:
             raise Exception("Failed to capture screenshot")
 
-        ai_result = await AIService.analyze_image(screenshot_path, page_text=page_text)
-        if not ai_result:
-            raise Exception("AI analysis failed to return a result")
+        if not (ai_result := await AIService.analyze_image(screenshot_path, page_text=page_text)):
+            raise Exception("AI analysis failed")
 
         extraction, metadata = ai_result
-
         thresholds = await loop.run_in_executor(None, _get_thresholds)
-
         old_price, old_stock = await loop.run_in_executor(
-            None,
-            _update_db_result,
-            item_id,
-            extraction,
-            metadata,
-            thresholds,
-            screenshot_path,
+            None, _update_db_result, item_id, extraction, metadata, thresholds, screenshot_path
         )
 
-        # Notifications
         await NotificationService.send_item_notifications(
             item_data, extraction.price, old_price, extraction.in_stock, old_stock
         )
@@ -182,17 +134,11 @@ async def process_item_check(item_id: int):
 
 
 async def scheduled_refresh():
-    """Background job that runs every minute to check for items due for refresh."""
     logger.info("Heartbeat: Checking for items due for refresh")
     loop = asyncio.get_running_loop()
-
     try:
-        SessionLocal = database.SessionLocal
-        session = SessionLocal()
-        try:
+        with database.SessionLocal() as session:
             due_items = await loop.run_in_executor(None, ItemService.get_due_items, session)
-        finally:
-            session.close()
 
         for item_id, _, _ in due_items:
             await process_item_check(item_id)

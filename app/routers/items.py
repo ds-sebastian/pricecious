@@ -34,12 +34,10 @@ def delete_item(item_id: int, db: Session = Depends(database.get_db)):
 def check_item(
     request: Request, item_id: int, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)
 ):
-    # Rate limiting is applied at app level or decorator if needed
     item = ItemService.get_item(db, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    # Set refreshing state
     item.is_refreshing = True
     item.last_error = None
     db.commit()

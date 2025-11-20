@@ -16,18 +16,19 @@ class ItemService:
     @staticmethod
     def get_items(db: Session):
         items = db.query(models.Item).all()
-        # Manually inject screenshot URL since it's not in DB
-        response_items = []
-        for item in items:
-            item_dict = item.__dict__
-            item_dict["screenshot_url"] = schemas.ItemResponse.resolve_screenshot_url(item.id)
-            response_items.append(item_dict)
-        return response_items
+        return [
+            {
+                **item.__dict__,
+                "screenshot_url": f"/screenshots/item_{item.id}.png"
+                if os.path.exists(f"screenshots/item_{item.id}.png")
+                else None,
+            }
+            for item in items
+        ]
 
     @staticmethod
     def create_item(db: Session, item: schemas.ItemCreate):
         logger.info(f"Creating item: {item.name} - {item.url}")
-
         try:
             validate_url(item.url)
         except URLValidationError as e:
@@ -37,7 +38,6 @@ class ItemService:
         db.add(db_item)
         db.commit()
         db.refresh(db_item)
-        logger.info(f"Item created with ID: {db_item.id}")
         return db_item
 
     @staticmethod
@@ -59,12 +59,11 @@ class ItemService:
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
 
-        # Delete screenshot if exists
-        try:
-            if os.path.exists(f"screenshots/item_{item_id}.png"):
+        if os.path.exists(f"screenshots/item_{item_id}.png"):
+            try:
                 os.remove(f"screenshots/item_{item_id}.png")
-        except Exception as e:
-            logger.error(f"Error deleting screenshot: {e}")
+            except OSError:
+                pass
 
         db.delete(item)
         db.commit()
@@ -72,10 +71,7 @@ class ItemService:
 
     @staticmethod
     def get_item(db: Session, item_id: int):
-        item = db.query(models.Item).filter(models.Item.id == item_id).first()
-        if not item:
-            return None
-        return item
+        return db.query(models.Item).filter(models.Item.id == item_id).first()
 
     @staticmethod
     def get_item_data_for_checking(db: Session, item_id: int):
@@ -83,8 +79,8 @@ class ItemService:
         if not item:
             return None, None
 
+        settings = {s.key: s.value for s in db.query(models.Settings).all()}
         profile = item.notification_profile
-        settings_map = {s.key: s.value for s in db.query(models.Settings).all()}
 
         item_data = {
             "id": item.id,
@@ -94,25 +90,17 @@ class ItemService:
             "current_price": item.current_price,
             "in_stock": item.in_stock,
             "target_price": item.target_price,
-            "notification_profile": {
-                "apprise_url": profile.apprise_url,
-                "notify_on_price_drop": profile.notify_on_price_drop,
-                "price_drop_threshold_percent": profile.price_drop_threshold_percent,
-                "notify_on_target_price": profile.notify_on_target_price,
-                "notify_on_stock_change": profile.notify_on_stock_change,
-            }
-            if profile
-            else None,
+            "notification_profile": profile.__dict__ if profile else None,
         }
 
         config = {
-            "smart_scroll": settings_map.get("smart_scroll_enabled", "false").lower() == "true",
-            "smart_scroll_pixels": int(settings_map.get("smart_scroll_pixels", "350")),
-            "text_context_enabled": settings_map.get("text_context_enabled", "false").lower() == "true",
-            "text_length": int(settings_map.get("text_context_length", "5000"))
-            if settings_map.get("text_context_enabled", "false").lower() == "true"
+            "smart_scroll": settings.get("smart_scroll_enabled", "false").lower() == "true",
+            "smart_scroll_pixels": int(settings.get("smart_scroll_pixels", "350")),
+            "text_context_enabled": settings.get("text_context_enabled", "false").lower() == "true",
+            "text_length": int(settings.get("text_context_length", "5000"))
+            if settings.get("text_context_enabled", "false").lower() == "true"
             else 0,
-            "scraper_timeout": int(settings_map.get("scraper_timeout", "90000")),
+            "scraper_timeout": int(settings.get("scraper_timeout", "90000")),
         }
         return item_data, config
 
@@ -120,23 +108,28 @@ class ItemService:
     def get_due_items(db: Session):
         items = db.query(models.Item).filter(models.Item.is_active).all()
         global_interval = int(SettingsService.get_setting_value(db, "refresh_interval_minutes", "60"))
-
         due_items = []
+        now = datetime.now(UTC)
+
         for item in items:
             if item.is_refreshing:
                 continue
 
-            interval = global_interval
-            if item.notification_profile and item.notification_profile.check_interval_minutes:
-                interval = item.notification_profile.check_interval_minutes
+            interval = (
+                item.notification_profile.check_interval_minutes
+                if item.notification_profile and item.notification_profile.check_interval_minutes
+                else global_interval
+            )
 
-            if item.last_checked:
-                last_checked_aware = (
-                    item.last_checked.replace(tzinfo=UTC) if item.last_checked.tzinfo is None else item.last_checked
-                )
-                time_since_check = (datetime.now(UTC) - last_checked_aware).total_seconds() / 60
-                if time_since_check >= interval:
-                    due_items.append((item.id, interval, int(time_since_check)))
-            else:
+            if not item.last_checked:
                 due_items.append((item.id, interval, -1))
+                continue
+
+            last_checked = (
+                item.last_checked.replace(tzinfo=UTC) if item.last_checked.tzinfo is None else item.last_checked
+            )
+            time_since = (now - last_checked).total_seconds() / 60
+            if time_since >= interval:
+                due_items.append((item.id, interval, int(time_since)))
+
         return due_items
