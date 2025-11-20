@@ -38,8 +38,6 @@
           - "8000:8000"
         environment:
           - DATABASE_URL=postgresql://user:password@db:5432/pricewatch
-          - OLLAMA_BASE_URL=http://host.docker.internal:11434 # Optional default
-          - OLLAMA_MODEL=moondream # Optional default
           - BROWSERLESS_URL=ws://browserless:3000
         depends_on:
           - db
@@ -86,30 +84,32 @@ The following environment variables can be configured in your `docker-compose.ym
 
 | Variable | Description | Default | Example |
 | :--- | :--- | :--- | :--- |
-| `OLLAMA_BASE_URL` | Default URL for Ollama (can be changed in UI) | `http://ollama:11434` | `http://host.docker.internal:11434` |
-| `OLLAMA_MODEL` | Default model name (can be changed in UI) | `moondream` | `gemma3:4b` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:password@db:5432/pricewatch` | `postgresql://u:p@localhost:5432/db` |
 | `BROWSERLESS_URL` | WebSocket URL for Browserless | `ws://browserless:3000` | `ws://browserless:3000` |
 | `LOG_LEVEL` | Application logging level | `INFO` | `DEBUG` |
+| `SQL_ECHO` | Log all SQL queries to console | `false` | `true` |
+| `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `*` | `http://localhost:3000,https://myapp.com` |
 
 ### Scraper Settings
-Navigate to the **Settings** page in the UI to configure:
+All scraper settings are configured via the **Settings** page in the UI:
 *   **Smart Scroll**: Enable to handle infinite scroll pages.
 *   **Text Context**: Enable to send page text to the AI for better accuracy.
+*   **Scraper Timeout**: Maximum time to wait for page load.
 
 ### AI Configuration
-Navigate to the **Settings** page to configure your AI provider:
+All AI settings are configured via the **Settings** page in the UI. No environment variables are required.
+
+**Provider Settings**:
 *   **Provider**: Choose between OpenAI, Anthropic, Gemini, Ollama, or Custom.
 *   **Model**: Specify the model name (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemma3:4b`).
 *   **API Key**: Enter your API key (not required for Ollama).
 *   **Base URL**: Required for Ollama or custom OpenAI-compatible endpoints.
 
 **Advanced AI Settings**:
-*   **Temperature** (`ai_temperature`): Controls output randomness (0.0-1.0). Lower values (e.g., 0.1) produce more deterministic results. Default: `0.1`
-*   **Max Tokens** (`ai_max_tokens`): Maximum tokens for AI responses. Default: `300`
-*   **Price Confidence Threshold** (`confidence_threshold_price`): Minimum confidence (0.0-1.0) required to update price. Default: `0.5`
-*   **Stock Confidence Threshold** (`confidence_threshold_stock`): Minimum confidence required to update stock status. Default: `0.5`
-*   **Enable JSON Repair** (`enable_json_repair`): Automatically attempt to repair malformed JSON responses. Default: `true`
+*   **Temperature**: Controls output randomness (0.0-1.0).
+*   **Max Tokens**: Maximum tokens for AI responses.
+*   **Price/Stock Confidence Thresholds**: Minimum confidence required to update values.
+*   **Enable JSON Repair**: Automatically attempt to repair malformed JSON responses.
 
 **How Confidence Works**:
 - The AI provides a confidence score (0.0 to 1.0) for each extracted value
