@@ -53,9 +53,9 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
                 </div>
             </div>
 
-            <CardContent className="p-5">
+            <CardContent className="p-5 relative">
                 <div className="mb-4 flex items-start justify-between">
-                    <div className="flex-1 overflow-hidden">
+                    <div className="flex-1 overflow-hidden pr-2">
                         <div className="flex items-center gap-2 mb-1">
                             <a
                                 href={item.url}
@@ -74,8 +74,8 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
                         </a>
                     </div>
 
-                    {/* Action Buttons (Visible on Hover) */}
-                    <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 absolute top-4 right-4 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-lg p-1 shadow-sm border border-zinc-100 dark:border-zinc-800 z-20">
+                    {/* Action Buttons - Always visible on mobile, hover on desktop */}
+                    <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-lg p-1 shadow-sm border border-zinc-100 dark:border-zinc-800">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(item)}>
                             <Edit2 className="h-3.5 w-3.5" />
                         </Button>
@@ -141,6 +141,13 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
                                 </span>
                             ))}
                         </div>
+                    )}
+
+                    {/* Description */}
+                    {item.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                            {item.description}
+                        </p>
                     )}
                 </div>
             </CardContent>
