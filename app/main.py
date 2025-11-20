@@ -263,7 +263,9 @@ async def scheduled_refresh():
 
                 # Check if due
                 if item.last_checked:
-                    time_since_check = (datetime.now(UTC) - item.last_checked).total_seconds() / 60
+                    # Ensure last_checked is timezone-aware for comparison
+                    last_checked_aware = item.last_checked.replace(tzinfo=UTC) if item.last_checked.tzinfo is None else item.last_checked
+                    time_since_check = (datetime.now(UTC) - last_checked_aware).total_seconds() / 60
                     if time_since_check >= interval:
                         due_items.append((item.id, interval, int(time_since_check)))
                 else:
