@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app import models, notifications, schemas
+from app import models, notification_sender, schemas
 
 
 class NotificationService:
@@ -57,7 +57,7 @@ class NotificationService:
             if price < old_price:
                 drop_percent = ((old_price - price) / old_price) * 100
                 if drop_percent >= profile["price_drop_threshold_percent"]:
-                    await notifications.send_notification(
+                    await notification_sender.send_notification(
                         [profile["apprise_url"]],
                         f"Price Drop Alert: {item_data['name']}",
                         f"Price dropped by {drop_percent:.1f}%! Now ${price} (was ${old_price})",
@@ -69,7 +69,7 @@ class NotificationService:
             and item_data["target_price"]
             and price <= item_data["target_price"]
         ):
-            await notifications.send_notification(
+            await notification_sender.send_notification(
                 [profile["apprise_url"]],
                 f"Target Price Alert: {item_data['name']}",
                 f"Price is ${price} (Target: ${item_data['target_price']})",
@@ -82,7 +82,7 @@ class NotificationService:
             and in_stock != old_stock
         ):
             status = "In Stock" if in_stock else "Out of Stock"
-            await notifications.send_notification(
+            await notification_sender.send_notification(
                 [profile["apprise_url"]],
                 f"Stock Alert: {item_data['name']}",
                 f"Item is now {status}",

@@ -49,5 +49,6 @@ def update_job_config(config: schemas.SettingsUpdate, db: Session = Depends(data
 def refresh_all_items(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):
     items = db.query(models.Item).filter(models.Item.is_active).all()
     for item in items:
-        background_tasks.add_task(process_item_check, item.id)
+        if item.id is not None:
+            background_tasks.add_task(process_item_check, int(item.id))
     return {"message": f"Triggered refresh for {len(items)} items"}

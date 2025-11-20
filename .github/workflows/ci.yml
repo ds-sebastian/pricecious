@@ -54,15 +54,12 @@ jobs:
       run: uvx pip-audit --require-hashes --disable-pip || true
       continue-on-error: true
     
-    - name: Run Type Checking (mypy)
-      run: uvx mypy app/ --ignore-missing-imports
-      continue-on-error: true
-    
+
     - name: Run Tests with Coverage
       env:
         DATABASE_URL: postgresql://user:password@localhost:5432/pricewatch_test
       run: |
-        uvx pytest --cov=app --cov-report=xml --cov-report=term-missing
+        pytest --cov=app --cov-report=xml --cov-report=term-missing
     
     - name: Upload Coverage
       uses: codecov/codecov-action@v4

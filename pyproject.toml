@@ -69,6 +69,7 @@ ignore = []
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "--cov=app --cov-report=html --cov-report=term-missing"
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["app"]

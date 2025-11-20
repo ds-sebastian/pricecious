@@ -31,7 +31,7 @@ DEFAULT_TIMEOUT = 30  # seconds
 MAX_TEXT_LENGTH = 5000  # Will be filtered to ~1500-2000 relevant chars
 
 # Config caching
-_config_cache = {"data": None, "timestamp": 0}
+_config_cache: dict[str, Any] = {"data": None, "timestamp": 0.0}
 CONFIG_CACHE_TTL = 60  # seconds
 
 logger = logging.getLogger(__name__)
@@ -263,7 +263,8 @@ class AIService:
         )
         response = await acompletion(**kwargs)
 
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        return content or ""
 
     @classmethod
     async def analyze_image(

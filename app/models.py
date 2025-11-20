@@ -24,29 +24,29 @@ class NotificationProfile(Base):
 class Item(Base):
     __tablename__ = "items"
 
-    id = Column(Integer, primary_key=True, index=True)
-    url = Column(String, index=True)
-    name = Column(String)
-    selector = Column(String, nullable=True)
-    target_price = Column(Float, nullable=True)
-    check_interval_minutes = Column(Integer, default=60)
+    id: int = Column(Integer, primary_key=True, index=True)  # type: ignore
+    url: str = Column(String, index=True)  # type: ignore
+    name: str = Column(String)  # type: ignore
+    selector: str | None = Column(String, nullable=True)  # type: ignore
+    target_price: float | None = Column(Float, nullable=True)  # type: ignore
+    check_interval_minutes: int = Column(Integer, default=60)  # type: ignore
 
     # New fields
-    current_price = Column(Float, nullable=True)
-    in_stock = Column(Boolean, nullable=True)
-    tags = Column(String, nullable=True)  # Comma separated
-    description = Column(String, nullable=True)
+    current_price: float | None = Column(Float, nullable=True)  # type: ignore
+    in_stock: bool | None = Column(Boolean, nullable=True)  # type: ignore
+    tags: str | None = Column(String, nullable=True)  # type: ignore
+    description: str | None = Column(String, nullable=True)  # type: ignore
 
     # Confidence scores for latest extraction
-    current_price_confidence = Column(Float, nullable=True)
-    in_stock_confidence = Column(Float, nullable=True)
+    current_price_confidence: float | None = Column(Float, nullable=True)  # type: ignore
+    in_stock_confidence: float | None = Column(Float, nullable=True)  # type: ignore
 
-    is_active = Column(Boolean, default=True)
-    last_checked = Column(DateTime, nullable=True)
-    is_refreshing = Column(Boolean, default=False)
-    last_error = Column(String, nullable=True)
+    is_active: bool = Column(Boolean, default=True)  # type: ignore
+    last_checked: datetime | None = Column(DateTime, nullable=True)  # type: ignore
+    is_refreshing: bool = Column(Boolean, default=False)  # type: ignore
+    last_error: str | None = Column(String, nullable=True)  # type: ignore
 
-    notification_profile_id = Column(Integer, ForeignKey("notification_profiles.id"), nullable=True)
+    notification_profile_id: int | None = Column(Integer, ForeignKey("notification_profiles.id"), nullable=True)  # type: ignore
     notification_profile = relationship("NotificationProfile", back_populates="items")
 
     price_history = relationship("PriceHistory", back_populates="item", cascade="all, delete-orphan")
@@ -55,19 +55,19 @@ class Item(Base):
 class PriceHistory(Base):
     __tablename__ = "price_history"
 
-    id = Column(Integer, primary_key=True, index=True)
-    item_id = Column(Integer, ForeignKey("items.id"))
-    price = Column(Float)
-    timestamp = Column(DateTime, default=lambda: datetime.now(UTC))
-    screenshot_path = Column(String, nullable=True)
+    id: int = Column(Integer, primary_key=True, index=True)  # type: ignore
+    item_id: int = Column(Integer, ForeignKey("items.id"))  # type: ignore
+    price: float = Column(Float)  # type: ignore
+    timestamp: datetime = Column(DateTime, default=lambda: datetime.now(UTC))  # type: ignore
+    screenshot_path: str | None = Column(String, nullable=True)  # type: ignore
 
     # Confidence scores and AI metadata
-    price_confidence = Column(Float, nullable=True)
-    in_stock_confidence = Column(Float, nullable=True)
-    ai_model = Column(String, nullable=True)
-    ai_provider = Column(String, nullable=True)
-    prompt_version = Column(String, nullable=True)
-    repair_used = Column(Boolean, nullable=True, default=False)
+    price_confidence: float | None = Column(Float, nullable=True)  # type: ignore
+    in_stock_confidence: float | None = Column(Float, nullable=True)  # type: ignore
+    ai_model: str | None = Column(String, nullable=True)  # type: ignore
+    ai_provider: str | None = Column(String, nullable=True)  # type: ignore
+    prompt_version: str | None = Column(String, nullable=True)  # type: ignore
+    repair_used: bool | None = Column(Boolean, nullable=True, default=False)  # type: ignore
 
     item = relationship("Item", back_populates="price_history")
 

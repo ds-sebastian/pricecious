@@ -46,7 +46,7 @@ app = FastAPI(title="Pricecious API", version=VERSION, lifespan=lifespan)
 
 # Rate Limiting
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
 
 # CORS Configuration
 ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
