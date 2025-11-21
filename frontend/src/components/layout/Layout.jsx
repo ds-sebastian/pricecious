@@ -21,6 +21,7 @@ const Layout = ({ children, theme, toggleTheme }) => {
                 <div className="flex h-full flex-col">
                     <div className="flex h-14 items-center border-b px-6">
                         <Link to="/" className="flex items-center gap-2 font-semibold">
+                            <img src="/logo.png" alt="Pricecious Logo" className="h-8 w-8" />
                             <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
                                 Pricecious
                             </span>
@@ -77,6 +78,7 @@ const Layout = ({ children, theme, toggleTheme }) => {
                     <SheetContent side="left" className="w-64 p-0">
                         <div className="flex h-full flex-col">
                             <div className="flex h-14 items-center border-b px-6">
+                                <img src="/logo.png" alt="Pricecious Logo" className="h-8 w-8 mr-2" />
                                 <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
                                     Pricecious
                                 </span>
@@ -120,7 +122,8 @@ const Layout = ({ children, theme, toggleTheme }) => {
                         </div>
                     </SheetContent>
                 </Sheet>
-                <Link to="/" className="font-semibold">
+                <Link to="/" className="flex items-center gap-2 font-semibold">
+                    <img src="/logo.png" alt="Pricecious Logo" className="h-6 w-6" />
                     Pricecious
                 </Link>
                 <div className="ml-auto flex items-center gap-2">
