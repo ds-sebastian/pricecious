@@ -9,8 +9,8 @@ Create Date: 2025-11-19 13:55:00.000000
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 
+from alembic import op
 from app.models import Base
 
 target_metadata = Base.metadata

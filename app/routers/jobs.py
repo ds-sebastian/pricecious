@@ -48,7 +48,7 @@ def update_job_config(config: schemas.SettingsUpdate, db: Session = Depends(data
 @limiter.limit("5/minute")
 def refresh_all_items(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):
     items = db.query(models.Item).filter(models.Item.is_active).all()
-    
+
     # Mark all items as refreshing immediately so UI updates persist
     for item in items:
         item.is_refreshing = True
@@ -57,5 +57,5 @@ def refresh_all_items(request: Request, background_tasks: BackgroundTasks, db: S
     for item in items:
         if item.id is not None:
             background_tasks.add_task(process_item_check, int(item.id))
-            
+
     return {"message": f"Triggered refresh for {len(items)} items"}

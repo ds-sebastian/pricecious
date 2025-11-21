@@ -1,28 +1,21 @@
 from unittest.mock import patch
+
 from app import models
+
 
 def test_refresh_all_sets_status(client, db):
     # Create a profile
-    profile = models.NotificationProfile(
-        name="Test Profile",
-        apprise_url="mailto://test@example.com"
-    )
+    profile = models.NotificationProfile(name="Test Profile", apprise_url="mailto://test@example.com")
     db.add(profile)
     db.commit()
     db.refresh(profile)
 
     # Create items
     item1 = models.Item(
-        url="https://example.com/1",
-        name="Item 1",
-        notification_profile_id=profile.id,
-        is_refreshing=False
+        url="https://example.com/1", name="Item 1", notification_profile_id=profile.id, is_refreshing=False
     )
     item2 = models.Item(
-        url="https://example.com/2",
-        name="Item 2",
-        notification_profile_id=profile.id,
-        is_refreshing=False
+        url="https://example.com/2", name="Item 2", notification_profile_id=profile.id, is_refreshing=False
     )
     db.add(item1)
     db.add(item2)
@@ -41,6 +34,6 @@ def test_refresh_all_sets_status(client, db):
     # We need to refresh the objects from the DB
     db.refresh(item1)
     db.refresh(item2)
-    
+
     assert item1.is_refreshing is True
     assert item2.is_refreshing is True
