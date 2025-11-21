@@ -5,10 +5,13 @@
 <h1 align="center">(My) Pricecious</h1>
 
 <p align="center">
-  Price tracking using A-Eyes ;)
+  Price tracking using A-Eyes 🤦
 </p>
 
-**Pricecious** is a self-hosted, AI-powered price tracking application. It uses **GenAI Vision Models** (OpenAI, Anthropic, Gemini, Ollama, etc.) to visually analyze product pages, detect prices, and monitor stock status.
+> [!WARNING]  
+> This is 100% vibe-coded.
+
+**Pricecious** is a self-hosted, AI-powered price tracking application. It uses **GenAI Vision Models** (OpenAI, Anthropic, Ollama, etc.) to visually analyze product pages, detect prices, and monitor stock status.
 
 <img width="1186" height="482" alt="SCR-20251120-sdky" src="https://github.com/user-attachments/assets/b9c09142-496e-458e-9a86-9e3d7b1fb7c0" />
 
@@ -97,6 +100,9 @@ The following environment variables can be configured in your `docker-compose.ym
 | `LOG_LEVEL` | Application logging level | `INFO` | `DEBUG` |
 | `SQL_ECHO` | Log all SQL queries to console | `false` | `true` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `*` | `http://localhost:3000,https://myapp.com` |
+
+> [!TIP]
+> LiteLLM environment variables should work too to prepopulate AI model default settings
 
 ### Scraper Settings
 All scraper settings are configured via the **Settings** page in the UI:
