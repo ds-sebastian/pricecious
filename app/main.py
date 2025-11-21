@@ -77,12 +77,12 @@ def read_root():
 async def serve_spa(full_path: str):
     if full_path.startswith(("api", "screenshots", "assets")):
         return {"message": "Not found"}
-    
+
     # Serve static files from root (favicon, logo, etc.)
     static_file_path = f"static/{full_path}"
     if os.path.isfile(static_file_path):
         return FileResponse(static_file_path)
-    
+
     # Default to SPA index.html
     if os.path.exists("static/index.html"):
         return FileResponse("static/index.html")

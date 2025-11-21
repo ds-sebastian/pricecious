@@ -88,6 +88,7 @@ def _update_db_error(item_id, error_msg):
         if item := session.query(models.Item).filter(models.Item.id == item_id).first():
             item.is_refreshing = False
             item.last_error = error_msg
+            item.last_checked = datetime.now(UTC)
             session.commit()
 
 

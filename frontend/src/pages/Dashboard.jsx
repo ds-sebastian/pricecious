@@ -21,7 +21,8 @@ export default function Dashboard() {
     const refreshItems = async () => {
         try {
             const response = await axios.get(`${API_URL}/items`);
-            setItems(response.data);
+            const sortedItems = response.data.sort((a, b) => a.id - b.id);
+            setItems(sortedItems);
         } catch (error) {
             console.error('Error fetching items:', error);
             toast.error('Failed to fetch items');

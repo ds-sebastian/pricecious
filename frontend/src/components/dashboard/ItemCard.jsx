@@ -74,18 +74,6 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
                         </a>
                     </div>
 
-                    {/* Action Buttons - Always visible on mobile, hover on desktop */}
-                    <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-lg p-1 shadow-sm border border-zinc-100 dark:border-zinc-800">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(item)}>
-                            <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCheck(item.id)} disabled={item.is_refreshing}>
-                            <RefreshCw className={cn("h-3.5 w-3.5", item.is_refreshing && "animate-spin text-primary")} />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => onDelete(item)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                    </div>
                 </div>
 
                 <div className="space-y-4">
@@ -153,17 +141,31 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
             </CardContent>
 
             <CardFooter className="border-t bg-zinc-50/50 p-3 dark:bg-zinc-900/50">
-                <div className="flex w-full items-center justify-between text-[10px] text-muted-foreground">
-                    <div className="flex items-center gap-1.5">
-                        <Clock className="h-3 w-3" />
-                        <span>{item.last_checked ? new Date(item.last_checked).toLocaleString() : 'Never'}</span>
-                    </div>
-                    {item.last_error && (
-                        <div className="flex items-center gap-1 text-destructive" title={item.last_error}>
-                            <AlertTriangle className="h-3 w-3" />
-                            <span className="max-w-[100px] truncate">Error</span>
+                <div className="flex w-full items-center justify-between">
+                    <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                        <div className="flex items-center gap-1.5">
+                            <Clock className="h-3 w-3" />
+                            <span>{item.last_checked ? new Date(item.last_checked).toLocaleString() : 'Never'}</span>
                         </div>
-                    )}
+                        {item.last_error && (
+                            <div className="flex items-center gap-1 text-destructive" title={item.last_error}>
+                                <AlertTriangle className="h-3 w-3" />
+                                <span className="max-w-[100px] truncate">Error</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onEdit(item)}>
+                            <Edit2 className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onCheck(item.id)} disabled={item.is_refreshing}>
+                            <RefreshCw className={cn("h-3 w-3", item.is_refreshing && "animate-spin text-primary")} />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => onDelete(item)}>
+                            <Trash2 className="h-3 w-3" />
+                        </Button>
+                    </div>
                 </div>
             </CardFooter>
         </Card>
