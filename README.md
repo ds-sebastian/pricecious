@@ -1,12 +1,16 @@
-<div align="center">
-  <img src="frontend/public/logo.png" alt="Pricecious Logo" width="120" height="120">
-</div>
+<p align="center">
+  <img src="frontend/public/logo.png" alt="Pricecious logo" width="80">
+</p>
 
-# Pricecious 💍
+<h1 align="center">(My) Pricecious</h1>
+
+<p align="center">
+  Price tracking using A-Eyes ;)
+</p>
 
 **Pricecious** is a self-hosted, AI-powered price tracking application. It uses **GenAI Vision Models** (OpenAI, Anthropic, Gemini, Ollama, etc.) to visually analyze product pages, detect prices, and monitor stock status.
 
-<img width="1577" height="1188" alt="main_page" src="https://github.com/user-attachments/assets/8453838d-b1c0-45af-a3fc-4a13843bb3f8" />
+<img width="1186" height="482" alt="SCR-20251120-sdky" src="https://github.com/user-attachments/assets/b9c09142-496e-458e-9a86-9e3d7b1fb7c0" />
 
 ## Features
 
