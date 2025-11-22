@@ -42,6 +42,7 @@ dev = [
   "bandit",
   "pip-audit",
   "pre-commit",
+  "bump-my-version",
 ]
 
 [tool.hatch.envs.default]

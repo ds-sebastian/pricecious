@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.orm import sessionmaker
 
 from app import models
 from app.services.scheduler_service import process_item_check
@@ -31,8 +32,6 @@ async def test_process_item_check_updates_last_checked_on_error(db):
     initial_last_checked = item.last_checked
 
     # Create a session maker bound to the same engine as the test db
-    from sqlalchemy.orm import sessionmaker
-
     connection = db.get_bind()
     TestSession = sessionmaker(bind=connection)
 
