@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2025-11-22
 
 ### Added
-- Initial release of Pricecious Backend.
+- Initial release of Pricecious.
 - Basic API structure with FastAPI.
 - Database integration with SQLAlchemy and PostgreSQL.
 - Docker support for containerized deployment.
