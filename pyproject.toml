@@ -1,6 +1,6 @@
 [project]
 name = "pricecious-backend"
-version = "0.1.3"
+version = "0.1.4"
 description = "Backend for Pricecious Price Tracker"
 readme = "README.md"
 requires-python = ">=3.12"
