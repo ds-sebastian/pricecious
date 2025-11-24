@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import re
-import time
 from typing import Any, TypedDict
 
 import litellm
@@ -26,20 +25,15 @@ from app.utils.text import clean_text
 litellm.suppress_debug_info = True
 litellm.set_verbose = False
 
-# Default configuration (can be overridden by DB settings)
+# Default configuration
 DEFAULT_PROVIDER = "ollama"
 DEFAULT_MODEL = "gemma3:4b"
 DEFAULT_API_BASE = "http://ollama:11434"
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_MAX_TOKENS = 1000
-DEFAULT_TIMEOUT = 30  # seconds
-MAX_TEXT_LENGTH = 5000  # Will be filtered to ~1500-2000 relevant chars
-
+DEFAULT_TIMEOUT = 30
+MAX_TEXT_LENGTH = 5000
 DEFAULT_REASONING_EFFORT = "low"
-
-# Config caching
-_config_cache: dict[str, Any] = {"data": None, "timestamp": 0.0}
-CONFIG_CACHE_TTL = 60  # seconds
 
 logger = logging.getLogger(__name__)
 
@@ -62,49 +56,49 @@ MIN_API_KEY_LENGTH = 12
 
 
 def _sanitize_api_key(key: str) -> str:
-    """Redact API key for logging (show first/last 4 chars only)."""
+    """Redact API key for logging."""
     if not key or len(key) < MIN_API_KEY_LENGTH:
         return "***"
     return f"{key[:4]}...{key[-4:]}"
 
 
+def _safe_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
 class AIService:
     @staticmethod
     def get_ai_config() -> AIConfig:
-        """
-        Fetches AI configuration from the database with caching.
-        Returns a dict with: provider, model, api_key, api_base, temperature, max_tokens, timeout
-        """
-        # Check cache
-        now = time.time()
-        if _config_cache["data"] and (now - _config_cache["timestamp"]) < CONFIG_CACHE_TTL:
-            return _config_cache["data"]  # type: ignore
-
-        # Fetch from DB
-        session = SessionLocal()
+        """Fetches AI configuration from the database."""
         try:
-            settings = session.query(models.Settings).all()
-            settings_map = {s.key: s.value for s in settings}
+            with SessionLocal() as session:
+                settings = session.query(models.Settings).all()
+                settings_map = {s.key: s.value for s in settings}
 
-            config: AIConfig = {
+            return {
                 "provider": settings_map.get("ai_provider", DEFAULT_PROVIDER),
                 "model": settings_map.get("ai_model", DEFAULT_MODEL),
                 "api_key": settings_map.get("ai_api_key", ""),
                 "api_base": settings_map.get("ai_api_base", DEFAULT_API_BASE),
-                "temperature": float(settings_map.get("ai_temperature", str(DEFAULT_TEMPERATURE))),
-                "max_tokens": int(settings_map.get("ai_max_tokens", str(DEFAULT_MAX_TOKENS))),
-                "timeout": int(settings_map.get("ai_timeout", str(DEFAULT_TIMEOUT))),
+                "temperature": _safe_float(settings_map.get("ai_temperature"), DEFAULT_TEMPERATURE),
+                "max_tokens": _safe_int(settings_map.get("ai_max_tokens"), DEFAULT_MAX_TOKENS),
+                "timeout": _safe_int(settings_map.get("ai_timeout"), DEFAULT_TIMEOUT),
                 "enable_json_repair": settings_map.get("enable_json_repair", "true").lower() == "true",
                 "enable_multi_sample": settings_map.get("enable_multi_sample", "false").lower() == "true",
-                "multi_sample_threshold": float(settings_map.get("multi_sample_confidence_threshold", "0.6")),
+                "multi_sample_threshold": _safe_float(settings_map.get("multi_sample_confidence_threshold"), 0.6),
                 "reasoning_effort": settings_map.get("ai_reasoning_effort", DEFAULT_REASONING_EFFORT),
             }
 
-            # Update cache
-            _config_cache["data"] = config  # type: ignore
-            _config_cache["timestamp"] = now
-
-            return config
         except Exception as e:
             logger.error(f"Error fetching AI config: {e}")
             return {
@@ -120,137 +114,81 @@ class AIService:
                 "multi_sample_threshold": 0.6,
                 "reasoning_effort": DEFAULT_REASONING_EFFORT,
             }
-        finally:
-            session.close()
 
     @staticmethod
     def parse_and_validate_response(response_text: str) -> AIExtractionResponse:
-        """
-        Parse and validate AI response against schema.
-
-        Pipeline:
-        1. Extract JSON from response (handle markdown code blocks)
-        2. Parse JSON
-        3. Validate against Pydantic schema (includes normalization and clamping)
-
-        Raises:
-            ValidationError: If response doesn't match schema
-            json.JSONDecodeError: If JSON is invalid
-        """
-        # Try to extract JSON from markdown code blocks
+        """Parse and validate AI response against schema."""
+        # Extract JSON from markdown code blocks or raw text
         json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response_text, re.DOTALL)
         if json_match:
             json_str = json_match.group(1)
         else:
-            # Try to find raw JSON object
             json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-            else:
-                json_str = response_text
+            json_str = json_match.group(0) if json_match else response_text
 
-        # Parse JSON
-        data = json.loads(json_str)
-
-        # Validate and normalize through Pydantic
-        return AIExtractionResponse(**data)
+        return AIExtractionResponse(**json.loads(json_str))
 
     @staticmethod
-    def _get_provider_kwargs(config: AIConfig) -> dict[str, Any]:
-        """Helper to generate provider-specific kwargs for litellm."""
-        kwargs: dict[str, Any] = {}
+    def _prepare_llm_kwargs(config: AIConfig, messages: list[dict], is_repair: bool = False) -> dict[str, Any]:
+        """Prepare arguments for litellm based on provider and config."""
+        provider = config["provider"]
+        model = config["model"]
 
-        if config["provider"] == "ollama":
+        # Handle model prefixes
+        if provider == "ollama" and not model.startswith("ollama/"):
+            model = f"ollama/{model}"
+        elif provider == "openrouter" and not model.startswith("openrouter/"):
+            model = f"openrouter/{model}"
+
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": 300 if is_repair else config["max_tokens"],
+            "temperature": 0.0 if is_repair else config["temperature"],
+            "timeout": config["timeout"],
+            "drop_params": True,
+        }
+
+        if config["api_key"]:
+            kwargs["api_key"] = config["api_key"]
+
+        # Provider-specific settings
+        if provider == "ollama":
             kwargs["api_base"] = config["api_base"]
-            kwargs["format"] = "json"  # Force JSON mode for Ollama
-        elif config["provider"] == "openai":
-            # Use Native Structured Outputs (Pydantic Schema)
-            kwargs["response_format"] = AIExtractionResponse
+            kwargs["format"] = "json"
+        elif provider == "openai":
+            if not is_repair:
+                kwargs["response_format"] = AIExtractionResponse
             if config["api_base"]:
                 kwargs["api_base"] = config["api_base"]
-
-            # Add reasoning effort if supported (passed via drop_params=True if not)
             kwargs["reasoning_effort"] = config["reasoning_effort"]
-
-        elif config["provider"] == "anthropic":
-            # Anthropic doesn't have native JSON mode yet, rely on prompt
+        elif provider == "openrouter":
             if config["api_base"]:
                 kwargs["api_base"] = config["api_base"]
-        elif config["provider"] == "openrouter":
-            if config["api_base"]:
-                kwargs["api_base"] = config["api_base"]
-            # OpenRouter headers
             kwargs["extra_headers"] = {
                 "HTTP-Referer": "https://github.com/ds-sebastian/pricecious",
                 "X-Title": "Pricecious",
             }
-        # Other providers - rely on prompt engineering
         elif config["api_base"]:
             kwargs["api_base"] = config["api_base"]
 
         return kwargs
 
     @classmethod
-    async def repair_json_response(
-        cls,
-        raw_output: str,
-        config: AIConfig,
-    ) -> AIExtractionResponse:
-        """
-        Attempt to repair invalid JSON using a second LLM call.
-
-        Args:
-            raw_output: The raw AI output that failed parsing
-            config: AI configuration dict
-
-        Returns:
-            Validated AIExtractionResponse
-
-        Raises:
-            Exception: If repair also fails
-        """
+    async def repair_json_response(cls, raw_output: str, config: AIConfig) -> AIExtractionResponse:
+        """Attempt to repair invalid JSON using a second LLM call."""
         logger.warning("Attempting JSON repair with second LLM call")
 
-        repair_prompt = get_repair_prompt(raw_output)
-
-        # Use a simpler, cheaper model for repair if possible
-        # For now, use the same model
-        model = config["model"]
-        if config["provider"] == "ollama":
-            model = f"ollama/{config['model']}"
-        elif config["provider"] == "openrouter":
-            model = f"openrouter/{config['model']}"
-
-        kwargs = {
-            "model": model,
-            "messages": [{"role": "user", "content": repair_prompt}],
-            "max_tokens": 300,
-            "temperature": 0.0,  # Very deterministic for repair
-            "timeout": config["timeout"],
-            "drop_params": True,  # Ignore unsupported params
-        }
-
-        if config["api_key"]:
-            kwargs["api_key"] = config["api_key"]
-
-        # Merge provider specific kwargs
-        kwargs.update(cls._get_provider_kwargs(config))
+        messages = [{"role": "user", "content": get_repair_prompt(raw_output)}]
+        kwargs = cls._prepare_llm_kwargs(config, messages, is_repair=True)
 
         try:
             response = await acompletion(**kwargs)
             repaired_text = response.choices[0].message.content
-
-            # If structured output was used, it might already be a JSON string of the model
-            # But litellm returns content as string.
-            # If we used response_format=AIExtractionResponse, the content IS the JSON.
             return cls.parse_and_validate_response(repaired_text)
         except Exception as e:
-            # Check for BadRequestError from litellm which might indicate provider/model mismatch
             if "LLM Provider NOT provided" in str(e):
-                logger.error(
-                    f"Configuration Error: It seems like the model '{config['model']}' is not supported "
-                    f"by the provider '{config['provider']}'. Please check your settings."
-                )
+                logger.error(f"Configuration Error: Model '{config['model']}' not supported by '{config['provider']}'")
             raise
 
     @staticmethod
@@ -260,22 +198,8 @@ class AIService:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         reraise=True,
     )
-    async def call_llm(
-        prompt: str,
-        image_data_url: str,
-        config: AIConfig,
-    ) -> str:
-        """
-        Call LLM with structured output settings and retry logic.
-
-        Returns:
-            Raw response text from the model
-
-        Raises:
-            TimeoutError: If request times out after retries
-            ConnectionError: If connection fails after retries
-            ValueError: If response is empty
-        """
+    async def call_llm(prompt: str, image_data_url: str, config: AIConfig) -> str:
+        """Call LLM with structured output settings and retry logic."""
         messages = [
             {
                 "role": "user",
@@ -286,58 +210,28 @@ class AIService:
             }
         ]
 
-        # Prepare kwargs for litellm
-        model = config["model"]
-        if config["provider"] == "ollama":
-            model = f"ollama/{config['model']}"
-        elif config["provider"] == "openrouter":
-            model = f"openrouter/{config['model']}"
+        kwargs = AIService._prepare_llm_kwargs(config, messages)
 
-        kwargs: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": config["max_tokens"],
-            "temperature": config["temperature"],
-            "timeout": config["timeout"],
-            "drop_params": True,  # Ignore unsupported params
-        }
-
-        if config["api_key"]:
-            kwargs["api_key"] = config["api_key"]
-
-        # Merge provider specific kwargs
-        # This helper reduces complexity by extracting the branching logic
-        kwargs.update(AIService._get_provider_kwargs(config))
-
-        # Call litellm asynchronously
-        sanitized_key = _sanitize_api_key(config["api_key"]) if config["api_key"] else "(none)"
+        sanitized_key = _sanitize_api_key(config.get("api_key", ""))
         logger.info(
             f"Calling {config['provider']}/{config['model']} "
-            f"(temp={config['temperature']}, max_tokens={config['max_tokens']}, "
-            f"timeout={config['timeout']}s, key={sanitized_key})"
+            f"(temp={kwargs['temperature']}, max_tokens={kwargs['max_tokens']}, "
+            f"timeout={kwargs['timeout']}s, key={sanitized_key})"
         )
 
         try:
             response = await acompletion(**kwargs)
-
-            # Log full response metadata for debugging
             logger.debug(f"LLM Response Metadata: {response}")
 
             content = response.choices[0].message.content
-
             if not content:
                 finish_reason = response.choices[0].finish_reason
-                logger.error(f"Received empty content from LLM. Finish reason: {finish_reason}")
                 raise ValueError(f"Empty response from LLM (finish_reason: {finish_reason})")
 
             return content
         except Exception as e:
-            # Check for BadRequestError from litellm which might indicate provider/model mismatch
             if "LLM Provider NOT provided" in str(e):
-                logger.error(
-                    f"Configuration Error: It seems like the model '{config['model']}' is not supported "
-                    f"by the provider '{config['provider']}'. Please check your settings."
-                )
+                logger.error(f"Configuration Error: Model '{config['model']}' not supported by '{config['provider']}'")
             raise
 
     @classmethod
@@ -346,31 +240,16 @@ class AIService:
         image_path: str,
         page_text: str = "",
     ) -> tuple[AIExtractionResponse, AIExtractionMetadata] | None:
-        """
-        Analyze image and extract price/stock information.
-
-        Args:
-            image_path: Path to screenshot
-            page_text: Optional webpage text context
-
-        Returns:
-            Tuple of (AIExtractionResponse, AIExtractionMetadata) or None on failure
-        """
+        """Analyze image and extract price/stock information."""
         try:
-            # Get AI config
             loop = asyncio.get_running_loop()
             config = await loop.run_in_executor(None, cls.get_ai_config)
 
-            logger.info(
-                f"Analyzing image with Provider: {config['provider']}, "
-                f"Model: {config['model']}, Timeout: {config['timeout']}s"
-            )
+            logger.info(f"Analyzing image with {config['provider']}/{config['model']}")
 
-            # Encode image
             base64_image = await encode_image(image_path)
             data_url = f"data:image/jpeg;base64,{base64_image}"
 
-            # Prepare prompt with optional text context
             cleaned_text = ""
             if page_text:
                 cleaned_text = clean_text(page_text)
@@ -379,19 +258,14 @@ class AIService:
                 logger.info(f"Added text context (original: {len(page_text)}, cleaned: {len(cleaned_text)})")
 
             prompt = get_extraction_prompt(cleaned_text if cleaned_text else None)
-
-            # Call LLM
             response_text = await cls.call_llm(prompt, data_url, config)
-
             logger.info(f"AI Response: {response_text[:200]}...")
 
-            # Parse and validate response
             repair_used = False
             try:
                 extraction_result = cls.parse_and_validate_response(response_text)
             except (ValidationError, json.JSONDecodeError) as e:
                 logger.warning(f"Primary parsing failed: {e}")
-
                 if config["enable_json_repair"]:
                     try:
                         extraction_result = await cls.repair_json_response(response_text, config)
@@ -403,7 +277,6 @@ class AIService:
                 else:
                     raise
 
-            # Create metadata
             metadata = AIExtractionMetadata(
                 model_name=config["model"],
                 provider=config["provider"],
