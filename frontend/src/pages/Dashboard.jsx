@@ -8,7 +8,7 @@ import { ItemCard } from '@/components/dashboard/ItemCard';
 import { ItemModal } from '@/components/dashboard/ItemModal';
 import { DeleteConfirmationModal } from '@/components/dashboard/DeleteConfirmationModal';
 
-const API_URL = '/api';
+import { API_URL } from '@/lib/api';
 
 export default function Dashboard() {
     const [items, setItems] = useState([]);

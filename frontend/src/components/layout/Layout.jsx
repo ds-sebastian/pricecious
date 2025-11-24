@@ -1,18 +1,12 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Settings, Moon, Sun, Menu } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Moon, Sun, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { cn } from '@/lib/utils';
+import { Nav } from './Nav';
 
 const Layout = ({ children, theme, toggleTheme }) => {
-    const location = useLocation();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-    const navItems = [
-        { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-        { icon: Settings, label: 'Settings', path: '/settings' },
-    ];
 
     return (
         <div className="min-h-screen bg-background font-sans antialiased">
@@ -27,23 +21,7 @@ const Layout = ({ children, theme, toggleTheme }) => {
                             </span>
                         </Link>
                     </div>
-                    <nav className="flex-1 space-y-1 p-4">
-                        {navItems.map((item) => {
-                            const Icon = item.icon;
-                            const isActive = location.pathname === item.path;
-                            return (
-                                <Link key={item.path} to={item.path}>
-                                    <Button
-                                        variant={isActive ? "secondary" : "ghost"}
-                                        className={cn("w-full justify-start gap-2", isActive && "bg-secondary")}
-                                    >
-                                        <Icon className="h-4 w-4" />
-                                        {item.label}
-                                    </Button>
-                                </Link>
-                            );
-                        })}
-                    </nav>
+                    <Nav />
                     <div className="border-t p-4">
                         <Button
                             variant="ghost"
@@ -83,23 +61,7 @@ const Layout = ({ children, theme, toggleTheme }) => {
                                     Pricecious
                                 </span>
                             </div>
-                            <nav className="flex-1 space-y-1 p-4">
-                                {navItems.map((item) => {
-                                    const Icon = item.icon;
-                                    const isActive = location.pathname === item.path;
-                                    return (
-                                        <Link key={item.path} to={item.path} onClick={() => setMobileMenuOpen(false)}>
-                                            <Button
-                                                variant={isActive ? "secondary" : "ghost"}
-                                                className={cn("w-full justify-start gap-2", isActive && "bg-secondary")}
-                                            >
-                                                <Icon className="h-4 w-4" />
-                                                {item.label}
-                                            </Button>
-                                        </Link>
-                                    );
-                                })}
-                            </nav>
+                            <Nav onItemClick={() => setMobileMenuOpen(false)} />
                             <div className="border-t p-4">
                                 <Button
                                     variant="ghost"

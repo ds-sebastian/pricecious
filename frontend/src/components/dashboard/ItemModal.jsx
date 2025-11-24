@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-const API_URL = '/api';
+import { API_URL } from '@/lib/api';
 
 export function ItemModal({ item, onClose, onSaved, open }) {
     const [formData, setFormData] = useState({
