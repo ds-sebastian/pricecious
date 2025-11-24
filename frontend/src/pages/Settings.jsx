@@ -255,12 +255,13 @@ export default function Settings() {
                                         <Select value={config.ai_reasoning_effort} onValueChange={(val) => updateSetting('ai_reasoning_effort', val)}>
                                             <SelectTrigger><SelectValue /></SelectTrigger>
                                             <SelectContent>
+                                                <SelectItem value="none">None (Disabled)</SelectItem>
                                                 <SelectItem value="low">Low (Faster/Cheaper)</SelectItem>
                                                 <SelectItem value="medium">Medium</SelectItem>
                                                 <SelectItem value="high">High (More Thorough)</SelectItem>
                                             </SelectContent>
                                         </Select>
-                                        <p className="text-xs text-muted-foreground">Only for supported models (e.g. gpt-5, o1)</p>
+                                        <p className="text-xs text-muted-foreground">Only for supported models (e.g. gpt-5, gpt-5.1, o1). Use "none" to disable reasoning.</p>
                                     </div>
                                     <div className="space-y-2">
                                         <div className="flex justify-between">
