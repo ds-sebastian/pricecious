@@ -176,6 +176,7 @@ class AIService:
             "max_tokens": 300,
             "temperature": 0.0,  # Very deterministic for repair
             "timeout": config["timeout"],
+            "drop_params": True,  # Ignore unsupported params
         }
 
         if config["api_key"]:
@@ -187,11 +188,20 @@ class AIService:
         elif config["provider"] == "openai" and config["api_base"]:
             kwargs["api_base"] = config["api_base"]
 
-        response = await acompletion(**kwargs)
-        repaired_text = response.choices[0].message.content
+        try:
+            response = await acompletion(**kwargs)
+            repaired_text = response.choices[0].message.content
 
-        # Validate repaired response
-        return cls.parse_and_validate_response(repaired_text)
+            # Validate repaired response
+            return cls.parse_and_validate_response(repaired_text)
+        except Exception as e:
+            # Check for BadRequestError from litellm which might indicate provider/model mismatch
+            if "LLM Provider NOT provided" in str(e):
+                logger.error(
+                    f"Configuration Error: It seems like the model '{config['model']}' is not supported by the provider '{config['provider']}'. "
+                    "Please check your settings."
+                )
+            raise
 
     @staticmethod
     @retry(
@@ -232,6 +242,7 @@ class AIService:
             "max_tokens": config["max_tokens"],
             "temperature": config["temperature"],
             "timeout": config["timeout"],
+            "drop_params": True,  # Ignore unsupported params
         }
 
         if config["api_key"]:
@@ -261,10 +272,19 @@ class AIService:
             f"(temp={config['temperature']}, max_tokens={config['max_tokens']}, "
             f"timeout={config['timeout']}s, key={sanitized_key})"
         )
-        response = await acompletion(**kwargs)
-
-        content = response.choices[0].message.content
-        return content or ""
+        
+        try:
+            response = await acompletion(**kwargs)
+            content = response.choices[0].message.content
+            return content or ""
+        except Exception as e:
+            # Check for BadRequestError from litellm which might indicate provider/model mismatch
+            if "LLM Provider NOT provided" in str(e):
+                logger.error(
+                    f"Configuration Error: It seems like the model '{config['model']}' is not supported by the provider '{config['provider']}'. "
+                    "Please check your settings."
+                )
+            raise
 
     @classmethod
     async def analyze_image(
