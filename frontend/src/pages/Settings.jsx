@@ -67,7 +67,7 @@ export default function Settings() {
                 ai_provider: settingsMap['ai_provider'] || 'ollama',
                 ai_model: settingsMap['ai_model'] || 'moondream',
                 ai_api_key: settingsMap['ai_api_key'] || '',
-                ai_api_base: settingsMap['ai_api_base'] || 'http://ollama:11434',
+                ai_api_base: settingsMap['ai_api_base'] !== undefined ? settingsMap['ai_api_base'] : 'http://ollama:11434',
                 ai_temperature: parseFloat(settingsMap['ai_temperature'] || '0.1'),
                 ai_max_tokens: parseInt(settingsMap['ai_max_tokens'] || '300'),
                 confidence_threshold_price: parseFloat(settingsMap['confidence_threshold_price'] || '0.5'),
