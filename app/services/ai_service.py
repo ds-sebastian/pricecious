@@ -5,9 +5,14 @@ import re
 import time
 from typing import Any, TypedDict
 
+import litellm
 from litellm import acompletion
 from pydantic import ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+# Suppress verbose litellm logs
+litellm.suppress_debug_info = True
+litellm.set_verbose = False
 
 from app import models
 from app.ai_schema import (
