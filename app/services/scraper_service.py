@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from dataclasses import dataclass
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -10,22 +11,35 @@ logger = logging.getLogger(__name__)
 BROWSERLESS_URL = os.getenv("BROWSERLESS_URL", "ws://browserless:3000")
 
 
+@dataclass
+class ScrapeConfig:
+    """Configuration for scraping parameters."""
+
+    smart_scroll: bool = False
+    scroll_pixels: int = 350
+    text_length: int = 0
+    timeout: int = 90000
+
+
 class ScraperService:
     @staticmethod
     async def scrape_item(
         url: str,
         selector: str | None = None,
         item_id: int | None = None,
-        smart_scroll: bool = False,
-        scroll_pixels: int = 350,
-        text_length: int = 0,
-        timeout: int = 90000,
+        config: ScrapeConfig | None = None,
     ) -> tuple[str | None, str]:
         """
         Scrapes the given URL using Browserless and Playwright.
         Returns a tuple: (screenshot_path, page_text)
         """
+        if config is None:
+            config = ScrapeConfig()
+
         # Input validation
+        scroll_pixels = config.scroll_pixels
+        timeout = config.timeout
+
         if scroll_pixels <= 0:
             logger.warning(f"Invalid scroll_pixels value: {scroll_pixels}, using default 350")
             scroll_pixels = 350
@@ -53,10 +67,10 @@ class ScraperService:
                 else:
                     await ScraperService._auto_detect_price(page)
 
-                if smart_scroll:
+                if config.smart_scroll:
                     await ScraperService._smart_scroll(page, scroll_pixels)
 
-                page_text = await ScraperService._extract_text(page, text_length)
+                page_text = await ScraperService._extract_text(page, config.text_length)
                 screenshot_path = await ScraperService._take_screenshot(page, url, item_id)
 
                 return screenshot_path, page_text

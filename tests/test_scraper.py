@@ -15,6 +15,8 @@ class TestScraperInputValidation:
     @pytest.mark.asyncio
     async def test_invalid_scroll_pixels(self, caplog):
         """Test that invalid scroll_pixels is corrected."""
+        from app.services.scraper_service import ScrapeConfig
+
         with patch("app.services.scraper_service.async_playwright") as mock_playwright:
             # Mock the playwright context
             mock_browser = AsyncMock()
@@ -22,6 +24,21 @@ class TestScraperInputValidation:
             mock_page = AsyncMock()
             mock_page.goto = AsyncMock()
             mock_page.screenshot = AsyncMock()
+            mock_page.inner_text = AsyncMock(return_value="")
+
+            # Mock locator properly to avoid unawaited coroutine warnings
+            mock_locator = AsyncMock()
+            mock_locator.count = AsyncMock(return_value=0)
+            mock_locator.first = AsyncMock()
+            mock_locator.first.click = AsyncMock()
+            mock_locator.first.scroll_into_view_if_needed = AsyncMock()
+            mock_page.locator = AsyncMock(return_value=mock_locator)
+
+            # Mock keyboard
+            mock_keyboard = AsyncMock()
+            mock_keyboard.press = AsyncMock()
+            mock_page.keyboard = mock_keyboard
+
             mock_context.new_page = AsyncMock(return_value=mock_page)
             mock_browser.new_context = AsyncMock(return_value=mock_context)
             mock_browser.close = AsyncMock()
@@ -31,7 +48,8 @@ class TestScraperInputValidation:
             mock_playwright.return_value.__aenter__.return_value = mock_pw
 
             # Test with negative scroll_pixels
-            await ScraperService.scrape_item("https://example.com", scroll_pixels=-100)
+            config = ScrapeConfig(scroll_pixels=-100)
+            await ScraperService.scrape_item("https://example.com", config=config)
 
             # Check that warning was logged
             assert "Invalid scroll_pixels value" in caplog.text
@@ -39,12 +57,15 @@ class TestScraperInputValidation:
     @pytest.mark.asyncio
     async def test_invalid_timeout(self, caplog):
         """Test that invalid timeout is corrected."""
+        from app.services.scraper_service import ScrapeConfig
+
         with patch("app.services.scraper_service.async_playwright") as mock_playwright:
             mock_browser = AsyncMock()
             mock_context = AsyncMock()
             mock_page = AsyncMock()
             mock_page.goto = AsyncMock()
             mock_page.screenshot = AsyncMock()
+            mock_page.inner_text = AsyncMock(return_value="")
             mock_context.new_page = AsyncMock(return_value=mock_page)
             mock_browser.new_context = AsyncMock(return_value=mock_context)
             mock_browser.close = AsyncMock()
@@ -54,7 +75,8 @@ class TestScraperInputValidation:
             mock_playwright.return_value.__aenter__.return_value = mock_pw
 
             # Test with zero timeout
-            await ScraperService.scrape_item("https://example.com", timeout=0)
+            config = ScrapeConfig(timeout=0)
+            await ScraperService.scrape_item("https://example.com", config=config)
 
             # Check that warning was logged
             assert "Invalid timeout value" in caplog.text
@@ -73,6 +95,20 @@ class TestScraperScreenshot:
             mock_page.goto = AsyncMock()
             mock_page.screenshot = AsyncMock()
             mock_page.inner_text = AsyncMock(return_value="test text")
+
+            # Mock locator for popup handling and price detection
+            mock_locator = AsyncMock()
+            mock_locator.count = AsyncMock(return_value=0)
+            mock_locator.first = AsyncMock()
+            mock_locator.first.click = AsyncMock()
+            mock_locator.first.scroll_into_view_if_needed = AsyncMock()
+            mock_page.locator = AsyncMock(return_value=mock_locator)
+
+            # Mock keyboard for popup handling
+            mock_keyboard = AsyncMock()
+            mock_keyboard.press = AsyncMock()
+            mock_page.keyboard = mock_keyboard
+
             mock_context.new_page = AsyncMock(return_value=mock_page)
             mock_browser.new_context = AsyncMock(return_value=mock_context)
             mock_browser.close = AsyncMock()
@@ -114,6 +150,18 @@ class TestScraperErrorHandling:
             mock_page = AsyncMock()
             mock_page.goto = AsyncMock(side_effect=Exception("Timeout"))
             mock_page.screenshot = AsyncMock()  # Should still try to screenshot
+            mock_page.inner_text = AsyncMock(return_value="")
+
+            # Mock locator for popup handling and price detection
+            mock_locator = AsyncMock()
+            mock_locator.count = AsyncMock(return_value=0)
+            mock_page.locator = AsyncMock(return_value=mock_locator)
+
+            # Mock keyboard for popup handling
+            mock_keyboard = AsyncMock()
+            mock_keyboard.press = AsyncMock()
+            mock_page.keyboard = mock_keyboard
+
             mock_context.new_page = AsyncMock(return_value=mock_page)
             mock_browser.new_context = AsyncMock(return_value=mock_context)
             mock_browser.close = AsyncMock()

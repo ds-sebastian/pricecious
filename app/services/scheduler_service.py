@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -10,7 +11,7 @@ from app.ai_schema import AIExtractionMetadata, AIExtractionResponse
 from app.services.ai_service import AIService
 from app.services.item_service import ItemService
 from app.services.notification_service import NotificationService
-from app.services.scraper_service import ScraperService
+from app.services.scraper_service import ScrapeConfig, ScraperService
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
@@ -28,24 +29,31 @@ def _get_thresholds(session: Session):
     }
 
 
+@dataclass
+class UpdateData:
+    """Data needed to update item after AI analysis."""
+
+    extraction: AIExtractionResponse
+    metadata: AIExtractionMetadata
+    thresholds: dict
+    screenshot_path: str
+
+
 def _update_db_result(
     session: Session,
     item_id: int,
-    extraction: AIExtractionResponse,
-    metadata: AIExtractionMetadata,
-    thresholds: dict,
-    screenshot_path: str,
+    update_data: UpdateData,
 ):
     item = session.query(models.Item).filter(models.Item.id == item_id).first()
     if not item:
         return None, None
 
     old_price, old_stock = item.current_price, item.in_stock
-    price, in_stock = extraction.price, extraction.in_stock
-    p_conf, s_conf = extraction.price_confidence, extraction.in_stock_confidence
+    price, in_stock = update_data.extraction.price, update_data.extraction.in_stock
+    p_conf, s_conf = update_data.extraction.price_confidence, update_data.extraction.in_stock_confidence
 
     if price is not None:
-        if p_conf >= thresholds["price"]:
+        if p_conf >= update_data.thresholds["price"]:
             if (
                 old_price
                 and (abs(price - old_price) / old_price * 100 > PRICE_CHANGE_THRESHOLD_PERCENT)
@@ -61,17 +69,17 @@ def _update_db_result(
             models.PriceHistory(
                 item_id=item.id,
                 price=price,
-                screenshot_path=screenshot_path,
+                screenshot_path=update_data.screenshot_path,
                 price_confidence=p_conf,
                 in_stock_confidence=s_conf,
-                ai_model=metadata.model_name,
-                ai_provider=metadata.provider,
-                prompt_version=metadata.prompt_version,
-                repair_used=metadata.repair_used,
+                ai_model=update_data.metadata.model_name,
+                ai_provider=update_data.metadata.provider,
+                prompt_version=update_data.metadata.prompt_version,
+                repair_used=update_data.metadata.repair_used,
             )
         )
 
-    if in_stock is not None and s_conf >= thresholds["stock"]:
+    if in_stock is not None and s_conf >= update_data.thresholds["stock"]:
         item.in_stock = in_stock
         item.in_stock_confidence = s_conf
 
@@ -120,14 +128,17 @@ async def _execute_check(item_id: int):
         logger.info(f"Checking item: {item_data['name']} ({item_data['url']})")
 
         # 2. Scrape
-        screenshot_path, page_text = await ScraperService.scrape_item(
-            item_data["url"],
-            item_data["selector"],
-            item_id,
+        scrape_config = ScrapeConfig(
             smart_scroll=config["smart_scroll"],
             scroll_pixels=config["smart_scroll_pixels"],
             text_length=config["text_length"],
             timeout=config["scraper_timeout"],
+        )
+        screenshot_path, page_text = await ScraperService.scrape_item(
+            item_data["url"],
+            item_data["selector"],
+            item_id,
+            scrape_config,
         )
 
         if not screenshot_path:
@@ -143,9 +154,13 @@ async def _execute_check(item_id: int):
         # We use a single session for the update to ensure atomicity of the update
         with database.SessionLocal() as session:
             thresholds = await loop.run_in_executor(None, _get_thresholds, session)
-            old_price, old_stock = await loop.run_in_executor(
-                None, _update_db_result, session, item_id, extraction, metadata, thresholds, screenshot_path
+            update_data = UpdateData(
+                extraction=extraction,
+                metadata=metadata,
+                thresholds=thresholds,
+                screenshot_path=screenshot_path,
             )
+            old_price, old_stock = await loop.run_in_executor(None, _update_db_result, session, item_id, update_data)
 
         await NotificationService.send_item_notifications(
             item_data, extraction.price, old_price, extraction.in_stock, old_stock
