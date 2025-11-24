@@ -205,7 +205,7 @@ class AIService:
 
     @staticmethod
     @retry(
-        retry=retry_if_exception_type((TimeoutError, ConnectionError)),
+        retry=retry_if_exception_type((TimeoutError, ConnectionError, ValueError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         reraise=True,
@@ -224,6 +224,7 @@ class AIService:
         Raises:
             TimeoutError: If request times out after retries
             ConnectionError: If connection fails after retries
+            ValueError: If response is empty
         """
         messages = [
             {
@@ -272,11 +273,21 @@ class AIService:
             f"(temp={config['temperature']}, max_tokens={config['max_tokens']}, "
             f"timeout={config['timeout']}s, key={sanitized_key})"
         )
-        
+
         try:
             response = await acompletion(**kwargs)
+
+            # Log full response metadata for debugging
+            logger.debug(f"LLM Response Metadata: {response}")
+
             content = response.choices[0].message.content
-            return content or ""
+
+            if not content:
+                finish_reason = response.choices[0].finish_reason
+                logger.error(f"Received empty content from LLM. Finish reason: {finish_reason}")
+                raise ValueError(f"Empty response from LLM (finish_reason: {finish_reason})")
+
+            return content
         except Exception as e:
             # Check for BadRequestError from litellm which might indicate provider/model mismatch
             if "LLM Provider NOT provided" in str(e):
