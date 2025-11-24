@@ -10,10 +10,6 @@ from litellm import acompletion
 from pydantic import ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-# Suppress verbose litellm logs
-litellm.suppress_debug_info = True
-litellm.set_verbose = False
-
 from app import models
 from app.ai_schema import (
     PROMPT_VERSION,
@@ -26,6 +22,10 @@ from app.database import SessionLocal
 from app.utils.image import encode_image
 from app.utils.text import clean_text
 
+# Suppress verbose litellm logs
+litellm.suppress_debug_info = True
+litellm.set_verbose = False
+
 # Default configuration (can be overridden by DB settings)
 DEFAULT_PROVIDER = "ollama"
 DEFAULT_MODEL = "gemma3:4b"
@@ -34,6 +34,8 @@ DEFAULT_TEMPERATURE = 0.1
 DEFAULT_MAX_TOKENS = 1000
 DEFAULT_TIMEOUT = 30  # seconds
 MAX_TEXT_LENGTH = 5000  # Will be filtered to ~1500-2000 relevant chars
+
+DEFAULT_REASONING_EFFORT = "low"
 
 # Config caching
 _config_cache: dict[str, Any] = {"data": None, "timestamp": 0.0}
@@ -53,6 +55,7 @@ class AIConfig(TypedDict):
     enable_json_repair: bool
     enable_multi_sample: bool
     multi_sample_threshold: float
+    reasoning_effort: str
 
 
 MIN_API_KEY_LENGTH = 12
@@ -94,6 +97,7 @@ class AIService:
                 "enable_json_repair": settings_map.get("enable_json_repair", "true").lower() == "true",
                 "enable_multi_sample": settings_map.get("enable_multi_sample", "false").lower() == "true",
                 "multi_sample_threshold": float(settings_map.get("multi_sample_confidence_threshold", "0.6")),
+                "reasoning_effort": settings_map.get("ai_reasoning_effort", DEFAULT_REASONING_EFFORT),
             }
 
             # Update cache
@@ -114,6 +118,7 @@ class AIService:
                 "enable_json_repair": True,
                 "enable_multi_sample": False,
                 "multi_sample_threshold": 0.6,
+                "reasoning_effort": DEFAULT_REASONING_EFFORT,
             }
         finally:
             session.close()
@@ -150,6 +155,41 @@ class AIService:
         # Validate and normalize through Pydantic
         return AIExtractionResponse(**data)
 
+    @staticmethod
+    def _get_provider_kwargs(config: AIConfig) -> dict[str, Any]:
+        """Helper to generate provider-specific kwargs for litellm."""
+        kwargs: dict[str, Any] = {}
+
+        if config["provider"] == "ollama":
+            kwargs["api_base"] = config["api_base"]
+            kwargs["format"] = "json"  # Force JSON mode for Ollama
+        elif config["provider"] == "openai":
+            # Use Native Structured Outputs (Pydantic Schema)
+            kwargs["response_format"] = AIExtractionResponse
+            if config["api_base"]:
+                kwargs["api_base"] = config["api_base"]
+
+            # Add reasoning effort if supported (passed via drop_params=True if not)
+            kwargs["reasoning_effort"] = config["reasoning_effort"]
+
+        elif config["provider"] == "anthropic":
+            # Anthropic doesn't have native JSON mode yet, rely on prompt
+            if config["api_base"]:
+                kwargs["api_base"] = config["api_base"]
+        elif config["provider"] == "openrouter":
+            if config["api_base"]:
+                kwargs["api_base"] = config["api_base"]
+            # OpenRouter headers
+            kwargs["extra_headers"] = {
+                "HTTP-Referer": "https://github.com/ds-sebastian/pricecious",
+                "X-Title": "Pricecious",
+            }
+        # Other providers - rely on prompt engineering
+        elif config["api_base"]:
+            kwargs["api_base"] = config["api_base"]
+
+        return kwargs
+
     @classmethod
     async def repair_json_response(
         cls,
@@ -175,8 +215,14 @@ class AIService:
 
         # Use a simpler, cheaper model for repair if possible
         # For now, use the same model
+        model = config["model"]
+        if config["provider"] == "ollama":
+            model = f"ollama/{config['model']}"
+        elif config["provider"] == "openrouter":
+            model = f"openrouter/{config['model']}"
+
         kwargs = {
-            "model": config["model"] if config["provider"] != "ollama" else f"ollama/{config['model']}",
+            "model": model,
             "messages": [{"role": "user", "content": repair_prompt}],
             "max_tokens": 300,
             "temperature": 0.0,  # Very deterministic for repair
@@ -187,24 +233,23 @@ class AIService:
         if config["api_key"]:
             kwargs["api_key"] = config["api_key"]
 
-        if config["provider"] == "ollama":
-            kwargs["api_base"] = config["api_base"]
-            kwargs["format"] = "json"
-        elif config["provider"] == "openai" and config["api_base"]:
-            kwargs["api_base"] = config["api_base"]
+        # Merge provider specific kwargs
+        kwargs.update(cls._get_provider_kwargs(config))
 
         try:
             response = await acompletion(**kwargs)
             repaired_text = response.choices[0].message.content
 
-            # Validate repaired response
+            # If structured output was used, it might already be a JSON string of the model
+            # But litellm returns content as string.
+            # If we used response_format=AIExtractionResponse, the content IS the JSON.
             return cls.parse_and_validate_response(repaired_text)
         except Exception as e:
             # Check for BadRequestError from litellm which might indicate provider/model mismatch
             if "LLM Provider NOT provided" in str(e):
                 logger.error(
-                    f"Configuration Error: It seems like the model '{config['model']}' is not supported by the provider '{config['provider']}'. "
-                    "Please check your settings."
+                    f"Configuration Error: It seems like the model '{config['model']}' is not supported "
+                    f"by the provider '{config['provider']}'. Please check your settings."
                 )
             raise
 
@@ -242,8 +287,14 @@ class AIService:
         ]
 
         # Prepare kwargs for litellm
+        model = config["model"]
+        if config["provider"] == "ollama":
+            model = f"ollama/{config['model']}"
+        elif config["provider"] == "openrouter":
+            model = f"openrouter/{config['model']}"
+
         kwargs: dict[str, Any] = {
-            "model": config["model"] if config["provider"] != "ollama" else f"ollama/{config['model']}",
+            "model": model,
             "messages": messages,
             "max_tokens": config["max_tokens"],
             "temperature": config["temperature"],
@@ -254,22 +305,9 @@ class AIService:
         if config["api_key"]:
             kwargs["api_key"] = config["api_key"]
 
-        # Provider-specific structured output features
-        if config["provider"] == "ollama":
-            kwargs["api_base"] = config["api_base"]
-            kwargs["format"] = "json"  # Force JSON mode for Ollama
-        elif config["provider"] == "openai":
-            # Use OpenAI's JSON mode
-            kwargs["response_format"] = {"type": "json_object"}
-            if config["api_base"]:
-                kwargs["api_base"] = config["api_base"]
-        elif config["provider"] == "anthropic":
-            # Anthropic doesn't have native JSON mode yet, rely on prompt
-            if config["api_base"]:
-                kwargs["api_base"] = config["api_base"]
-        # Other providers - rely on prompt engineering
-        elif config["api_base"]:
-            kwargs["api_base"] = config["api_base"]
+        # Merge provider specific kwargs
+        # This helper reduces complexity by extracting the branching logic
+        kwargs.update(AIService._get_provider_kwargs(config))
 
         # Call litellm asynchronously
         sanitized_key = _sanitize_api_key(config["api_key"]) if config["api_key"] else "(none)"
@@ -297,8 +335,8 @@ class AIService:
             # Check for BadRequestError from litellm which might indicate provider/model mismatch
             if "LLM Provider NOT provided" in str(e):
                 logger.error(
-                    f"Configuration Error: It seems like the model '{config['model']}' is not supported by the provider '{config['provider']}'. "
-                    "Please check your settings."
+                    f"Configuration Error: It seems like the model '{config['model']}' is not supported "
+                    f"by the provider '{config['provider']}'. Please check your settings."
                 )
             raise
 

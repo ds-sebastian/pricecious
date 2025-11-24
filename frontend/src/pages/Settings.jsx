@@ -30,7 +30,8 @@ export default function Settings() {
         smart_scroll_pixels: 350,
         text_context_enabled: false,
         text_context_length: 5000,
-        scraper_timeout: 90000
+        scraper_timeout: 90000,
+        ai_reasoning_effort: 'low'
     });
     const [newProfile, setNewProfile] = useState({
         name: '',
@@ -77,7 +78,9 @@ export default function Settings() {
                 smart_scroll_pixels: parseInt(settingsMap['smart_scroll_pixels'] || '350'),
                 text_context_enabled: settingsMap['text_context_enabled'] === 'true',
                 text_context_length: parseInt(settingsMap['text_context_length'] || '5000'),
-                scraper_timeout: parseInt(settingsMap['scraper_timeout'] || '90000')
+                text_context_length: parseInt(settingsMap['text_context_length'] || '5000'),
+                scraper_timeout: parseInt(settingsMap['scraper_timeout'] || '90000'),
+                ai_reasoning_effort: settingsMap['ai_reasoning_effort'] || 'low'
             });
         } catch (error) {
             toast.error('Failed to fetch settings');
@@ -199,6 +202,7 @@ export default function Settings() {
                                     <SelectItem value="ollama">Ollama</SelectItem>
                                     <SelectItem value="openai">OpenAI</SelectItem>
                                     <SelectItem value="anthropic">Anthropic</SelectItem>
+                                    <SelectItem value="openrouter">OpenRouter</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -245,6 +249,18 @@ export default function Settings() {
                                             value={config.ai_temperature}
                                             onChange={(e) => updateSetting('ai_temperature', parseFloat(e.target.value))}
                                         />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Reasoning Effort</Label>
+                                        <Select value={config.ai_reasoning_effort} onValueChange={(val) => updateSetting('ai_reasoning_effort', val)}>
+                                            <SelectTrigger><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="low">Low (Faster/Cheaper)</SelectItem>
+                                                <SelectItem value="medium">Medium</SelectItem>
+                                                <SelectItem value="high">High (More Thorough)</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-muted-foreground">Only for supported models (e.g. gpt-5, o1)</p>
                                     </div>
                                     <div className="space-y-2">
                                         <div className="flex justify-between">
