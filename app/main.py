@@ -13,6 +13,7 @@ from slowapi.errors import RateLimitExceeded
 from app.limiter import limiter
 from app.routers import items, jobs, notifications, settings
 from app.services.scheduler_service import scheduled_refresh, scheduler
+from app.services.scraper_service import ScraperService
 
 # Configure logging
 logging.basicConfig(
@@ -25,12 +26,22 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting smart scheduler (Heartbeat: 1 minute)")
+
+    # Initialize services
+    await ScraperService.initialize()
+
     scheduler.add_job(scheduled_refresh, IntervalTrigger(minutes=1), id="refresh_job", replace_existing=True)
     scheduler.start()
     logger.info("Application started")
+
     yield
+
     logger.info("Shutting down scheduler...")
     scheduler.shutdown(wait=True)
+
+    # Shutdown services
+    await ScraperService.shutdown()
+
     logger.info("Application shutdown complete")
 
 

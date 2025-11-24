@@ -22,6 +22,33 @@ class ScrapeConfig:
 
 
 class ScraperService:
+    _playwright = None
+    _browser: Browser | None = None
+    _lock = asyncio.Lock()
+
+    @classmethod
+    async def initialize(cls):
+        """Initialize the shared browser instance."""
+        async with cls._lock:
+            if cls._browser is None:
+                logger.info("Initializing ScraperService shared browser...")
+                cls._playwright = await async_playwright().start()
+                cls._browser = await cls._connect_browser(cls._playwright)
+                logger.info("ScraperService initialized.")
+
+    @classmethod
+    async def shutdown(cls):
+        """Shutdown the shared browser instance."""
+        async with cls._lock:
+            if cls._browser:
+                logger.info("Shutting down ScraperService shared browser...")
+                await cls._browser.close()
+                cls._browser = None
+            if cls._playwright:
+                await cls._playwright.stop()
+                cls._playwright = None
+            logger.info("ScraperService shutdown complete.")
+
     @staticmethod
     async def scrape_item(
         url: str,
@@ -52,13 +79,24 @@ class ScraperService:
         scroll_pixels = max(350, scroll_pixels)
         timeout = max(30000, timeout)
 
-        async with async_playwright() as p:
-            browser = None
+        # Ensure browser is initialized
+        if ScraperService._browser is None:
+            logger.warning("ScraperService not initialized, attempting lazy initialization...")
             try:
-                browser = await ScraperService._connect_browser(p)
-                context = await ScraperService._create_context(browser)
-                page = await context.new_page()
+                await ScraperService.initialize()
+            except Exception as e:
+                logger.error(f"Lazy initialization failed: {e}")
+                return None, ""
 
+        if ScraperService._browser is None:
+            logger.error("Failed to initialize browser for scraping.")
+            return None, ""
+
+        try:
+            context = await ScraperService._create_context(ScraperService._browser)
+            page = await context.new_page()
+
+            try:
                 await ScraperService._navigate_and_wait(page, url, timeout)
                 await ScraperService._handle_popups(page)
 
@@ -75,13 +113,12 @@ class ScraperService:
 
                 return screenshot_path, page_text
 
-            except Exception as e:
-                logger.error(f"Error scraping {url}: {e}")
-                return None, ""
-
             finally:
-                if browser:
-                    await browser.close()
+                await context.close()
+
+        except Exception as e:
+            logger.error(f"Error scraping {url}: {e}")
+            return None, ""
 
     @staticmethod
     async def _connect_browser(p) -> Browser:
