@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -9,6 +10,20 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 logger = logging.getLogger(__name__)
 
 BROWSERLESS_URL = os.getenv("BROWSERLESS_URL", "ws://browserless:3000")
+
+POPUP_SELECTORS = [
+    "button[aria-label='Close']",
+    "button[aria-label='close']",
+    ".close-button",
+    ".modal-close",
+    "svg[data-name='Close']",
+    "[class*='popup'] button",
+    "[class*='modal'] button",
+    "button:has-text('No, thanks')",
+    "button:has-text('No thanks')",
+    "a:has-text('No, thanks')",
+    "div[role='dialog'] button[aria-label='Close']",
+]
 
 
 @dataclass
@@ -63,21 +78,9 @@ class ScraperService:
         if config is None:
             config = ScrapeConfig()
 
-        # Input validation
-        scroll_pixels = config.scroll_pixels
-        timeout = config.timeout
-
-        if scroll_pixels <= 0:
-            logger.warning(f"Invalid scroll_pixels value: {scroll_pixels}, using default 350")
-            scroll_pixels = 350
-
-        if timeout <= 0:
-            logger.warning(f"Invalid timeout value: {timeout}, using default 90000")
-            timeout = 90000
-
-        # Ensure minimums even if positive (optional, but good practice)
-        scroll_pixels = max(350, scroll_pixels)
-        timeout = max(30000, timeout)
+        # Input validation & defaults
+        scroll_pixels = max(350, config.scroll_pixels if config.scroll_pixels > 0 else 350)
+        timeout = max(30000, config.timeout if config.timeout > 0 else 90000)
 
         # Ensure browser is initialized
         if ScraperService._browser is None:
@@ -154,7 +157,6 @@ class ScraperService:
 
         except Exception as e:
             logger.warning(f"Navigation warning for {url}: {e}")
-            # Continue even if navigation isn't perfect, as we might still get content
 
         # Wait a bit for dynamic content
         await page.wait_for_timeout(2000)
@@ -162,28 +164,13 @@ class ScraperService:
     @staticmethod
     async def _handle_popups(page: Page):
         logger.info("Attempting to close popups...")
-        popup_selectors = [
-            "button[aria-label='Close']",
-            "button[aria-label='close']",
-            ".close-button",
-            ".modal-close",
-            "svg[data-name='Close']",
-            "[class*='popup'] button",
-            "[class*='modal'] button",
-            "button:has-text('No, thanks')",
-            "button:has-text('No thanks')",
-            "a:has-text('No, thanks')",
-            "div[role='dialog'] button[aria-label='Close']",
-        ]
-
-        for popup_selector in popup_selectors:
+        for popup_selector in POPUP_SELECTORS:
             try:
                 if await page.locator(popup_selector).count() > 0:
                     logger.info(f"Found popup close button: {popup_selector}")
                     await page.locator(popup_selector).first.click(timeout=2000)
                     await page.wait_for_timeout(1000)
             except Exception:
-                # Ignore errors when trying to close popups
                 pass
 
         try:
@@ -246,7 +233,7 @@ class ScraperService:
             filename = f"{screenshot_dir}/item_{item_id}.png"
         else:
             url_part = url.split("//")[-1].replace("/", "_")
-            timestamp = asyncio.get_event_loop().time()
+            timestamp = datetime.now().timestamp()
             filename = f"{screenshot_dir}/{url_part}_{timestamp}.png"
 
         await page.screenshot(path=filename, full_page=False)

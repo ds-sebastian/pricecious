@@ -134,7 +134,7 @@ class AIService:
         provider = config["provider"]
         model = config["model"]
 
-        # Handle model prefixes
+        # Ensure model has correct prefix for provider
         if provider == "ollama" and not model.startswith("ollama/"):
             model = f"ollama/{model}"
         elif provider == "openrouter" and not model.startswith("openrouter/"):
@@ -152,25 +152,21 @@ class AIService:
         if config["api_key"]:
             kwargs["api_key"] = config["api_key"]
 
-        # Provider-specific settings
-        if provider == "ollama":
+        if config["api_base"]:
             kwargs["api_base"] = config["api_base"]
+
+        # Provider-specific adjustments
+        if provider == "ollama":
             kwargs["format"] = "json"
         elif provider == "openai":
             if not is_repair:
                 kwargs["response_format"] = AIExtractionResponse
-            if config["api_base"]:
-                kwargs["api_base"] = config["api_base"]
             kwargs["reasoning_effort"] = config["reasoning_effort"]
         elif provider == "openrouter":
-            if config["api_base"]:
-                kwargs["api_base"] = config["api_base"]
             kwargs["extra_headers"] = {
                 "HTTP-Referer": "https://github.com/ds-sebastian/pricecious",
                 "X-Title": "Pricecious",
             }
-        elif config["api_base"]:
-            kwargs["api_base"] = config["api_base"]
 
         return kwargs
 

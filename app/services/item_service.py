@@ -16,12 +16,12 @@ class ItemService:
     @staticmethod
     def get_items(db: Session):
         items = db.query(models.Item).all()
+        # Optimization: Avoid synchronous I/O (os.path.exists) in loop.
+        # Frontend handles 404s for images, or we can rely on a consistent naming convention.
         return [
             {
                 **item.__dict__,
-                "screenshot_url": f"/screenshots/item_{item.id}.png"
-                if os.path.exists(f"screenshots/item_{item.id}.png")
-                else None,
+                "screenshot_url": f"/screenshots/item_{item.id}.png",
             }
             for item in items
         ]
@@ -59,9 +59,11 @@ class ItemService:
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
 
-        if os.path.exists(f"screenshots/item_{item_id}.png"):
+        # Clean up screenshot if it exists (best effort)
+        screenshot_path = f"screenshots/item_{item_id}.png"
+        if os.path.exists(screenshot_path):
             try:
-                os.remove(f"screenshots/item_{item_id}.png")
+                os.remove(screenshot_path)
             except OSError:
                 pass
 
@@ -93,13 +95,14 @@ class ItemService:
             "notification_profile": profile.__dict__ if profile else None,
         }
 
+        # Parse settings with defaults
+        smart_scroll = settings.get("smart_scroll_enabled", "false").lower() == "true"
+        text_context = settings.get("text_context_enabled", "false").lower() == "true"
+
         config = {
-            "smart_scroll": settings.get("smart_scroll_enabled", "false").lower() == "true",
+            "smart_scroll": smart_scroll,
             "smart_scroll_pixels": int(settings.get("smart_scroll_pixels", "350")),
-            "text_context_enabled": settings.get("text_context_enabled", "false").lower() == "true",
-            "text_length": int(settings.get("text_context_length", "5000"))
-            if settings.get("text_context_enabled", "false").lower() == "true"
-            else 0,
+            "text_length": int(settings.get("text_context_length", "5000")) if text_context else 0,
             "scraper_timeout": int(settings.get("scraper_timeout", "90000")),
         }
         return item_data, config

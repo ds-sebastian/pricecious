@@ -72,11 +72,18 @@ class TestScraperInputValidation:
             mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
 
             # Test with negative scroll_pixels
-            config = ScrapeConfig(scroll_pixels=-100)
-            await ScraperService.scrape_item("https://example.com", config=config)
+            config = ScrapeConfig(scroll_pixels=-100, smart_scroll=True)
 
-            # Check that warning was logged
-            assert "Invalid scroll_pixels value" in caplog.text
+            # We need to mock _smart_scroll to verify it's called with corrected value
+            with patch(
+                "app.services.scraper_service.ScraperService._smart_scroll", new_callable=AsyncMock
+            ) as mock_scroll:
+                await ScraperService.scrape_item("https://example.com", config=config)
+
+                # Verify it was called with default 350
+                mock_scroll.assert_called_once()
+                args, _ = mock_scroll.call_args
+                assert args[1] == 350
 
     @pytest.mark.asyncio
     async def test_invalid_timeout(self, caplog):
@@ -102,10 +109,17 @@ class TestScraperInputValidation:
 
             # Test with zero timeout
             config = ScrapeConfig(timeout=0)
-            await ScraperService.scrape_item("https://example.com", config=config)
 
-            # Check that warning was logged
-            assert "Invalid timeout value" in caplog.text
+            # Mock _navigate_and_wait to verify timeout
+            with patch(
+                "app.services.scraper_service.ScraperService._navigate_and_wait", new_callable=AsyncMock
+            ) as mock_nav:
+                await ScraperService.scrape_item("https://example.com", config=config)
+
+                # Verify it was called with default 90000 (default when <= 0)
+                mock_nav.assert_called_once()
+                args, _ = mock_nav.call_args
+                assert args[2] == 90000
 
 
 class TestScraperScreenshot:
