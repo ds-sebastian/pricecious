@@ -67,6 +67,12 @@ for router in [notifications.router, items.router, settings.router, jobs.router]
     app.include_router(router, prefix="/api")
 
 
+@app.get("/health")
+def health_check():
+    """Lightweight health check endpoint for monitoring/Docker (no DB access)"""
+    return {"status": "healthy"}
+
+
 @app.get("/api/")
 def read_root():
     return {"message": "Welcome to Pricecious API"}

@@ -31,8 +31,27 @@ export default function Dashboard() {
 
     useEffect(() => {
         refreshItems();
-        const interval = setInterval(refreshItems, 10000);
-        return () => clearInterval(interval);
+
+        // Poll every 30 seconds, but only when page is visible
+        const interval = setInterval(() => {
+            if (!document.hidden) {
+                refreshItems();
+            }
+        }, 30000);
+
+        // Also refresh when page becomes visible again
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                refreshItems();
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
     }, []);
 
     const handleCheck = async (id) => {

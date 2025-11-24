@@ -78,7 +78,6 @@ export default function Settings() {
                 smart_scroll_pixels: parseInt(settingsMap['smart_scroll_pixels'] || '350'),
                 text_context_enabled: settingsMap['text_context_enabled'] === 'true',
                 text_context_length: parseInt(settingsMap['text_context_length'] || '5000'),
-                text_context_length: parseInt(settingsMap['text_context_length'] || '5000'),
                 scraper_timeout: parseInt(settingsMap['scraper_timeout'] || '90000'),
                 ai_reasoning_effort: settingsMap['ai_reasoning_effort'] || 'low'
             });
