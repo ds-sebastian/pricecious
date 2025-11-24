@@ -29,7 +29,7 @@ class Item(Base):
     name: str = Column(String)  # type: ignore
     selector: str | None = Column(String, nullable=True)  # type: ignore
     target_price: float | None = Column(Float, nullable=True)  # type: ignore
-    check_interval_minutes: int = Column(Integer, default=60)  # type: ignore
+    check_interval_minutes: int | None = Column(Integer, nullable=True, default=None)  # type: ignore
 
     # New fields
     current_price: float | None = Column(Float, nullable=True)  # type: ignore

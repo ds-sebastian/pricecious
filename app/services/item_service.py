@@ -115,13 +115,18 @@ class ItemService:
             if item.is_refreshing:
                 continue
 
-            interval = (
-                item.notification_profile.check_interval_minutes
-                if item.notification_profile and item.notification_profile.check_interval_minutes
-                else global_interval
-            )
+            if item.check_interval_minutes:
+                interval = item.check_interval_minutes
+            elif item.notification_profile and item.notification_profile.check_interval_minutes:
+                interval = item.notification_profile.check_interval_minutes
+            else:
+                interval = global_interval
+
+            # Enforce minimum interval of 5 minutes to prevent loop
+            interval = max(interval, 5)
 
             if not item.last_checked:
+                logger.info(f"Item {item.id} due: Never checked (Interval: {interval}m)")
                 due_items.append((item.id, interval, -1))
                 continue
 
@@ -129,7 +134,9 @@ class ItemService:
                 item.last_checked.replace(tzinfo=UTC) if item.last_checked.tzinfo is None else item.last_checked
             )
             time_since = (now - last_checked).total_seconds() / 60
+
             if time_since >= interval:
+                logger.info(f"Item {item.id} due: Last checked {time_since:.1f}m ago (Interval: {interval}m)")
                 due_items.append((item.id, interval, int(time_since)))
 
         return due_items

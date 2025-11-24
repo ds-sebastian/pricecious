@@ -27,7 +27,7 @@ class ItemCreate(BaseModel):
     name: str
     selector: str | None = None
     target_price: float | None = None
-    check_interval_minutes: int = 60
+    check_interval_minutes: int | None = None
     tags: str | None = None
     description: str | None = None
     notification_profile_id: int | None = None

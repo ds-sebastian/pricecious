@@ -89,6 +89,7 @@ def _update_db_result(
         item.last_error = None
 
     session.commit()
+    logger.info(f"Updated item {item_id}: price={price}, stock={in_stock}, last_checked={item.last_checked}")
     return old_price, old_stock
 
 
