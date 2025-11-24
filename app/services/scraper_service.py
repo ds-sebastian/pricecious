@@ -64,6 +64,39 @@ class ScraperService:
                 cls._playwright = None
             logger.info("ScraperService shutdown complete.")
 
+    @classmethod
+    async def _ensure_browser_connected(cls) -> bool:
+        """Ensure browser is connected, reconnect if needed."""
+        async with cls._lock:
+            try:
+                if cls._browser is None:
+                    logger.warning("Browser not initialized, initializing...")
+                    await cls.initialize()
+                    return cls._browser is not None
+
+                # Test if browser is still alive by trying to create a context
+                try:
+                    test_context = await cls._browser.new_context()
+                    await test_context.close()
+                    return True
+                except Exception as e:
+                    logger.error(f"Browser connection test failed: {e}")
+                    logger.info("Attempting to reconnect browser...")
+                    # Clear the old browser
+                    cls._browser = None
+                    if cls._playwright:
+                        try:
+                            await cls._playwright.stop()
+                        except Exception:
+                            pass
+                        cls._playwright = None
+                    # Reconnect
+                    await cls.initialize()
+                    return cls._browser is not None
+            except Exception as e:
+                logger.error(f"Failed to ensure browser connection: {e}")
+                return False
+
     @staticmethod
     async def scrape_item(
         url: str,
@@ -82,17 +115,9 @@ class ScraperService:
         scroll_pixels = max(350, config.scroll_pixels if config.scroll_pixels > 0 else 350)
         timeout = max(30000, config.timeout if config.timeout > 0 else 90000)
 
-        # Ensure browser is initialized
-        if ScraperService._browser is None:
-            logger.warning("ScraperService not initialized, attempting lazy initialization...")
-            try:
-                await ScraperService.initialize()
-            except Exception as e:
-                logger.error(f"Lazy initialization failed: {e}")
-                return None, ""
-
-        if ScraperService._browser is None:
-            logger.error("Failed to initialize browser for scraping.")
+        # Ensure browser is connected and healthy
+        if not await ScraperService._ensure_browser_connected():
+            logger.error("Failed to establish browser connection")
             return None, ""
 
         try:

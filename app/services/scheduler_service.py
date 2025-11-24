@@ -86,13 +86,17 @@ def _update_item_in_db(item_id: int, update_data: UpdateData) -> tuple[float | N
             item.in_stock = in_stock
             item.in_stock_confidence = s_conf
 
+        old_timestamp = item.last_checked
         item.last_checked = datetime.now(UTC)
         item.is_refreshing = False
         if item.last_error and not item.last_error.startswith("Uncertain:"):
             item.last_error = None
 
         session.commit()
-        logger.info(f"Updated item {item_id}: price={price}, stock={in_stock}")
+        logger.info(
+            f"Updated item {item_id}: price={price}, stock={in_stock} "
+            f"(last_checked: {old_timestamp} -> {item.last_checked})"
+        )
         return old_price, old_stock
 
 
@@ -191,9 +195,9 @@ async def scheduled_refresh():
     loop = asyncio.get_running_loop()
 
     try:
-        with database.SessionLocal() as session:
-            # Only fetch IDs and intervals to minimize session time
-            due_items = await loop.run_in_executor(None, ItemService.get_due_items, session)
+        # Fetch due items in a new session that gets closed immediately
+        # This avoids holding a session open with stale data during processing
+        due_items = await loop.run_in_executor(None, ItemService.get_due_items)
 
         if not due_items:
             return
