@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2025-11-25
+
+### Added
+- Shared Playwright browser instance in `ScraperService` for better resource management.
+- Minimum check duration enforcement for item checks.
+
+### Changed
+- Refactored scheduler for thread-safe database sessions.
+- Centralized database session management for item retrieval.
+- Enhanced AI service API base configuration.
+- Made item check interval nullable and updated interval determination logic.
+
+### Fixed
+- Improved scraper input validation.
+- Enhanced Playwright browser connection robustness.
+
 ## [0.1.4] - 2025-11-23
 
 ### Added
