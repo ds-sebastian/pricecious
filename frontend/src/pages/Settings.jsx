@@ -354,7 +354,8 @@ export default function Settings() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="space-y-2">
-                        <Label>Refresh Interval (Minutes)</Label>
+                        <Label>Default Refresh Interval (Minutes)</Label>
+                        <p className="text-sm text-muted-foreground">Used when no specific interval is set on the item or its profile.</p>
                         <Input type="number" min="1" value={jobConfig.refresh_interval_minutes} onChange={(e) => setJobConfig({ ...jobConfig, refresh_interval_minutes: e.target.value })} />
                     </div>
                     <div className="text-sm text-muted-foreground space-y-1">
