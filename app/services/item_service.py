@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -33,8 +33,8 @@ class ItemService:
             next_check = None
             if item.last_checked:
                 last_checked = item.last_checked
-                if last_checked.tzinfo is None:
-                    last_checked = last_checked.replace(tzinfo=UTC)
+                if last_checked.tzinfo is not None:
+                    last_checked = last_checked.astimezone().replace(tzinfo=None)
                 next_check = last_checked + timedelta(minutes=interval)
 
             item_dict = {k: v for k, v in item.__dict__.items() if not k.startswith("_sa_")}
@@ -138,7 +138,7 @@ class ItemService:
             items = db.query(models.Item).filter(models.Item.is_active).all()
             global_interval = int(SettingsService.get_setting_value(db, "refresh_interval_minutes", "60"))
             due_items = []
-            now = datetime.now(UTC)
+            now = datetime.now()
 
             for item in items:
                 if item.is_refreshing:
@@ -161,10 +161,11 @@ class ItemService:
                     due_items.append((item.id, interval, -1))
                     continue
 
-                # Ensure last_checked is timezone-aware (UTC)
+                # Use naive comparison (Local Time) to match DB storage
                 last_checked = item.last_checked
-                if last_checked.tzinfo is None:
-                    last_checked = last_checked.replace(tzinfo=UTC)
+                if last_checked.tzinfo is not None:
+                    # If somehow we get an aware datetime, convert to naive local
+                    last_checked = last_checked.astimezone().replace(tzinfo=None)
 
                 # Calculate time since last check
                 time_since = (now - last_checked).total_seconds() / 60
