@@ -391,7 +391,7 @@ export default function Settings() {
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label>Check Interval (Minutes)</Label>
+                                <Label>Refresh Interval (Minutes)</Label>
                                 <Input type="number" min="1" value={newProfile.check_interval_minutes} onChange={(e) => setNewProfile({ ...newProfile, check_interval_minutes: parseInt(e.target.value) })} />
                             </div>
                             <div className="space-y-2">
@@ -446,7 +446,7 @@ export default function Settings() {
                                             <div className="grid grid-cols-2 gap-4 text-sm">
                                                 <div className="flex items-center gap-2">
                                                     <Clock className="h-4 w-4 text-muted-foreground" />
-                                                    <span>{profile.check_interval_minutes}m interval</span>
+                                                    <span>{profile.check_interval_minutes}m refresh</span>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <TrendingDown className="h-4 w-4 text-muted-foreground" />

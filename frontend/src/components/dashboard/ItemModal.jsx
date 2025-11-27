@@ -142,6 +142,7 @@ export function ItemModal({ item, onClose, onSaved, open }) {
                             </SelectContent>
                         </Select>
                     </div>
+
                     <div className="space-y-2">
                         <Label htmlFor="tags">Tags</Label>
                         <Input
