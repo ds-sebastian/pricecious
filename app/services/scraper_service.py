@@ -43,13 +43,18 @@ class ScraperService:
 
     @classmethod
     async def initialize(cls):
-        """Initialize the shared browser instance."""
+        """Initialize the shared browser instance (Public, Thread-Safe)."""
         async with cls._lock:
-            if cls._browser is None:
-                logger.info("Initializing ScraperService shared browser...")
-                cls._playwright = await async_playwright().start()
-                cls._browser = await cls._connect_browser(cls._playwright)
-                logger.info("ScraperService initialized.")
+            await cls._initialize()
+
+    @classmethod
+    async def _initialize(cls):
+        """Internal initialization logic (Assumes lock is held)."""
+        if cls._browser is None:
+            logger.info("Initializing ScraperService shared browser...")
+            cls._playwright = await async_playwright().start()
+            cls._browser = await cls._connect_browser(cls._playwright)
+            logger.info("ScraperService initialized.")
 
     @classmethod
     async def shutdown(cls):
@@ -71,7 +76,7 @@ class ScraperService:
             try:
                 if cls._browser is None:
                     logger.warning("Browser not initialized, initializing...")
-                    await cls.initialize()
+                    await cls._initialize()
                     return cls._browser is not None
 
                 # Test if browser is still alive by trying to create a context
@@ -91,7 +96,7 @@ class ScraperService:
                             pass
                         cls._playwright = None
                     # Reconnect
-                    await cls.initialize()
+                    await cls._initialize()
                     return cls._browser is not None
             except Exception as e:
                 logger.error(f"Failed to ensure browser connection: {e}")

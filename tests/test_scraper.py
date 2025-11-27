@@ -2,7 +2,7 @@
 Unit tests for scraper module.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -57,7 +57,7 @@ class TestScraperInputValidation:
             mock_locator.first = AsyncMock()
             mock_locator.first.click = AsyncMock()
             mock_locator.first.scroll_into_view_if_needed = AsyncMock()
-            mock_page.locator = AsyncMock(return_value=mock_locator)
+            mock_page.locator = MagicMock(return_value=mock_locator)
 
             # Mock keyboard
             mock_keyboard = AsyncMock()
@@ -145,7 +145,7 @@ class TestScraperScreenshot:
             mock_locator.first = AsyncMock()
             mock_locator.first.click = AsyncMock()
             mock_locator.first.scroll_into_view_if_needed = AsyncMock()
-            mock_page.locator = AsyncMock(return_value=mock_locator)
+            mock_page.locator = MagicMock(return_value=mock_locator)
 
             # Mock keyboard
             mock_keyboard = AsyncMock()
@@ -200,7 +200,7 @@ class TestScraperErrorHandling:
             # Mock locator
             mock_locator = AsyncMock()
             mock_locator.count = AsyncMock(return_value=0)
-            mock_page.locator = AsyncMock(return_value=mock_locator)
+            mock_page.locator = MagicMock(return_value=mock_locator)
 
             # Mock keyboard
             mock_keyboard = AsyncMock()
@@ -218,3 +218,37 @@ class TestScraperErrorHandling:
 
             # Even with timeout, should attempt screenshot
             mock_page.screenshot.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reconnection_deadlock(self):
+        """Test that reconnection doesn't deadlock."""
+        with patch("app.services.scraper_service.async_playwright") as mock_playwright:
+            mock_pw = AsyncMock()
+            mock_playwright.return_value.start = AsyncMock(return_value=mock_pw)
+
+            mock_browser = AsyncMock()
+
+            # First context creation fails (simulating connection loss)
+            mock_browser.new_context = AsyncMock(side_effect=Exception("Connection lost"))
+            mock_browser.close = AsyncMock()
+
+            # Initialize first
+            # We need to mock connect_over_cdp to return our mock browser
+            # First call returns "broken" browser, second call returns "working" browser
+            working_browser = AsyncMock()
+            working_context = AsyncMock()
+            working_browser.new_context = AsyncMock(return_value=working_context)
+            working_context.close = AsyncMock()
+
+            mock_pw.chromium.connect_over_cdp = AsyncMock(side_effect=[mock_browser, working_browser])
+
+            await ScraperService.initialize()
+
+            # This should trigger reconnection logic
+            # If deadlock exists, this will hang (timeout in test)
+            try:
+                result = await ScraperService._ensure_browser_connected()
+                assert result is True
+
+            except TimeoutError:
+                pytest.fail("Deadlock detected during reconnection")
