@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -56,4 +56,5 @@ async def test_process_item_check_updates_last_checked_on_error(db):
         assert item.last_checked > initial_last_checked
 
     # Ensure last_checked is recent (within last minute)
-    assert datetime.now(UTC) - item.last_checked.replace(tzinfo=UTC) < timedelta(minutes=1)
+    # Ensure last_checked is recent (within last minute)
+    assert datetime.now() - item.last_checked < timedelta(minutes=1)
