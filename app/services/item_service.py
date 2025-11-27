@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -16,15 +16,39 @@ class ItemService:
     @staticmethod
     def get_items(db: Session):
         items = db.query(models.Item).all()
-        # Optimization: Avoid synchronous I/O (os.path.exists) in loop.
-        # Frontend handles 404s for images, or we can rely on a consistent naming convention.
-        return [
-            {
-                **item.__dict__,
-                "screenshot_url": f"/screenshots/item_{item.id}.png",
-            }
-            for item in items
-        ]
+        global_interval = int(SettingsService.get_setting_value(db, "refresh_interval_minutes", "60"))
+
+        result = []
+        for item in items:
+            # Determine interval
+            if item.check_interval_minutes:
+                interval = item.check_interval_minutes
+            elif item.notification_profile and item.notification_profile.check_interval_minutes:
+                interval = item.notification_profile.check_interval_minutes
+            else:
+                interval = global_interval
+
+            interval = max(interval, 5)
+
+            next_check = None
+            if item.last_checked:
+                last_checked = item.last_checked
+                if last_checked.tzinfo is None:
+                    last_checked = last_checked.replace(tzinfo=UTC)
+                next_check = last_checked + timedelta(minutes=interval)
+
+            item_dict = {k: v for k, v in item.__dict__.items() if not k.startswith("_sa_")}
+
+            result.append(
+                {
+                    **item_dict,
+                    "screenshot_url": f"/screenshots/item_{item.id}.png",
+                    "next_check": next_check,
+                    "interval": interval,
+                }
+            )
+
+        return result
 
     @staticmethod
     def create_item(db: Session, item: schemas.ItemCreate):
@@ -120,6 +144,7 @@ class ItemService:
                 if item.is_refreshing:
                     continue
 
+                # Determine interval
                 if item.check_interval_minutes:
                     interval = item.check_interval_minutes
                 elif item.notification_profile and item.notification_profile.check_interval_minutes:
@@ -127,17 +152,21 @@ class ItemService:
                 else:
                     interval = global_interval
 
-                # Enforce minimum interval of 5 minutes to prevent loop
+                # Enforce minimum interval of 5 minutes
                 interval = max(interval, 5)
 
+                # Check if due
                 if not item.last_checked:
                     logger.info(f"Item {item.id} due: Never checked (Interval: {interval}m)")
                     due_items.append((item.id, interval, -1))
                     continue
 
-                last_checked = (
-                    item.last_checked.replace(tzinfo=UTC) if item.last_checked.tzinfo is None else item.last_checked
-                )
+                # Ensure last_checked is timezone-aware (UTC)
+                last_checked = item.last_checked
+                if last_checked.tzinfo is None:
+                    last_checked = last_checked.replace(tzinfo=UTC)
+
+                # Calculate time since last check
                 time_since = (now - last_checked).total_seconds() / 60
 
                 if time_since >= interval:

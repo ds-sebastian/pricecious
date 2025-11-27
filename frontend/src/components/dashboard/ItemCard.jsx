@@ -147,6 +147,11 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
                             <Clock className="h-3 w-3" />
                             <span>{item.last_checked ? new Date(item.last_checked).toLocaleString() : 'Never'}</span>
                         </div>
+                        {item.next_check && (
+                            <div className="flex items-center gap-1.5 border-l pl-3 border-zinc-200 dark:border-zinc-700">
+                                <span>Next: {new Date(item.next_check).toLocaleString()}</span>
+                            </div>
+                        )}
                         {item.last_error && (
                             <div className="flex items-center gap-1 text-destructive" title={item.last_error}>
                                 <AlertTriangle className="h-3 w-3" />

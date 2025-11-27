@@ -358,7 +358,6 @@ export default function Settings() {
                         <Input type="number" min="1" value={jobConfig.refresh_interval_minutes} onChange={(e) => setJobConfig({ ...jobConfig, refresh_interval_minutes: e.target.value })} />
                     </div>
                     <div className="text-sm text-muted-foreground space-y-1">
-                        <p>Next run: {jobConfig.next_run ? new Date(jobConfig.next_run).toLocaleString() : 'Not scheduled'}</p>
                         <p>Status: {jobConfig.running ? 'Running' : 'Idle'}</p>
                     </div>
                     <Button onClick={updateJobConfig}>Save Job Config</Button>
