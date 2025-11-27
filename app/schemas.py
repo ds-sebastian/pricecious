@@ -44,6 +44,8 @@ class ItemResponse(ItemCreate):
     is_refreshing: bool = False
     last_error: str | None = None
     screenshot_url: str | None = None
+    next_check: datetime | None = None
+    interval: int | None = None
     model_config = ConfigDict(from_attributes=True)
 
 
