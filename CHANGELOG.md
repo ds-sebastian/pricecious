@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2025-11-27
+
+### Added
+- Calculate and display dynamic item refresh intervals and next check times.
+- Display item refresh interval on card.
+
+### Changed
+- Clarify interval terminology in settings from 'check' to 'refresh'.
+- Remove job next run display from settings.
+- Ruff updates (linting/formatting fixes).
+
+### Fixed
+- Standardize datetime handling to use naive local times for database consistency.
+- Add `next_check` and `interval` fields to `Watch` schema.
+- Extract scraper initialization logic, update dependencies, and add a reconnection deadlock test.
+- Remove UTC import and usage from datetime comparisons.
 ## [0.1.5] - 2025-11-25
 
 ### Added
