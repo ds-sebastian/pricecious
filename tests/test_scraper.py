@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.scraper_service import ScraperService
+from app.services.scraper_service import ScrapeConfig, ScraperService
 
 
 @pytest.fixture(autouse=True)
@@ -36,7 +36,6 @@ class TestScraperInputValidation:
     @pytest.mark.asyncio
     async def test_invalid_scroll_pixels(self, caplog):
         """Test that invalid scroll_pixels is corrected."""
-        from app.services.scraper_service import ScrapeConfig
 
         with patch("app.services.scraper_service.async_playwright") as mock_playwright:
             # Mock the playwright start return value
@@ -88,7 +87,6 @@ class TestScraperInputValidation:
     @pytest.mark.asyncio
     async def test_invalid_timeout(self, caplog):
         """Test that invalid timeout is corrected."""
-        from app.services.scraper_service import ScrapeConfig
 
         with patch("app.services.scraper_service.async_playwright") as mock_playwright:
             mock_pw = AsyncMock()
