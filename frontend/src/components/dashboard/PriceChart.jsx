@@ -5,6 +5,7 @@ import {
     Legend,
     Line,
     LineChart,
+    ReferenceArea,
     ReferenceDot,
     ResponsiveContainer,
     Tooltip,
@@ -42,8 +43,35 @@ export function PriceChart({ data, series = [], annotations = [] }) {
         (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
     );
 
+    // Calculate out-of-stock intervals
+    const outOfStockIntervals = [];
+    if (series.length <= 1) { // Single item mode or default
+        let currentStart = null;
+        for (let i = 0; i < sortedData.length; i++) {
+            const point = sortedData[i];
+            const isOutOfStock = point.in_stock === false; // Strict false check
+
+            if (isOutOfStock) {
+                if (!currentStart) {
+                    currentStart = point.timestamp;
+                }
+                // If it's the last point, close the interval
+                if (i === sortedData.length - 1) {
+                    outOfStockIntervals.push({ x1: currentStart, x2: point.timestamp });
+                }
+            } else {
+                if (currentStart) {
+                    // End the interval at the current point (when it became in stock/unknown)
+                    outOfStockIntervals.push({ x1: currentStart, x2: point.timestamp });
+                    currentStart = null;
+                }
+            }
+        }
+    }
+
     const CustomTooltip = ({ active, payload, label }) => {
         if (active && payload && payload.length) {
+            const dataPoint = payload[0].payload;
             return (
                 <div className="rounded-lg border bg-background p-2 shadow-sm">
                     <p className="font-medium text-foreground">
@@ -54,6 +82,12 @@ export function PriceChart({ data, series = [], annotations = [] }) {
                             {entry.name}: ${entry.value?.toFixed(2)}
                         </p>
                     ))}
+                    {/* Show Stock Status if available */}
+                    {dataPoint.in_stock !== undefined && dataPoint.in_stock !== null && (
+                        <p className={`text-sm font-medium ${dataPoint.in_stock ? "text-green-500" : "text-red-500"}`}>
+                            {dataPoint.in_stock ? "In Stock" : "Out of Stock"}
+                        </p>
+                    )}
                 </div>
             );
         }
@@ -85,6 +119,21 @@ export function PriceChart({ data, series = [], annotations = [] }) {
                     />
                     <Tooltip content={<CustomTooltip />} />
                     <Legend />
+
+                    {/* Render Out of Stock Areas */}
+                    {outOfStockIntervals.map((interval, index) => (
+                        <ReferenceArea
+                            key={`oos-${index}`}
+                            x1={interval.x1}
+                            x2={interval.x2}
+                            fill="#ef4444"
+                            fillOpacity={0.1}
+                            strokeOpacity={0}
+                        >
+                            {/* Only label the first major one to avoid clutter? Or none. */}
+                        </ReferenceArea>
+                    ))}
+
                     {chartSeries.map((s, index) => (
                         <Line
                             key={s.key}

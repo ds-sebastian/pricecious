@@ -62,6 +62,7 @@ class PriceHistoryResponse(BaseModel):
     screenshot_path: str | None = None
     price_confidence: float | None = None
     in_stock_confidence: float | None = None
+    in_stock: bool | None = None
     model_config = ConfigDict(from_attributes=True)
 
 

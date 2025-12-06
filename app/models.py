@@ -65,6 +65,7 @@ class PriceHistory(Base):
     # Confidence scores and AI metadata
     price_confidence: float | None = Column(Float, nullable=True)  # type: ignore
     in_stock_confidence: float | None = Column(Float, nullable=True)  # type: ignore
+    in_stock: bool | None = Column(Boolean, nullable=True)  # type: ignore
     ai_model: str | None = Column(String, nullable=True)  # type: ignore
     ai_provider: str | None = Column(String, nullable=True)  # type: ignore
     prompt_version: str | None = Column(String, nullable=True)  # type: ignore

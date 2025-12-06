@@ -75,6 +75,7 @@ def _update_item_in_db(item_id: int, update_data: UpdateData) -> tuple[float | N
                     screenshot_path=update_data.screenshot_path,
                     price_confidence=p_conf,
                     in_stock_confidence=s_conf,
+                    in_stock=in_stock,
                     ai_model=update_data.metadata.model_name,
                     ai_provider=update_data.metadata.provider,
                     prompt_version=update_data.metadata.prompt_version,

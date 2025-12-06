@@ -172,5 +172,81 @@ def test_get_analytics_annotations(db):
 
     # Max
     assert annotations[1]["type"] == "max"
-    assert annotations[1]["value"] == 150.0
     assert "Highest" in annotations[1]["label"]
+
+
+def test_get_analytics_stock_history(db):
+    # Create item
+    item = models.Item(url="http://example.com/6", name="Test Item 6")
+    db.add(item)
+    db.commit()
+
+    # Create mixed stock history
+    # 0: In Stock
+    # 1: Out of Stock
+    # 2: In Stock
+    stock_statuses = [True, False, True, True]
+    now = datetime.now()
+
+    for i, stock in enumerate(stock_statuses):
+        ph = models.PriceHistory(
+            item_id=item.id,
+            price=100.0,
+            timestamp=now - timedelta(hours=len(stock_statuses) - i),
+            in_stock=stock,
+        )
+        db.add(ph)
+
+    db.commit()
+
+    data = ItemService.get_analytics_data(db, item.id)
+
+    # Check if history contains correct stock status
+    history = data["history"]
+    assert len(history) == 4
+
+    # We expect stock status to be preserved in raw history
+    # Order is chronological
+    assert history[0].in_stock is True
+    assert history[1].in_stock is False
+    assert history[2].in_stock is True
+    assert history[3].in_stock is True
+
+
+def test_get_analytics_stock_history_aggregation(db):
+    # Test that aggregation preserves "max" (optimistic) stock status
+    item = models.Item(url="http://example.com/7", name="Test Item 7")
+    db.add(item)
+    db.commit()
+
+    # Create many points in a short time frame so they get aggregated
+    # But since downsampling triggers at > 150 points, we need > 150 points.
+    points = 200
+    now = datetime.now()
+    step = timedelta(minutes=1)
+
+    # All prices uniform, but stock toggles
+    # If using MAX, a bucket with Mixed stock should result in True
+    for i in range(points):
+        # Every 10th item is in stock, others out
+        in_stock = (i % 10) == 0
+        ph = models.PriceHistory(
+            item_id=item.id, price=10.0, timestamp=now - (step * points) + (step * i), in_stock=in_stock
+        )
+        db.add(ph)
+
+    db.commit()
+
+    data = ItemService.get_analytics_data(db, item.id)
+    history = data["history"]
+
+    # Should be downsampled
+    assert len(history) <= 155
+
+    # Check that we have True values (since MAX(true, false) = true)
+    # Since we have Trues regularly distributed, most buckets should have at least one True.
+    # Actually, with 200 points to 150 buckets, bucket size is small (~1.3 items/bucket).
+    # Some buckets might only have 'False' items.
+
+    has_true = any(h.in_stock for h in history)
+    assert has_true

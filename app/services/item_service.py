@@ -386,6 +386,7 @@ class ItemService:
             db.query(
                 func.avg(models.PriceHistory.price).label("price"),
                 func.min(models.PriceHistory.timestamp).label("timestamp"),
+                func.max(models.PriceHistory.in_stock).label("in_stock"),
             )
             .filter(*agg_filters)
             .group_by(bucket_expr)
@@ -400,6 +401,7 @@ class ItemService:
                 item_id=item_id,
                 price=r.price,
                 timestamp=r.timestamp,
+                in_stock=r.in_stock,
             )
             for r in agg_results
         ]

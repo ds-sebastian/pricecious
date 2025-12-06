@@ -1,5 +1,5 @@
 ---
-trigger: model_decision
+trigger: always_on
 description: When large changes have been made apply these checks and formatting fixes
 ---
 
