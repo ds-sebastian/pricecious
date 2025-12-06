@@ -13,25 +13,27 @@ def clear_cache():
     ItemService.clear_cache()
 
 
-def test_get_analytics_data_empty(db):
+@pytest.mark.asyncio
+async def test_get_analytics_data_empty(db):
     # Create item
     item = models.Item(url="http://example.com/1", name="Test Item 1")
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
 
-    data = ItemService.get_analytics_data(db, item.id)
+    data = await ItemService.get_analytics_data(db, item.id)
     assert data["item_id"] == item.id
     assert data["stats"]["avg_price"] == 0.0
     assert len(data["history"]) == 0
 
 
-def test_get_analytics_data_stats(db):
+@pytest.mark.asyncio
+async def test_get_analytics_data_stats(db):
     # Create item
     item = models.Item(url="http://example.com/2", name="Test Item 2", current_price=100.0)
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
 
     # Add history
     prices = [100.0, 102.0, 98.0, 100.0]
@@ -42,9 +44,9 @@ def test_get_analytics_data_stats(db):
         ph = models.PriceHistory(item_id=item.id, price=p, timestamp=ts)
         db.add(ph)
 
-    db.commit()
+    await db.commit()
 
-    data = ItemService.get_analytics_data(db, item.id)
+    data = await ItemService.get_analytics_data(db, item.id)
     assert data["stats"]["min_price"] == 98.0
     assert data["stats"]["max_price"] == 102.0
     assert data["stats"]["avg_price"] == 100.0
@@ -52,11 +54,12 @@ def test_get_analytics_data_stats(db):
     assert len(data["history"]) == 4
 
 
-def test_get_analytics_outlier_filtering(db):
+@pytest.mark.asyncio
+async def test_get_analytics_outlier_filtering(db):
     # Create item
     item = models.Item(url="http://example.com/3", name="Test Item 3")
     db.add(item)
-    db.commit()
+    await db.commit()
 
     # Create a stable history and one massive outlier
     # Mean approx 100.
@@ -69,10 +72,10 @@ def test_get_analytics_outlier_filtering(db):
         ph = models.PriceHistory(item_id=item.id, price=p, timestamp=ts)
         db.add(ph)
 
-    db.commit()
+    await db.commit()
 
     # Without filter
-    data = ItemService.get_analytics_data(db, item.id)
+    data = await ItemService.get_analytics_data(db, item.id)
     assert len(data["history"]) == 11
     assert data["stats"]["max_price"] == 1000.0
 
@@ -90,7 +93,7 @@ def test_get_analytics_outlier_filtering(db):
     # Range 2 sigma: 181 +/- 542 = [-361, 723].
     # 1000 is outside 723. It should be filtered.
 
-    data_filtered = ItemService.get_analytics_data(db, item.id, std_dev_threshold=2.0)
+    data_filtered = await ItemService.get_analytics_data(db, item.id, std_dev_threshold=2.0)
 
     # Outlier should be gone
     assert len(data_filtered["history"]) == 10
@@ -101,11 +104,12 @@ def test_get_analytics_outlier_filtering(db):
     assert data_filtered["stats"]["max_price"] == 1000.0
 
 
-def test_get_analytics_downsampling(db):
+@pytest.mark.asyncio
+async def test_get_analytics_downsampling(db):
     # Create item
     item = models.Item(url="http://example.com/4", name="Test Item 4")
     db.add(item)
-    db.commit()
+    await db.commit()
 
     # Create 300 history points (linear increase)
     # 0 to 299
@@ -119,9 +123,9 @@ def test_get_analytics_downsampling(db):
         ph = models.PriceHistory(item_id=item.id, price=float(i), timestamp=start_time + (step * i))
         db.add(ph)
 
-    db.commit()
+    await db.commit()
 
-    data = ItemService.get_analytics_data(db, item.id)
+    data = await ItemService.get_analytics_data(db, item.id)
 
     # Check that we downsampled
     history_len = len(data["history"])
@@ -139,11 +143,12 @@ def test_get_analytics_downsampling(db):
     assert 140 < data["stats"]["avg_price"] < 160
 
 
-def test_get_analytics_annotations(db):
+@pytest.mark.asyncio
+async def test_get_analytics_annotations(db):
     # Create item
     item = models.Item(url="http://example.com/5", name="Test Item 5")
     db.add(item)
-    db.commit()
+    await db.commit()
 
     # Create history with clear min and max
     # 100, 50 (min), 150 (max), 100
@@ -155,9 +160,9 @@ def test_get_analytics_annotations(db):
         ph = models.PriceHistory(item_id=item.id, price=p, timestamp=ts)
         db.add(ph)
 
-    db.commit()
+    await db.commit()
 
-    data = ItemService.get_analytics_data(db, item.id)
+    data = await ItemService.get_analytics_data(db, item.id)
 
     annotations = data["annotations"]
     assert len(annotations) == 2
@@ -175,11 +180,12 @@ def test_get_analytics_annotations(db):
     assert "Highest" in annotations[1]["label"]
 
 
-def test_get_analytics_stock_history(db):
+@pytest.mark.asyncio
+async def test_get_analytics_stock_history(db):
     # Create item
     item = models.Item(url="http://example.com/6", name="Test Item 6")
     db.add(item)
-    db.commit()
+    await db.commit()
 
     # Create mixed stock history
     # 0: In Stock
@@ -197,9 +203,9 @@ def test_get_analytics_stock_history(db):
         )
         db.add(ph)
 
-    db.commit()
+    await db.commit()
 
-    data = ItemService.get_analytics_data(db, item.id)
+    data = await ItemService.get_analytics_data(db, item.id)
 
     # Check if history contains correct stock status
     history = data["history"]
@@ -213,11 +219,12 @@ def test_get_analytics_stock_history(db):
     assert history[3].in_stock is True
 
 
-def test_get_analytics_stock_history_aggregation(db):
+@pytest.mark.asyncio
+async def test_get_analytics_stock_history_aggregation(db):
     # Test that aggregation preserves "max" (optimistic) stock status
     item = models.Item(url="http://example.com/7", name="Test Item 7")
     db.add(item)
-    db.commit()
+    await db.commit()
 
     # Create many points in a short time frame so they get aggregated
     # But since downsampling triggers at > 150 points, we need > 150 points.
@@ -235,9 +242,9 @@ def test_get_analytics_stock_history_aggregation(db):
         )
         db.add(ph)
 
-    db.commit()
+    await db.commit()
 
-    data = ItemService.get_analytics_data(db, item.id)
+    data = await ItemService.get_analytics_data(db, item.id)
     history = data["history"]
 
     # Should be downsampled

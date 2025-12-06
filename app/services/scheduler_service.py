@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import database, models
 from app.ai_schema import AIExtractionMetadata, AIExtractionResponse
@@ -19,6 +20,7 @@ scheduler = AsyncIOScheduler()
 PRICE_CHANGE_THRESHOLD_PERCENT = 20.0
 LOW_CONFIDENCE_THRESHOLD = 0.7
 MAX_CONCURRENT_CHECKS = 5
+DEFAULT_OUTLIER_THRESHOLD = 500.0
 
 
 @dataclass
@@ -31,22 +33,26 @@ class UpdateData:
     screenshot_path: str
 
 
-def _get_thresholds(session: Session) -> dict[str, float]:
+async def _get_thresholds(session: AsyncSession) -> dict[str, float]:
     """Fetch only necessary threshold settings."""
     # Optimization: Only fetch specific keys instead of all settings
-    keys = ["confidence_threshold_price", "confidence_threshold_stock"]
-    settings = session.query(models.Settings.key, models.Settings.value).filter(models.Settings.key.in_(keys)).all()
-    settings_map = {k: v for k, v in settings}
+    keys = ["confidence_threshold_price", "confidence_threshold_stock", "price_outlier_threshold_percent"]
+    result = await session.execute(
+        select(models.Settings.key, models.Settings.value).where(models.Settings.key.in_(keys))
+    )
+    settings_map = {k: v for k, v in result.all()}
     return {
         "price": float(settings_map.get("confidence_threshold_price", "0.5")),
         "stock": float(settings_map.get("confidence_threshold_stock", "0.5")),
+        "outlier_percent": float(settings_map.get("price_outlier_threshold_percent", str(DEFAULT_OUTLIER_THRESHOLD))),
     }
 
 
-def _update_item_in_db(item_id: int, update_data: UpdateData) -> tuple[float | None, bool | None]:
+async def _update_item_in_db(item_id: int, update_data: UpdateData) -> tuple[float | None, bool | None]:
     """Update item in DB with new data. Returns (old_price, old_stock)."""
-    with database.SessionLocal() as session:
-        item = session.query(models.Item).filter(models.Item.id == item_id).first()
+    async with database.AsyncSessionLocal() as session:
+        result = await session.execute(select(models.Item).where(models.Item.id == item_id))
+        item = result.scalars().first()
         if not item:
             return None, None
 
@@ -55,8 +61,23 @@ def _update_item_in_db(item_id: int, update_data: UpdateData) -> tuple[float | N
         p_conf, s_conf = update_data.extraction.price_confidence, update_data.extraction.in_stock_confidence
 
         if price is not None:
+            # Outlier Check
+            if old_price and old_price > 0:
+                percent_diff = ((price - old_price) / old_price) * 100
+                if percent_diff > update_data.thresholds["outlier_percent"]:
+                    error_msg = (
+                        f"Price rejected: {percent_diff:.1f}% increase exceeds outlier threshold "
+                        f"({update_data.thresholds['outlier_percent']}%)"
+                    )
+                    logger.warning(f"Item {item_id}: {error_msg}")
+                    item.last_error = error_msg
+                    item.last_checked = datetime.now()
+                    item.is_refreshing = False
+                    await session.commit()
+                    return old_price, old_stock
+
             if p_conf >= update_data.thresholds["price"]:
-                # Check for suspicious price changes
+                # Check for suspicious price changes (warning only)
                 if (
                     old_price
                     and (abs(price - old_price) / old_price * 100 > PRICE_CHANGE_THRESHOLD_PERCENT)
@@ -93,7 +114,7 @@ def _update_item_in_db(item_id: int, update_data: UpdateData) -> tuple[float | N
         if item.last_error and not item.last_error.startswith("Uncertain:"):
             item.last_error = None
 
-        session.commit()
+        await session.commit()
         logger.info(
             f"Updated item {item_id}: price={price}, stock={in_stock} "
             f"(last_checked: {old_timestamp} -> {item.last_checked})"
@@ -101,27 +122,27 @@ def _update_item_in_db(item_id: int, update_data: UpdateData) -> tuple[float | N
         return old_price, old_stock
 
 
-def _handle_error(item_id: int, error_msg: str):
+async def _handle_error(item_id: int, error_msg: str):
     """Log error and update item status in DB."""
     logger.error(f"Error checking item {item_id}: {error_msg}")
-    with database.SessionLocal() as session:
-        if item := session.query(models.Item).filter(models.Item.id == item_id).first():
+    async with database.AsyncSessionLocal() as session:
+        result = await session.execute(select(models.Item).where(models.Item.id == item_id))
+        if item := result.scalars().first():
             item.is_refreshing = False
             item.last_error = str(error_msg)
             item.last_checked = datetime.now()
-            session.commit()
+            await session.commit()
 
 
-def _process_single_item_sync(item_id: int):
-    """Synchronous part of item processing to run in executor."""
-    # 1. Fetch Item Data (New session for thread safety)
-    with database.SessionLocal() as session:
-        item_data, config = ItemService.get_item_data_for_checking(session, item_id)
+async def _process_single_item_data(item_id: int):
+    """Fetch item data and config."""
+    async with database.AsyncSessionLocal() as session:
+        item_data, config = await ItemService.get_item_data_for_checking(session, item_id)
         if not item_data:
             return None
 
         # Pre-fetch thresholds while we have the session
-        thresholds = _get_thresholds(session)
+        thresholds = await _get_thresholds(session)
 
     return item_data, config, thresholds
 
@@ -136,11 +157,9 @@ async def process_item_check(item_id: int, semaphore: asyncio.Semaphore | None =
 
 
 async def _execute_check(item_id: int):
-    loop = asyncio.get_running_loop()
-
     try:
-        # 1. Fetch Data (Thread-safe)
-        result = await loop.run_in_executor(None, _process_single_item_sync, item_id)
+        # 1. Fetch Data
+        result = await _process_single_item_data(item_id)
         if not result:
             logger.error(f"Item {item_id} not found")
             return
@@ -175,7 +194,7 @@ async def _execute_check(item_id: int):
 
         extraction, metadata = ai_result
 
-        # 4. Update Database (Thread-safe)
+        # 4. Update Database
         update_data = UpdateData(
             extraction=extraction,
             metadata=metadata,
@@ -183,7 +202,7 @@ async def _execute_check(item_id: int):
             screenshot_path=screenshot_path,
         )
 
-        old_price, old_stock = await loop.run_in_executor(None, _update_item_in_db, item_id, update_data)
+        old_price, old_stock = await _update_item_in_db(item_id, update_data)
 
         # 5. Notify
         await NotificationService.send_item_notifications(
@@ -191,18 +210,16 @@ async def _execute_check(item_id: int):
         )
 
     except Exception as e:
-        await loop.run_in_executor(None, _handle_error, item_id, str(e))
+        await _handle_error(item_id, str(e))
 
 
 async def scheduled_refresh():
     """Periodic task to check for items due for refresh."""
     logger.info("Heartbeat: Checking for items due for refresh")
-    loop = asyncio.get_running_loop()
 
     try:
-        # Fetch due items in a new session that gets closed immediately
-        # This avoids holding a session open with stale data during processing
-        due_items = await loop.run_in_executor(None, ItemService.get_due_items)
+        # Fetch due items
+        due_items = await ItemService.get_due_items()
 
         if not due_items:
             return

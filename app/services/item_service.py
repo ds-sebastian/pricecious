@@ -4,8 +4,9 @@ from datetime import datetime, timedelta
 from typing import Any, ClassVar
 
 from fastapi import HTTPException
-from sqlalchemy import Integer, extract, func
-from sqlalchemy.orm import Session
+from sqlalchemy import Integer, extract, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.expression import cast
 
 from app import database, models, schemas
@@ -17,11 +18,15 @@ logger = logging.getLogger(__name__)
 
 class ItemService:
     @staticmethod
-    def get_items(db: Session):
-        items = db.query(models.Item).all()
-        global_interval = int(SettingsService.get_setting_value(db, "refresh_interval_minutes", "60"))
+    async def get_items(db: AsyncSession):
+        stmt = select(models.Item).options(selectinload(models.Item.notification_profile))
+        result = await db.execute(stmt)
+        items = result.scalars().all()
 
-        result = []
+        global_interval_str = await SettingsService.get_setting_value(db, "refresh_interval_minutes", "60")
+        global_interval = int(global_interval_str)
+
+        result_list = []
         for item in items:
             # Determine interval
             if item.check_interval_minutes:
@@ -42,7 +47,7 @@ class ItemService:
 
             item_dict = {k: v for k, v in item.__dict__.items() if not k.startswith("_sa_")}
 
-            result.append(
+            result_list.append(
                 {
                     **item_dict,
                     "screenshot_url": f"/screenshots/item_{item.id}.png",
@@ -51,10 +56,10 @@ class ItemService:
                 }
             )
 
-        return result
+        return result_list
 
     @staticmethod
-    def create_item(db: Session, item: schemas.ItemCreate):
+    async def create_item(db: AsyncSession, item: schemas.ItemCreate):
         logger.info(f"Creating item: {item.name} - {item.url}")
         try:
             validate_url(item.url)
@@ -63,26 +68,32 @@ class ItemService:
 
         db_item = models.Item(**item.model_dump())
         db.add(db_item)
-        db.commit()
-        db.refresh(db_item)
+        await db.commit()
+        await db.refresh(db_item)
         return db_item
 
     @staticmethod
-    def update_item(db: Session, item_id: int, item_update: schemas.ItemCreate):
-        db_item = db.query(models.Item).filter(models.Item.id == item_id).first()
+    async def update_item(db: AsyncSession, item_id: int, item_update: schemas.ItemCreate):
+        stmt = select(models.Item).where(models.Item.id == item_id)
+        result = await db.execute(stmt)
+        db_item = result.scalars().first()
+
         if not db_item:
             raise HTTPException(status_code=404, detail="Item not found")
 
         for key, value in item_update.model_dump().items():
             setattr(db_item, key, value)
 
-        db.commit()
-        db.refresh(db_item)
+        await db.commit()
+        await db.refresh(db_item)
         return db_item
 
     @staticmethod
-    def delete_item(db: Session, item_id: int):
-        item = db.query(models.Item).filter(models.Item.id == item_id).first()
+    async def delete_item(db: AsyncSession, item_id: int):
+        stmt = select(models.Item).where(models.Item.id == item_id)
+        result = await db.execute(stmt)
+        item = result.scalars().first()
+
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
 
@@ -94,21 +105,32 @@ class ItemService:
             except OSError:
                 pass
 
-        db.delete(item)
-        db.commit()
+        await db.delete(item)
+        await db.commit()
         return {"ok": True}
 
     @staticmethod
-    def get_item(db: Session, item_id: int):
-        return db.query(models.Item).filter(models.Item.id == item_id).first()
+    async def get_item(db: AsyncSession, item_id: int):
+        stmt = select(models.Item).where(models.Item.id == item_id)
+        result = await db.execute(stmt)
+        return result.scalars().first()
 
     @staticmethod
-    def get_item_data_for_checking(db: Session, item_id: int):
-        item = db.query(models.Item).filter(models.Item.id == item_id).first()
+    async def get_item_data_for_checking(db: AsyncSession, item_id: int):
+        stmt = (
+            select(models.Item).options(selectinload(models.Item.notification_profile)).where(models.Item.id == item_id)
+        )
+        result = await db.execute(stmt)
+        item = result.scalars().first()
+
         if not item:
             return None, None
 
-        settings = {s.key: s.value for s in db.query(models.Settings).all()}
+        stmt_settings = select(models.Settings)
+        result_settings = await db.execute(stmt_settings)
+        settings_list = result_settings.scalars().all()
+        settings = {s.key: s.value for s in settings_list}
+
         profile = item.notification_profile
 
         item_data = {
@@ -136,11 +158,18 @@ class ItemService:
         return item_data, config
 
     @staticmethod
-    def get_due_items():
+    async def get_due_items():
         """Get items due for refresh. Creates and manages its own session."""
-        with database.SessionLocal() as db:
-            items = db.query(models.Item).filter(models.Item.is_active).all()
-            global_interval = int(SettingsService.get_setting_value(db, "refresh_interval_minutes", "60"))
+        async with database.AsyncSessionLocal() as db:
+            stmt = (
+                select(models.Item).options(selectinload(models.Item.notification_profile)).where(models.Item.is_active)
+            )
+            result = await db.execute(stmt)
+            items = result.scalars().all()
+
+            global_interval_str = await SettingsService.get_setting_value(db, "refresh_interval_minutes", "60")
+            global_interval = int(global_interval_str)
+
             due_items = []
             now = datetime.now()
 
@@ -188,15 +217,18 @@ class ItemService:
         ItemService._analytics_cache.clear()
 
     @staticmethod
-    def get_analytics_data(
-        db: Session, item_id: int, std_dev_threshold: float | None = None, days_back: int | None = None
+    async def get_analytics_data(
+        db: AsyncSession, item_id: int, std_dev_threshold: float | None = None, days_back: int | None = None
     ):
         # 1. Check Cache
         cached = ItemService._get_cached_analytics(item_id, std_dev_threshold, days_back)
         if cached:
             return cached
 
-        item = db.query(models.Item).filter(models.Item.id == item_id).first()
+        stmt = select(models.Item).where(models.Item.id == item_id)
+        result = await db.execute(stmt)
+        item = result.scalars().first()
+
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
 
@@ -207,24 +239,25 @@ class ItemService:
             filters.append(models.PriceHistory.timestamp >= search_start_date)
 
         # 2. Calculate Stats (SQL)
-        stats = ItemService._calculate_analytics_stats_sql(db, item, filters)
+        stats = await ItemService._calculate_analytics_stats_sql(db, item, filters)
         if not stats:
             return ItemService._empty_analytics_response(item)
 
         # 3. Annotations
         # We need exact timestamps for Min and Max.
-        # The stats query gave us values, but not which record had them (or multiple).
-        # We'll fetch the specific records for min/max to get their timestamps.
         annotations = []
 
         # Min Price Annotation
         if stats["min_price"] > 0:
-            min_record = (
-                db.query(models.PriceHistory)
+            stmt_min = (
+                select(models.PriceHistory)
                 .filter(*filters, models.PriceHistory.price == stats["min_price"])
                 .order_by(models.PriceHistory.timestamp.asc())  # First occurrence
-                .first()
+                .limit(1)
             )
+            result_min = await db.execute(stmt_min)
+            min_record = result_min.scalars().first()
+
             if min_record:
                 annotations.append(
                     {
@@ -237,12 +270,15 @@ class ItemService:
 
         # Max Price Annotation
         if stats["max_price"] > 0 and stats["max_price"] != stats["min_price"]:
-            max_record = (
-                db.query(models.PriceHistory)
+            stmt_max = (
+                select(models.PriceHistory)
                 .filter(*filters, models.PriceHistory.price == stats["max_price"])
                 .order_by(models.PriceHistory.timestamp.asc())  # First occurrence
-                .first()
+                .limit(1)
             )
+            result_max = await db.execute(stmt_max)
+            max_record = result_max.scalars().first()
+
             if max_record:
                 annotations.append(
                     {
@@ -254,7 +290,7 @@ class ItemService:
                 )
 
         # 4. Aggregation Query
-        final_history = ItemService._fetch_aggregated_history_sql(db, item_id, filters, stats, std_dev_threshold)
+        final_history = await ItemService._fetch_aggregated_history_sql(db, item_id, filters, stats, std_dev_threshold)
 
         result = {
             "item_id": item.id,
@@ -282,9 +318,9 @@ class ItemService:
         return None
 
     @staticmethod
-    def _calculate_analytics_stats_sql(db: Session, item: models.Item, filters: list):
+    async def _calculate_analytics_stats_sql(db: AsyncSession, item: models.Item, filters: list):
         # We need: Min, Max, Avg, StdDev (approx), Count, StartTime, EndTime
-        stats_query = db.query(
+        stats_query = select(
             func.count(models.PriceHistory.id).label("count"),
             func.min(models.PriceHistory.price).label("min_price"),
             func.max(models.PriceHistory.price).label("max_price"),
@@ -294,7 +330,8 @@ class ItemService:
             func.max(models.PriceHistory.timestamp).label("end_time"),
         ).filter(*filters)
 
-        stats_result = stats_query.first()
+        stats_result_exec = await db.execute(stats_query)
+        stats_result = stats_result_exec.one_or_none()
 
         if not stats_result or stats_result.count == 0:
             return None
@@ -314,21 +351,26 @@ class ItemService:
                 pass
 
         # Latest Price & 24h Change
-        latest_record = (
-            db.query(models.PriceHistory)
+        latest_record_query = (
+            select(models.PriceHistory)
             .filter(models.PriceHistory.item_id == item.id)
             .order_by(models.PriceHistory.timestamp.desc())
-            .first()
+            .limit(1)
         )
+        latest_record_result = await db.execute(latest_record_query)
+        latest_record = latest_record_result.scalars().first()
+
         latest_price = latest_record.price if latest_record else 0.0
 
         yesterday = datetime.now() - timedelta(days=1)
-        price_24h_record = (
-            db.query(models.PriceHistory)
+        price_24h_record_query = (
+            select(models.PriceHistory)
             .filter(models.PriceHistory.item_id == item.id, models.PriceHistory.timestamp <= yesterday)
             .order_by(models.PriceHistory.timestamp.desc())
-            .first()
+            .limit(1)
         )
+        price_24h_record_result = await db.execute(price_24h_record_query)
+        price_24h_record = price_24h_record_result.scalars().first()
 
         price_24h_ago = price_24h_record.price if price_24h_record else None
         price_change = 0.0
@@ -348,8 +390,8 @@ class ItemService:
         }
 
     @staticmethod
-    def _fetch_aggregated_history_sql(
-        db: Session, item_id: int, filters: list, stats: dict, std_dev_threshold: float | None
+    async def _fetch_aggregated_history_sql(
+        db: AsyncSession, item_id: int, filters: list, stats: dict, std_dev_threshold: float | None
     ):
         target_points = 150
         start_time = stats.get("_start_time") or datetime.now()
@@ -373,7 +415,11 @@ class ItemService:
             agg_filters.append(models.PriceHistory.price >= lower_bound)
             agg_filters.append(models.PriceHistory.price <= upper_bound)
 
-        is_sqlite = db.bind.dialect.name == "sqlite"
+        # Determine dialect from connection
+        # async engine bind dialect
+        dialect_name = db.bind.dialect.name
+        is_sqlite = dialect_name == "sqlite"
+
         if is_sqlite:
             epoch_col = cast(func.strftime("%s", models.PriceHistory.timestamp), Integer)
         else:
@@ -383,17 +429,18 @@ class ItemService:
         bucket_expr = cast((epoch_col - start_ts_epoch) / step_seconds, Integer)
 
         agg_query = (
-            db.query(
+            select(
                 func.avg(models.PriceHistory.price).label("price"),
                 func.min(models.PriceHistory.timestamp).label("timestamp"),
-                func.max(models.PriceHistory.in_stock).label("in_stock"),
+                func.max(cast(models.PriceHistory.in_stock, Integer)).label("in_stock"),
             )
             .filter(*agg_filters)
             .group_by(bucket_expr)
             .order_by(func.min(models.PriceHistory.timestamp))
         )
 
-        agg_results = agg_query.all()
+        agg_results_exec = await db.execute(agg_query)
+        agg_results = agg_results_exec.all()
 
         return [
             models.PriceHistory(
@@ -401,7 +448,7 @@ class ItemService:
                 item_id=item_id,
                 price=r.price,
                 timestamp=r.timestamp,
-                in_stock=r.in_stock,
+                in_stock=bool(r.in_stock) if r.in_stock is not None else None,
             )
             for r in agg_results
         ]

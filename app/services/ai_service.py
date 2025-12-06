@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import re
@@ -7,6 +6,7 @@ from typing import Any, TypedDict
 import litellm
 from litellm import acompletion
 from pydantic import ValidationError
+from sqlalchemy import select
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app import models
@@ -17,7 +17,7 @@ from app.ai_schema import (
     get_extraction_prompt,
     get_repair_prompt,
 )
-from app.database import SessionLocal
+from app.database import AsyncSessionLocal
 from app.utils.image import encode_image
 from app.utils.text import clean_text
 
@@ -78,11 +78,12 @@ def _safe_int(value: Any, default: int) -> int:
 
 class AIService:
     @staticmethod
-    def get_ai_config() -> AIConfig:
+    async def get_ai_config() -> AIConfig:
         """Fetches AI configuration from the database."""
         try:
-            with SessionLocal() as session:
-                settings = session.query(models.Settings).all()
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(select(models.Settings))
+                settings = result.scalars().all()
                 settings_map = {s.key: s.value for s in settings}
 
             return {
@@ -239,8 +240,7 @@ class AIService:
     ) -> tuple[AIExtractionResponse, AIExtractionMetadata] | None:
         """Analyze image and extract price/stock information."""
         try:
-            loop = asyncio.get_running_loop()
-            config = await loop.run_in_executor(None, cls.get_ai_config)
+            config = await cls.get_ai_config()
 
             logger.info(f"Analyzing image with {config['provider']}/{config['model']}")
 

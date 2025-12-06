@@ -1,6 +1,7 @@
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import database, models, schemas
 from app.limiter import limiter
@@ -11,8 +12,9 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
 @router.get("/config")
-def get_job_config(db: Session = Depends(database.get_db)):
-    interval = int(SettingsService.get_setting_value(db, "refresh_interval_minutes", "60"))
+async def get_job_config(db: AsyncSession = Depends(database.get_db)):
+    interval_str = await SettingsService.get_setting_value(db, "refresh_interval_minutes", "60")
+    interval = int(interval_str)
 
     next_run = None
     job = scheduler.get_job("refresh_job")
@@ -23,7 +25,7 @@ def get_job_config(db: Session = Depends(database.get_db)):
 
 
 @router.post("/config")
-def update_job_config(config: schemas.SettingsUpdate, db: Session = Depends(database.get_db)):
+async def update_job_config(config: schemas.SettingsUpdate, db: AsyncSession = Depends(database.get_db)):
     if config.key != "refresh_interval_minutes":
         raise HTTPException(status_code=400, detail="Invalid setting key for job config")
 
@@ -34,7 +36,7 @@ def update_job_config(config: schemas.SettingsUpdate, db: Session = Depends(data
     except ValueError as e:
         raise HTTPException(status_code=400, detail="Invalid interval value") from e
 
-    SettingsService.update_setting(db, config)
+    await SettingsService.update_setting(db, config)
 
     try:
         scheduler.reschedule_job("refresh_job", trigger=IntervalTrigger(minutes=interval))
@@ -46,13 +48,16 @@ def update_job_config(config: schemas.SettingsUpdate, db: Session = Depends(data
 
 @router.post("/refresh-all")
 @limiter.limit("5/minute")
-def refresh_all_items(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):
-    items = db.query(models.Item).filter(models.Item.is_active).all()
+async def refresh_all_items(
+    request: Request, background_tasks: BackgroundTasks, db: AsyncSession = Depends(database.get_db)
+):
+    result = await db.execute(select(models.Item).where(models.Item.is_active))
+    items = result.scalars().all()
 
     # Mark all items as refreshing immediately so UI updates persist
     for item in items:
         item.is_refreshing = True
-    db.commit()
+    await db.commit()
 
     for item in items:
         if item.id is not None:

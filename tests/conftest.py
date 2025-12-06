@@ -1,45 +1,56 @@
 import os
+from collections.abc import AsyncGenerator
 from unittest.mock import patch
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 # Set env var before importing app.database
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 
 from app.database import Base, get_db
 from app.main import app
 
 # Use in-memory SQLite for testing
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+# Note: sqlite+aiosqlite is needed for async sqlite
+SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-engine = create_engine(
+engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+TestingSessionLocal = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+)
 
 
 @pytest.fixture(scope="function")
-def db():
+async def db() -> AsyncGenerator[AsyncSession, None]:
     # Create tables
-    Base.metadata.create_all(bind=engine)
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-        # Drop tables
-        Base.metadata.drop_all(bind=engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with TestingSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
+    # Drop tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
 
 
 @pytest.fixture(scope="function")
-def client(db):
-    def override_get_db():
+async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    async def override_get_db():
         try:
             yield db
         finally:
@@ -47,25 +58,34 @@ def client(db):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    # Mock scheduler to prevent event loop issues
-    # Mock SessionLocal to return the test session
-    # We need a factory that returns the session, but SessionLocal() creates a new session.
-    # So we mock SessionLocal to return a mock that acts like a session but is actually our test session.
-    # However, our test session is scoped to the function.
-    # A better approach is to use a separate engine for the background task or share the connection.
-    # Since we use SQLite in-memory, sharing connection is key.
-    # But process_item_check creates a NEW session.
-
-    # Let's mock SessionLocal to return a session bound to the SAME engine.
-    # But we are using StaticPool, so all sessions share the same connection.
-    # So we just need SessionLocal to return a session from TestingSessionLocal.
-
+    # Mock scheduler
     with (
         patch("app.main.scheduler.start"),
         patch("app.main.scheduler.shutdown"),
-        patch("app.database.SessionLocal", side_effect=TestingSessionLocal),
+        patch(
+            "app.database.get_db", override_get_db
+        ),  # Direct patch if needed, but dependency_override is usually enough
+        patch(
+            "app.database.AsyncSessionLocal", return_value=db
+        ),  # Mock the session local used in services/background tasks
     ):
-        with TestClient(app) as c:
-            yield c
+        # We need to mock AsyncSessionLocal to act as a context manager that returns OUR session
+        # But AsyncSessionLocal() returns an AsyncSession
+        # In code: async with AsyncSessionLocal() as session:
+        # We want that session to be `db`.
+
+        class MockSessionContext:
+            def __init__(self, session):
+                self.session = session
+
+            async def __aenter__(self):
+                return self.session
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
+        with patch("app.database.AsyncSessionLocal", side_effect=lambda: MockSessionContext(db)):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                yield c
 
     app.dependency_overrides.clear()

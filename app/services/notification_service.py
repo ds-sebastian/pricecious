@@ -1,44 +1,48 @@
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, notification_sender, schemas
 
 
 class NotificationService:
     @staticmethod
-    def get_notification_profiles(db: Session):
-        return db.query(models.NotificationProfile).all()
+    async def get_notification_profiles(db: AsyncSession):
+        result = await db.execute(select(models.NotificationProfile))
+        return result.scalars().all()
 
     @staticmethod
-    def create_notification_profile(db: Session, profile: schemas.NotificationProfileCreate):
+    async def create_notification_profile(db: AsyncSession, profile: schemas.NotificationProfileCreate):
         db_profile = models.NotificationProfile(**profile.model_dump())
         db.add(db_profile)
-        db.commit()
-        db.refresh(db_profile)
+        await db.commit()
+        await db.refresh(db_profile)
         return db_profile
 
     @staticmethod
-    def delete_notification_profile(db: Session, profile_id: int):
-        profile = db.query(models.NotificationProfile).filter(models.NotificationProfile.id == profile_id).first()
+    async def delete_notification_profile(db: AsyncSession, profile_id: int):
+        result = await db.execute(select(models.NotificationProfile).where(models.NotificationProfile.id == profile_id))
+        profile = result.scalars().first()
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
-        db.delete(profile)
-        db.commit()
-        db.delete(profile)
-        db.commit()
+        await db.delete(profile)
+        await db.commit()
         return {"ok": True}
 
     @staticmethod
-    def update_notification_profile(db: Session, profile_id: int, profile_data: schemas.NotificationProfileUpdate):
-        profile = db.query(models.NotificationProfile).filter(models.NotificationProfile.id == profile_id).first()
+    async def update_notification_profile(
+        db: AsyncSession, profile_id: int, profile_data: schemas.NotificationProfileUpdate
+    ):
+        result = await db.execute(select(models.NotificationProfile).where(models.NotificationProfile.id == profile_id))
+        profile = result.scalars().first()
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
 
         for key, value in profile_data.model_dump().items():
             setattr(profile, key, value)
 
-        db.commit()
-        db.refresh(profile)
+        await db.commit()
+        await db.refresh(profile)
         return profile
 
     @staticmethod
