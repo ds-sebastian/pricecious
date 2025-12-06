@@ -1,6 +1,7 @@
 
 import {
     CartesianGrid,
+    Legend,
     Line,
     LineChart,
     ResponsiveContainer,
@@ -9,7 +10,18 @@ import {
     YAxis,
 } from "recharts";
 
-export function PriceChart({ data, showOutliers = true }) {
+const COLORS = [
+    "hsl(var(--primary))",
+    "#ef4444", // red-500
+    "#3b82f6", // blue-500
+    "#22c55e", // green-500
+    "#eab308", // yellow-500
+    "#a855f7", // purple-500
+    "#ec4899", // pink-500
+    "#f97316", // orange-500
+];
+
+export function PriceChart({ data, series = [] }) {
     if (!data || data.length === 0) {
         return (
             <div className="flex h-[300px] w-full items-center justify-center rounded-lg border border-dashed text-muted-foreground">
@@ -17,6 +29,12 @@ export function PriceChart({ data, showOutliers = true }) {
             </div>
         );
     }
+
+    // Default series if none provided
+    const chartSeries =
+        series.length > 0
+            ? series
+            : [{ key: "price", name: "Price", color: "hsl(var(--primary))" }];
 
     const sortedData = [...data].sort(
         (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
@@ -29,9 +47,11 @@ export function PriceChart({ data, showOutliers = true }) {
                     <p className="font-medium text-foreground">
                         {new Date(label).toLocaleString()}
                     </p>
-                    <p className="text-sm text-primary">
-                        Price: ${payload[0].value.toFixed(2)}
-                    </p>
+                    {payload.map((entry, index) => (
+                        <p key={index} className="text-sm" style={{ color: entry.color }}>
+                            {entry.name}: ${entry.value?.toFixed(2)}
+                        </p>
+                    ))}
                 </div>
             );
         }
@@ -58,18 +78,24 @@ export function PriceChart({ data, showOutliers = true }) {
                     />
                     <YAxis
                         domain={["auto", "auto"]}
-                        tickFormatter={(value) => `$${value}`}
+                        tickFormatter={(value) => `$${value} `}
                         className="text-xs text-muted-foreground"
                     />
                     <Tooltip content={<CustomTooltip />} />
-                    <Line
-                        type="monotone"
-                        dataKey="price"
-                        stroke="hsl(var(--primary))"
-                        strokeWidth={2}
-                        dot={{ r: 4, fill: "hsl(var(--background))", strokeWidth: 2 }}
-                        activeDot={{ r: 6 }}
-                    />
+                    <Legend />
+                    {chartSeries.map((s, index) => (
+                        <Line
+                            key={s.key}
+                            type="monotone"
+                            dataKey={s.key}
+                            name={s.name}
+                            stroke={s.color || COLORS[index % COLORS.length]}
+                            strokeWidth={2}
+                            dot={{ r: 4, fill: "hsl(var(--background))", strokeWidth: 2 }}
+                            activeDot={{ r: 6 }}
+                            connectNulls
+                        />
+                    ))}
                 </LineChart>
             </ResponsiveContainer>
         </div>

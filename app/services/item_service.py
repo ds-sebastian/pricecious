@@ -178,7 +178,7 @@ class ItemService:
             return due_items
 
     @staticmethod
-    def get_analytics_data(db: Session, item_id: int, std_dev_threshold: float | None = None):
+    def get_analytics_data(db: Session, item_id: int, std_dev_threshold: float | None = None, days_back: int | None = None):
         item = db.query(models.Item).filter(models.Item.id == item_id).first()
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
@@ -189,6 +189,10 @@ class ItemService:
             .order_by(models.PriceHistory.timestamp.asc())
         )
 
+        if days_back:
+            start_date = datetime.now() - timedelta(days=days_back)
+            history_query = history_query.filter(models.PriceHistory.timestamp >= start_date)
+        
         history_records = history_query.all()
 
         if not history_records:

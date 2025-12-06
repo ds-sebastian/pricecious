@@ -47,5 +47,7 @@ def check_item(
 
 
 @router.get("/{item_id}/analytics", response_model=schemas.AnalyticsResponse)
-def get_item_analytics(item_id: int, std_dev_threshold: float | None = None, db: Session = Depends(database.get_db)):
-    return ItemService.get_analytics_data(db, item_id, std_dev_threshold)
+def get_item_analytics(
+    item_id: int, std_dev_threshold: float | None = None, days: int | None = None, db: Session = Depends(database.get_db)
+):
+    return ItemService.get_analytics_data(db, item_id, std_dev_threshold, days)
