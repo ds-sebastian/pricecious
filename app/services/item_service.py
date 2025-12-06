@@ -244,18 +244,51 @@ class ItemService:
         if std_dev_threshold and stdev > 0:
             lower_bound = mean - (std_dev_threshold * stdev)
             upper_bound = mean + (std_dev_threshold * stdev)
-            final_history = [h for h in history_records if lower_bound <= h.price <= upper_bound]
-            # Recalculate basic stats for the filtered set?
-            # Usually "stats" show the raw data stats, but the "graph" might show filtered.
-            # But the user wants to see stats OF the graph.
-            # Let's keep stats based on RAW data (true history) but return FILTERED history points.
-            # Or maybe provide both?
-            # The prompt says "default filter for a threshold ... to have multiple products show on the same chart"
-            # I will return the filtered history but the stats of the FULL dataset so they know what "Normal" is?
-            # actually better to return stats of the filtered dataset if that's what's being visualized.
-            # But standard deviation OF the filtered dataset is circular/different.
-            # Let's return stats of the RAW data, and let the frontend show the filtered points.
+            final_history = [
+                h for h in history_records 
+                if lower_bound <= h.price <= upper_bound
+            ]
 
+        # Downsampling
+        TARGET_POINTS = 150
+        if len(final_history) > TARGET_POINTS:
+            # Sort just in case, though query ordered by timestamp
+            final_history.sort(key=lambda x: x.timestamp)
+            
+            start_time = final_history[0].timestamp
+            end_time = final_history[-1].timestamp
+            duration = (end_time - start_time).total_seconds()
+            
+            if duration > 0:
+                step = duration / TARGET_POINTS
+                buckets = {}
+                
+                for record in final_history:
+                    bucket_idx = int((record.timestamp - start_time).total_seconds() / step)
+                    # Handle edge case where last item is exactly at end_time/duration (idx = TARGET_POINTS)
+                    if bucket_idx >= TARGET_POINTS:
+                        bucket_idx = TARGET_POINTS - 1
+                        
+                    if bucket_idx not in buckets:
+                        buckets[bucket_idx] = []
+                    buckets[bucket_idx].append(record.price)
+                
+                aggregated = []
+                for idx in sorted(buckets.keys()):
+                    prices_in_bucket = buckets[idx]
+                    avg_price = sum(prices_in_bucket) / len(prices_in_bucket)
+                    # Use float timestamp calculation to minimize drift? Naive approach is fine for charts.
+                    bucket_time = start_time + timedelta(seconds=idx * step)
+                    
+                    aggregated.append(models.PriceHistory(
+                        id=0, # Placeholder ID for aggregated point
+                        item_id=item_id,
+                        price=avg_price,
+                        timestamp=bucket_time
+                    ))
+                
+                final_history = aggregated
+        
         return {
             "item_id": item.id,
             "item_name": item.name,
@@ -265,7 +298,7 @@ class ItemService:
                 "avg_price": round(mean, 2),
                 "std_dev": round(stdev, 2),
                 "latest_price": latest_price,
-                "price_change_24h": round(price_change, 2),
+                "price_change_24h": round(price_change, 2)
             },
-            "history": final_history,
+            "history": final_history
         }
