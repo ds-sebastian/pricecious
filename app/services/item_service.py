@@ -176,3 +176,92 @@ class ItemService:
                     due_items.append((item.id, interval, int(time_since)))
 
             return due_items
+
+    @staticmethod
+    def get_analytics_data(db: Session, item_id: int, std_dev_threshold: float | None = None):
+        item = db.query(models.Item).filter(models.Item.id == item_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+
+        history_query = (
+            db.query(models.PriceHistory)
+            .filter(models.PriceHistory.item_id == item_id)
+            .order_by(models.PriceHistory.timestamp.asc())
+        )
+
+        history_records = history_query.all()
+
+        if not history_records:
+            return {
+                "item_id": item.id,
+                "item_name": item.name,
+                "stats": {
+                    "min_price": 0.0,
+                    "max_price": 0.0,
+                    "avg_price": 0.0,
+                    "std_dev": 0.0,
+                    "latest_price": item.current_price or 0.0,
+                    "price_change_24h": 0.0,
+                },
+                "history": [],
+            }
+
+        prices = [h.price for h in history_records]
+
+        # Basic Statistics
+        import statistics
+
+        try:
+            mean = statistics.mean(prices)
+            stdev = statistics.stdev(prices) if len(prices) > 1 else 0.0
+        except statistics.StatisticsError:
+            mean = 0.0
+            stdev = 0.0
+
+        min_price = min(prices)
+        max_price = max(prices)
+        latest_price = prices[-1]
+
+        # Calculate 24h change
+        yesterday = datetime.now() - timedelta(days=1)
+        # Find price closest to 24h ago
+        price_24h_ago = None
+        for h in reversed(history_records):
+            if h.timestamp <= yesterday:
+                price_24h_ago = h.price
+                break
+
+        price_change = 0.0
+        if price_24h_ago:
+            price_change = ((latest_price - price_24h_ago) / price_24h_ago) * 100
+
+        # Outlier Filtering
+        final_history = history_records
+        if std_dev_threshold and stdev > 0:
+            lower_bound = mean - (std_dev_threshold * stdev)
+            upper_bound = mean + (std_dev_threshold * stdev)
+            final_history = [h for h in history_records if lower_bound <= h.price <= upper_bound]
+            # Recalculate basic stats for the filtered set?
+            # Usually "stats" show the raw data stats, but the "graph" might show filtered.
+            # But the user wants to see stats OF the graph.
+            # Let's keep stats based on RAW data (true history) but return FILTERED history points.
+            # Or maybe provide both?
+            # The prompt says "default filter for a threshold ... to have multiple products show on the same chart"
+            # I will return the filtered history but the stats of the FULL dataset so they know what "Normal" is?
+            # actually better to return stats of the filtered dataset if that's what's being visualized.
+            # But standard deviation OF the filtered dataset is circular/different.
+            # Let's return stats of the RAW data, and let the frontend show the filtered points.
+
+        return {
+            "item_id": item.id,
+            "item_name": item.name,
+            "stats": {
+                "min_price": min_price,
+                "max_price": max_price,
+                "avg_price": round(mean, 2),
+                "std_dev": round(stdev, 2),
+                "latest_price": latest_price,
+                "price_change_24h": round(price_change, 2),
+            },
+            "history": final_history,
+        }

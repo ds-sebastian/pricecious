@@ -44,3 +44,8 @@ def check_item(
 
     background_tasks.add_task(process_item_check, item_id)
     return {"message": "Check triggered"}
+
+
+@router.get("/{item_id}/analytics", response_model=schemas.AnalyticsResponse)
+def get_item_analytics(item_id: int, std_dev_threshold: float | None = None, db: Session = Depends(database.get_db)):
+    return ItemService.get_analytics_data(db, item_id, std_dev_threshold)

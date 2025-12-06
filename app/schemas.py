@@ -53,3 +53,29 @@ class ItemResponse(ItemCreate):
 class SettingsUpdate(BaseModel):
     key: str
     value: str
+
+
+class PriceHistoryResponse(BaseModel):
+    id: int
+    price: float
+    timestamp: datetime
+    screenshot_path: str | None = None
+    price_confidence: float | None = None
+    in_stock_confidence: float | None = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ItemStats(BaseModel):
+    min_price: float
+    max_price: float
+    avg_price: float
+    std_dev: float
+    latest_price: float
+    price_change_24h: float | None = None
+
+
+class AnalyticsResponse(BaseModel):
+    item_id: int
+    item_name: str
+    stats: ItemStats
+    history: list[PriceHistoryResponse]
