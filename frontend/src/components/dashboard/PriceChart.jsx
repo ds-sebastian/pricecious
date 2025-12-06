@@ -1,9 +1,11 @@
 
 import {
     CartesianGrid,
+    Label,
     Legend,
     Line,
     LineChart,
+    ReferenceDot,
     ResponsiveContainer,
     Tooltip,
     XAxis,
@@ -21,7 +23,7 @@ const COLORS = [
     "#f97316", // orange-500
 ];
 
-export function PriceChart({ data, series = [] }) {
+export function PriceChart({ data, series = [], annotations = [] }) {
     if (!data || data.length === 0) {
         return (
             <div className="flex h-[300px] w-full items-center justify-center rounded-lg border border-dashed text-muted-foreground">
@@ -96,6 +98,27 @@ export function PriceChart({ data, series = [] }) {
                             connectNulls
                         />
                     ))}
+                    {/* Annotations */}
+                    {series.length === 1 && annotations?.map((note, index) => (
+                        <ReferenceDot
+                            key={index}
+                            x={note.timestamp}
+                            y={note.value}
+                            r={6}
+                            fill={note.type === "min" ? "#22c55e" : "#ef4444"}
+                            stroke="white"
+                            strokeWidth={2}
+                        >
+                            <Label
+                                value={note.label}
+                                position="top"
+                                offset={10}
+                                className="fill-foreground text-xs font-medium"
+                                style={{ fill: "currentColor" }}
+                            />
+                        </ReferenceDot>
+                    ))}
+
                 </LineChart>
             </ResponsiveContainer>
         </div>

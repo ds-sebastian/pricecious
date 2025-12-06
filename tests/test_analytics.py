@@ -134,4 +134,43 @@ def test_get_analytics_downsampling(db):
 
     # Check that aggregation worked somewhat correctly (middle point should be ~150)
     # Since prices are 0..299, avg is ~150.
+    # Check that aggregation worked somewhat correctly (middle point should be ~150)
+    # Since prices are 0..299, avg is ~150.
     assert 140 < data["stats"]["avg_price"] < 160
+
+
+def test_get_analytics_annotations(db):
+    # Create item
+    item = models.Item(url="http://example.com/5", name="Test Item 5")
+    db.add(item)
+    db.commit()
+
+    # Create history with clear min and max
+    # 100, 50 (min), 150 (max), 100
+    prices = [100.0, 50.0, 150.0, 100.0]
+    now = datetime.now()
+
+    for i, p in enumerate(prices):
+        ts = now - timedelta(hours=len(prices) - i)
+        ph = models.PriceHistory(item_id=item.id, price=p, timestamp=ts)
+        db.add(ph)
+
+    db.commit()
+
+    data = ItemService.get_analytics_data(db, item.id)
+
+    annotations = data["annotations"]
+    assert len(annotations) == 2
+
+    # Sort by value to easily check min/max
+    annotations.sort(key=lambda x: x["value"])
+
+    # Min
+    assert annotations[0]["type"] == "min"
+    assert annotations[0]["value"] == 50.0
+    assert "Lowest" in annotations[0]["label"]
+
+    # Max
+    assert annotations[1]["type"] == "max"
+    assert annotations[1]["value"] == 150.0
+    assert "Highest" in annotations[1]["label"]

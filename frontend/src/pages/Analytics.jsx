@@ -267,7 +267,7 @@ export default function Analytics() {
                         <div className="flex items-center justify-between">
                             <div className="flex flex-col gap-1">
                                 <Label htmlFor="outliers">Remove Outliers</Label>
-                                <span className="text-xs text-muted-foreground">Filter spikes > {stdDevThreshold}σ</span>
+                                <span className="text-xs text-muted-foreground">Filter spikes &gt; {stdDevThreshold}σ</span>
                             </div>
                             <Switch
                                 id="outliers"
@@ -309,6 +309,7 @@ export default function Analytics() {
                                 <PriceChart
                                     data={multiSeriesData}
                                     series={seriesConfig}
+                                    annotations={analyticsData?.annotations}
                                 />
                             )}
                         </CardContent>
@@ -329,8 +330,8 @@ export default function Analytics() {
                                     {analyticsData.stats.price_change_24h !== 0 && (
                                         <p
                                             className={`text-xs ${analyticsData.stats.price_change_24h < 0
-                                                    ? "text-green-500"
-                                                    : "text-red-500"
+                                                ? "text-green-500"
+                                                : "text-red-500"
                                                 }`}
                                         >
                                             {analyticsData.stats.price_change_24h > 0 ? "+" : ""}

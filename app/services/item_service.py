@@ -211,7 +211,49 @@ class ItemService:
         if not stats:
             return ItemService._empty_analytics_response(item)
 
-        # 3. Aggregation Query
+        # 3. Annotations
+        # We need exact timestamps for Min and Max.
+        # The stats query gave us values, but not which record had them (or multiple).
+        # We'll fetch the specific records for min/max to get their timestamps.
+        annotations = []
+
+        # Min Price Annotation
+        if stats["min_price"] > 0:
+            min_record = (
+                db.query(models.PriceHistory)
+                .filter(*filters, models.PriceHistory.price == stats["min_price"])
+                .order_by(models.PriceHistory.timestamp.asc())  # First occurrence
+                .first()
+            )
+            if min_record:
+                annotations.append(
+                    {
+                        "type": "min",
+                        "value": min_record.price,
+                        "timestamp": min_record.timestamp,
+                        "label": f"Lowest: ${min_record.price:.2f}",
+                    }
+                )
+
+        # Max Price Annotation
+        if stats["max_price"] > 0 and stats["max_price"] != stats["min_price"]:
+            max_record = (
+                db.query(models.PriceHistory)
+                .filter(*filters, models.PriceHistory.price == stats["max_price"])
+                .order_by(models.PriceHistory.timestamp.asc())  # First occurrence
+                .first()
+            )
+            if max_record:
+                annotations.append(
+                    {
+                        "type": "max",
+                        "value": max_record.price,
+                        "timestamp": max_record.timestamp,
+                        "label": f"Highest: ${max_record.price:.2f}",
+                    }
+                )
+
+        # 4. Aggregation Query
         final_history = ItemService._fetch_aggregated_history_sql(db, item_id, filters, stats, std_dev_threshold)
 
         result = {
@@ -219,6 +261,7 @@ class ItemService:
             "item_name": item.name,
             "stats": stats,
             "history": final_history,
+            "annotations": annotations,
         }
 
         # Save to Cache
@@ -375,4 +418,5 @@ class ItemService:
                 "price_change_24h": 0.0,
             },
             "history": [],
+            "annotations": [],
         }
