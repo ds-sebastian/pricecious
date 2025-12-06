@@ -30,6 +30,7 @@ class ItemCreate(BaseModel):
     check_interval_minutes: int | None = None
     tags: str | None = None
     description: str | None = None
+    custom_prompt: str | None = None
     notification_profile_id: int | None = None
 
 

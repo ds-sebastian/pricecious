@@ -165,7 +165,11 @@ async def _execute_check(item_id: int):
             raise Exception("Failed to capture screenshot")
 
         # 3. Analyze with AI
-        if not (ai_result := await AIService.analyze_image(screenshot_path, page_text=page_text)):
+        if not (
+            ai_result := await AIService.analyze_image(
+                screenshot_path, page_text=page_text, custom_prompt=item_data.get("custom_prompt")
+            )
+        ):
             raise Exception("AI analysis failed")
 
         extraction, metadata = ai_result

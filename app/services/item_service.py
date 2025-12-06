@@ -116,6 +116,7 @@ class ItemService:
             "current_price": item.current_price,
             "in_stock": item.in_stock,
             "target_price": item.target_price,
+            "custom_prompt": item.custom_prompt,
             "notification_profile": profile.__dict__ if profile else None,
         }
 

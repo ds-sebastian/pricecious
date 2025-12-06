@@ -168,12 +168,13 @@ Text to convert:
 {raw_output}"""
 
 
-def get_extraction_prompt(page_text: str | None = None) -> str:
+def get_extraction_prompt(page_text: str | None = None, custom_prompt_template: str | None = None) -> str:
     """
     Generate the extraction prompt with optional text context.
 
     Args:
         page_text: Optional webpage text to include as context
+        custom_prompt_template: Optional custom prompt template to override default
 
     Returns:
         Formatted prompt string
@@ -186,7 +187,13 @@ def get_extraction_prompt(page_text: str | None = None) -> str:
     else:
         context_section = ""
 
-    return EXTRACTION_PROMPT_TEMPLATE.format(context_section=context_section)
+    template = custom_prompt_template if custom_prompt_template else EXTRACTION_PROMPT_TEMPLATE
+
+    # Handle case where custom prompt might not include the placeholder
+    if custom_prompt_template and "{context_section}" not in custom_prompt_template:
+        return f"{template}\n\n{context_section}"
+
+    return template.format(context_section=context_section)
 
 
 def get_repair_prompt(raw_output: str) -> str:

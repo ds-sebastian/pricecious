@@ -17,6 +17,7 @@ export function ItemModal({ item, onClose, onSaved, open }) {
         selector: '',
         tags: '',
         description: '',
+        custom_prompt: '',
         notification_profile_id: ''
     });
     const [profiles, setProfiles] = useState([]);
@@ -30,6 +31,7 @@ export function ItemModal({ item, onClose, onSaved, open }) {
                 selector: item.selector || '',
                 tags: item.tags || '',
                 description: item.description || '',
+                custom_prompt: item.custom_prompt || '',
                 notification_profile_id: item.notification_profile_id ? item.notification_profile_id.toString() : ''
             });
         } else {
@@ -40,6 +42,7 @@ export function ItemModal({ item, onClose, onSaved, open }) {
                 selector: '',
                 tags: '',
                 description: '',
+                custom_prompt: '',
                 notification_profile_id: ''
             });
         }
@@ -160,6 +163,16 @@ export function ItemModal({ item, onClose, onSaved, open }) {
                             placeholder="Add notes about this item..."
                             value={formData.description}
                             onChange={e => setFormData({ ...formData, description: e.target.value })}
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="custom_prompt">Custom AI Prompt (Optional)</Label>
+                        <textarea
+                            id="custom_prompt"
+                            className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            placeholder="Override the default price extraction prompt. Use {context_section} to include page text."
+                            value={formData.custom_prompt}
+                            onChange={e => setFormData({ ...formData, custom_prompt: e.target.value })}
                         />
                     </div>
                     <DialogFooter>

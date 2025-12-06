@@ -235,6 +235,7 @@ class AIService:
         cls,
         image_path: str,
         page_text: str = "",
+        custom_prompt: str | None = None,
     ) -> tuple[AIExtractionResponse, AIExtractionMetadata] | None:
         """Analyze image and extract price/stock information."""
         try:
@@ -253,7 +254,7 @@ class AIService:
                     cleaned_text = cleaned_text[:MAX_TEXT_LENGTH] + "...(truncated)"
                 logger.info(f"Added text context (original: {len(page_text)}, cleaned: {len(cleaned_text)})")
 
-            prompt = get_extraction_prompt(cleaned_text if cleaned_text else None)
+            prompt = get_extraction_prompt(cleaned_text if cleaned_text else None, custom_prompt)
             response_text = await cls.call_llm(prompt, data_url, config)
             logger.info(f"AI Response: {response_text[:200]}...")
 
