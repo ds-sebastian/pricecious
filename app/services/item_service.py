@@ -34,11 +34,14 @@ class ItemService:
                 interval = item.notification_profile.check_interval_minutes
             interval = max(interval or global_interval, 5)
 
-            next_check = (
-                item.last_checked.replace(tzinfo=UTC) + timedelta(minutes=interval)
-                if item.last_checked
-                else None
-            )
+            # Display logic: Keep it aware or naive?
+            # If we want to display next_check, it's safer to keep it consistent.
+            # But the failure was in SQL.
+            next_check = None
+            if item.last_checked:
+                # Treat DB value as UTC
+                last_checked = item.last_checked.replace(tzinfo=UTC)
+                next_check = last_checked + timedelta(minutes=interval)
 
             item_dict = {k: v for k, v in item.__dict__.items() if not k.startswith("_sa_")}
 
@@ -207,7 +210,7 @@ class ItemService:
                     continue
 
                 # Check time
-                # Ensure UTC awareness
+                # Ensure UTC awareness for calculation
                 last_checked = item.last_checked
                 if last_checked.tzinfo is None:
                     last_checked = last_checked.replace(tzinfo=UTC)
@@ -246,7 +249,8 @@ class ItemService:
         # Base Filters
         filters = [models.PriceHistory.item_id == item_id]
         if days_back:
-            search_start_date = datetime.now(UTC) - timedelta(days=days_back)
+            # Use NAIVE UTC for DB query
+            search_start_date = (datetime.now(UTC) - timedelta(days=days_back)).replace(tzinfo=None)
             filters.append(models.PriceHistory.timestamp >= search_start_date)
 
         # 2. Calculate Stats (SQL)
@@ -404,7 +408,8 @@ class ItemService:
                 pass
 
         # Combine Latest & 24h Change Queries
-        yesterday = datetime.now(UTC) - timedelta(days=1)
+        # Use NAIVE UTC for DB query
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).replace(tzinfo=None)
 
         # Fetch latest and one approx 24h ago
         # We can do this in two small queries (efficient enough) or one union.
@@ -447,8 +452,9 @@ class ItemService:
         db: AsyncSession, item_id: int, filters: list, stats: dict, std_dev_threshold: float | None
     ):
         target_points = 150
-        start_time = stats.get("_start_time") or datetime.now(UTC)
-        end_time = stats.get("_end_time") or datetime.now(UTC)
+        # These come from DB so they are naive (but represent UTC).
+        start_time = stats.get("_start_time") or datetime.now(UTC).replace(tzinfo=None)
+        end_time = stats.get("_end_time") or datetime.now(UTC).replace(tzinfo=None)
 
         duration_seconds = (end_time - start_time).total_seconds()
 

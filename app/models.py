@@ -59,7 +59,7 @@ class PriceHistory(Base):
     id: int = Column(Integer, primary_key=True, index=True)  # type: ignore
     item_id: int = Column(Integer, ForeignKey("items.id"))  # type: ignore
     price: float = Column(Float)  # type: ignore
-    timestamp: datetime = Column(DateTime, default=lambda: datetime.now(UTC))  # type: ignore
+    timestamp: datetime = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))  # type: ignore
     screenshot_path: str | None = Column(String, nullable=True)  # type: ignore
 
     # Confidence scores and AI metadata
