@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
@@ -71,7 +71,7 @@ async def _update_item_in_db(item_id: int, update_data: UpdateData) -> tuple[flo
                     )
                     logger.warning(f"Item {item_id}: {error_msg}")
                     item.last_error = error_msg
-                    item.last_checked = datetime.now()
+                    item.last_checked = datetime.now(UTC).replace(tzinfo=None)
                     item.is_refreshing = False
                     await session.commit()
                     return old_price, old_stock
@@ -109,7 +109,7 @@ async def _update_item_in_db(item_id: int, update_data: UpdateData) -> tuple[flo
             item.in_stock_confidence = s_conf
 
         old_timestamp = item.last_checked
-        item.last_checked = datetime.now()
+        item.last_checked = datetime.now(UTC).replace(tzinfo=None)
         item.is_refreshing = False
         if item.last_error and not item.last_error.startswith("Uncertain:"):
             item.last_error = None
@@ -130,7 +130,7 @@ async def _handle_error(item_id: int, error_msg: str):
         if item := result.scalars().first():
             item.is_refreshing = False
             item.last_error = str(error_msg)
-            item.last_checked = datetime.now()
+            item.last_checked = datetime.now(UTC).replace(tzinfo=None)
             await session.commit()
 
 
