@@ -244,9 +244,33 @@ class ItemService:
             return ItemService._empty_analytics_response(item)
 
         # 3. Annotations
-        # We need exact timestamps for Min and Max.
         annotations = []
+        annotations.extend(await ItemService._generate_min_max_annotations(db, stats, filters))
+        annotations.extend(await ItemService._generate_stock_annotations(db, filters))
 
+        # Limit annotations to prevent accumulation?
+        # For now, let's keep all within the window as it's useful info.
+
+        # 4. Aggregation Query
+        final_history = await ItemService._fetch_aggregated_history_sql(db, item_id, filters, stats, std_dev_threshold)
+
+        result = {
+            "item_id": item.id,
+            "item_name": item.name,
+            "stats": stats,
+            "history": final_history,
+            "annotations": annotations,
+        }
+
+        # Save to Cache
+        cache_key = (item_id, std_dev_threshold, days_back)
+        ItemService._analytics_cache[cache_key] = (result, datetime.now())
+
+        return result
+
+    @staticmethod
+    async def _generate_min_max_annotations(db: AsyncSession, stats: dict, filters: list) -> list[dict]:
+        annotations = []
         # Min Price Annotation
         if stats["min_price"] > 0:
             stmt_min = (
@@ -288,23 +312,51 @@ class ItemService:
                         "label": f"Highest: ${max_record.price:.2f}",
                     }
                 )
+        return annotations
 
-        # 4. Aggregation Query
-        final_history = await ItemService._fetch_aggregated_history_sql(db, item_id, filters, stats, std_dev_threshold)
+    @staticmethod
+    async def _generate_stock_annotations(db: AsyncSession, filters: list) -> list[dict]:
+        annotations = []
+        stmt_stock = (
+            select(models.PriceHistory.timestamp, models.PriceHistory.in_stock, models.PriceHistory.price)
+            .filter(*filters)
+            .order_by(models.PriceHistory.timestamp.asc())
+        )
+        result_stock = await db.execute(stmt_stock)
+        stock_history = result_stock.all()
 
-        result = {
-            "item_id": item.id,
-            "item_name": item.name,
-            "stats": stats,
-            "history": final_history,
-            "annotations": annotations,
-        }
+        last_status = None
+        for r in stock_history:
+            # Skip if stock status is None (unknown)
+            if r.in_stock is None:
+                continue
 
-        # Save to Cache
-        cache_key = (item_id, std_dev_threshold, days_back)
-        ItemService._analytics_cache[cache_key] = (result, datetime.now())
+            current_status = r.in_stock
 
-        return result
+            if last_status is not None and current_status != last_status:
+                if last_status is True and current_status is False:
+                    # Stock Depleted
+                    annotations.append(
+                        {
+                            "type": "stock_depleted",
+                            "value": r.price,
+                            "timestamp": r.timestamp,
+                            "label": "Stock Depleted",
+                        }
+                    )
+                elif last_status is False and current_status is True:
+                    # Restocked
+                    annotations.append(
+                        {
+                            "type": "stock_restocked",
+                            "value": r.price,
+                            "timestamp": r.timestamp,
+                            "label": "Back in Stock",
+                        }
+                    )
+
+            last_status = current_status
+        return annotations
 
     @staticmethod
     def _get_cached_analytics(item_id, std_dev_threshold, days_back):

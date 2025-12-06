@@ -148,25 +148,33 @@ export function PriceChart({ data, series = [], annotations = [] }) {
                         />
                     ))}
                     {/* Annotations */}
-                    {series.length === 1 && annotations?.map((note, index) => (
-                        <ReferenceDot
-                            key={index}
-                            x={note.timestamp}
-                            y={note.value}
-                            r={6}
-                            fill={note.type === "min" ? "#22c55e" : "#ef4444"}
-                            stroke="white"
-                            strokeWidth={2}
-                        >
-                            <Label
-                                value={note.label}
-                                position="top"
-                                offset={10}
-                                className="fill-foreground text-xs font-medium"
-                                style={{ fill: "currentColor" }}
-                            />
-                        </ReferenceDot>
-                    ))}
+                    {series.length === 1 && annotations?.map((note, index) => {
+                        let color = "#ef4444";
+                        if (note.type === "min") color = "#22c55e"; // Green
+                        if (note.type === "max") color = "#ef4444"; // Red
+                        if (note.type === "stock_depleted") color = "#f97316"; // Orange
+                        if (note.type === "stock_restocked") color = "#3b82f6"; // Blue
+
+                        return (
+                            <ReferenceDot
+                                key={index}
+                                x={note.timestamp}
+                                y={note.value}
+                                r={6}
+                                fill={color}
+                                stroke="white"
+                                strokeWidth={2}
+                            >
+                                <Label
+                                    value={note.label}
+                                    position="top"
+                                    offset={10}
+                                    className="fill-foreground text-xs font-medium"
+                                    style={{ fill: "currentColor" }}
+                                />
+                            </ReferenceDot>
+                        )
+                    })}
 
                 </LineChart>
             </ResponsiveContainer>

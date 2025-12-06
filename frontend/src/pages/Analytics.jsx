@@ -69,6 +69,11 @@ export default function Analytics() {
             if (response.data.length > 0) {
                 setSelectedItemId(response.data[0].id.toString());
             }
+
+            if (allTags.size > 0 && !selectedTag) {
+                const tagList = Array.from(allTags);
+                setSelectedTag(tagList[0]);
+            }
         } catch (error) {
             console.error("Failed to fetch items:", error);
         }
@@ -325,7 +330,7 @@ export default function Analytics() {
                                 </CardHeader>
                                 <CardContent>
                                     <div className="text-2xl font-bold">
-                                        ${analyticsData.stats.latest_price.toFixed(2)}
+                                        ${parseFloat(analyticsData.stats.latest_price.toFixed(2))}
                                     </div>
                                     {analyticsData.stats.price_change_24h !== 0 && (
                                         <p
@@ -348,7 +353,7 @@ export default function Analytics() {
                                 </CardHeader>
                                 <CardContent>
                                     <div className="text-2xl font-bold">
-                                        ${analyticsData.stats.avg_price.toFixed(2)}
+                                        ${parseFloat(analyticsData.stats.avg_price.toFixed(2))}
                                     </div>
                                     <p className="text-xs text-muted-foreground">
                                         σ: ${analyticsData.stats.std_dev}
@@ -363,7 +368,7 @@ export default function Analytics() {
                                 </CardHeader>
                                 <CardContent>
                                     <div className="text-2xl font-bold">
-                                        ${analyticsData.stats.min_price.toFixed(2)}
+                                        ${parseFloat(analyticsData.stats.min_price.toFixed(2))}
                                     </div>
                                 </CardContent>
                             </Card>
@@ -375,7 +380,7 @@ export default function Analytics() {
                                 </CardHeader>
                                 <CardContent>
                                     <div className="text-2xl font-bold">
-                                        ${analyticsData.stats.max_price.toFixed(2)}
+                                        ${parseFloat(analyticsData.stats.max_price.toFixed(2))}
                                     </div>
                                 </CardContent>
                             </Card>
