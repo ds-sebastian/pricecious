@@ -1,7 +1,16 @@
 from datetime import datetime, timedelta
 
+import pytest
+
 from app import models
 from app.services.item_service import ItemService
+
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    ItemService.clear_cache()
+    yield
+    ItemService.clear_cache()
 
 
 def test_get_analytics_data_empty(db):
