@@ -1,4 +1,5 @@
 
+import { useMemo } from "react";
 import {
     CartesianGrid,
     Label,
@@ -34,40 +35,44 @@ export function PriceChart({ data, series = [], annotations = [] }) {
     }
 
     // Default series if none provided
-    const chartSeries =
+    const chartSeries = useMemo(() =>
         series.length > 0
             ? series
-            : [{ key: "price", name: "Price", color: "hsl(var(--primary))" }];
+            : [{ key: "price", name: "Price", color: "hsl(var(--primary))" }],
+        [series]);
 
-    const sortedData = [...data].sort(
-        (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
-    );
+    const sortedData = useMemo(() =>
+        [...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)),
+        [data]);
 
     // Calculate out-of-stock intervals
-    const outOfStockIntervals = [];
-    if (series.length <= 1) { // Single item mode or default
-        let currentStart = null;
-        for (let i = 0; i < sortedData.length; i++) {
-            const point = sortedData[i];
-            const isOutOfStock = point.in_stock === false; // Strict false check
+    const outOfStockIntervals = useMemo(() => {
+        const intervals = [];
+        if (series.length <= 1) { // Single item mode or default
+            let currentStart = null;
+            for (let i = 0; i < sortedData.length; i++) {
+                const point = sortedData[i];
+                const isOutOfStock = point.in_stock === false; // Strict false check
 
-            if (isOutOfStock) {
-                if (!currentStart) {
-                    currentStart = point.timestamp;
-                }
-                // If it's the last point, close the interval
-                if (i === sortedData.length - 1) {
-                    outOfStockIntervals.push({ x1: currentStart, x2: point.timestamp });
-                }
-            } else {
-                if (currentStart) {
-                    // End the interval at the current point (when it became in stock/unknown)
-                    outOfStockIntervals.push({ x1: currentStart, x2: point.timestamp });
-                    currentStart = null;
+                if (isOutOfStock) {
+                    if (!currentStart) {
+                        currentStart = point.timestamp;
+                    }
+                    // If it's the last point, close the interval
+                    if (i === sortedData.length - 1) {
+                        intervals.push({ x1: currentStart, x2: point.timestamp });
+                    }
+                } else {
+                    if (currentStart) {
+                        // End the interval at the current point (when it became in stock/unknown)
+                        intervals.push({ x1: currentStart, x2: point.timestamp });
+                        currentStart = null;
+                    }
                 }
             }
         }
-    }
+        return intervals;
+    }, [sortedData, series.length]);
 
     const CustomTooltip = ({ active, payload, label }) => {
         if (active && payload && payload.length) {
@@ -96,7 +101,7 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 
     return (
         <div className="h-[400px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <LineChart
                     data={sortedData}
                     margin={{

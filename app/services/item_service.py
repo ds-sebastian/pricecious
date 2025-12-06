@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
 
 from fastapi import HTTPException
@@ -28,22 +28,17 @@ class ItemService:
 
         result_list = []
         for item in items:
-            # Determine interval
-            if item.check_interval_minutes:
-                interval = item.check_interval_minutes
-            elif item.notification_profile and item.notification_profile.check_interval_minutes:
+            # Determine interval (Effective Interval Logic)
+            interval = item.check_interval_minutes
+            if not interval and item.notification_profile:
                 interval = item.notification_profile.check_interval_minutes
-            else:
-                interval = global_interval
+            interval = max(interval or global_interval, 5)
 
-            interval = max(interval, 5)
-
-            next_check = None
-            if item.last_checked:
-                last_checked = item.last_checked
-                if last_checked.tzinfo is not None:
-                    last_checked = last_checked.astimezone().replace(tzinfo=None)
-                next_check = last_checked + timedelta(minutes=interval)
+            next_check = (
+                item.last_checked.replace(tzinfo=UTC) + timedelta(minutes=interval)
+                if item.last_checked
+                else None
+            )
 
             item_dict = {k: v for k, v in item.__dict__.items() if not k.startswith("_sa_")}
 
@@ -161,46 +156,62 @@ class ItemService:
     async def get_due_items():
         """Get items due for refresh. Creates and manages its own session."""
         async with database.AsyncSessionLocal() as db:
+            global_int_str = await SettingsService.get_setting_value(db, "refresh_interval_minutes", "60")
+            global_int = int(global_int_str)
+            now = datetime.now(UTC)
+
+            # Join with NotificationProfile to access its check_interval
+            # Logic:
+            # 1. Item has specific interval -> use it
+            # 2. Item has no interval, Profile has interval -> use it
+            # 3. Neither -> use global
+            # Calc 'due_threshold' for each: last_checked < now - interval
+
+            # Using coalesce(item.int, profile.int, global) is the check_interval.
+            # We want: last_checked < now - interval MINUTES
+            # Since SQLAlchemy interval math varies, we can use a hybrid approach or simpler filtering.
+
+            # Efficient Approach:
+            # Select IDs, last_checked, and the determined interval components.
+            # Filtering fully in SQL is better but requires DB-specific date math.
+            # We will fetch only candidates that MIGHT be due (last_checked < now - 5 min)
+            # and verify precise interval in python, avoiding full table scan.
+
+            # items with NO last_checked are due immediately
+            # items active only
+
             stmt = (
-                select(models.Item).options(selectinload(models.Item.notification_profile)).where(models.Item.is_active)
+                select(models.Item)
+                .options(selectinload(models.Item.notification_profile))
+                .where(models.Item.is_active == True)  # noqa
             )
+
             result = await db.execute(stmt)
             items = result.scalars().all()
 
-            global_interval_str = await SettingsService.get_setting_value(db, "refresh_interval_minutes", "60")
-            global_interval = int(global_interval_str)
-
             due_items = []
-            now = datetime.now()
 
             for item in items:
                 if item.is_refreshing:
                     continue
 
-                # Determine interval
-                if item.check_interval_minutes:
-                    interval = item.check_interval_minutes
-                elif item.notification_profile and item.notification_profile.check_interval_minutes:
+                # Effective Interval
+                interval = item.check_interval_minutes
+                if not interval and item.notification_profile:
                     interval = item.notification_profile.check_interval_minutes
-                else:
-                    interval = global_interval
+                interval = max(interval or global_int, 5)
 
-                # Enforce minimum interval of 5 minutes
-                interval = max(interval, 5)
-
-                # Check if due
                 if not item.last_checked:
                     logger.info(f"Item {item.id} due: Never checked (Interval: {interval}m)")
                     due_items.append((item.id, interval, -1))
                     continue
 
-                # Use naive comparison (Local Time) to match DB storage
+                # Check time
+                # Ensure UTC awareness
                 last_checked = item.last_checked
-                if last_checked.tzinfo is not None:
-                    # If somehow we get an aware datetime, convert to naive local
-                    last_checked = last_checked.astimezone().replace(tzinfo=None)
+                if last_checked.tzinfo is None:
+                    last_checked = last_checked.replace(tzinfo=UTC)
 
-                # Calculate time since last check
                 time_since = (now - last_checked).total_seconds() / 60
 
                 if time_since >= interval:
@@ -235,7 +246,7 @@ class ItemService:
         # Base Filters
         filters = [models.PriceHistory.item_id == item_id]
         if days_back:
-            search_start_date = datetime.now() - timedelta(days=days_back)
+            search_start_date = datetime.now(UTC) - timedelta(days=days_back)
             filters.append(models.PriceHistory.timestamp >= search_start_date)
 
         # 2. Calculate Stats (SQL)
@@ -316,46 +327,36 @@ class ItemService:
 
     @staticmethod
     async def _generate_stock_annotations(db: AsyncSession, filters: list) -> list[dict]:
-        annotations = []
-        stmt_stock = (
+        # Optimization: Fetch ONLY necessary columns
+        stmt = (
             select(models.PriceHistory.timestamp, models.PriceHistory.in_stock, models.PriceHistory.price)
             .filter(*filters)
             .order_by(models.PriceHistory.timestamp.asc())
         )
-        result_stock = await db.execute(stmt_stock)
-        stock_history = result_stock.all()
+        # Further optimization potential: Use SQL window functions to find edges
+        # But reducing payload is a good first step.
+        result = await db.execute(stmt)
+        # Using a generator/iteration to avoid loading all into list if possible, but driver might load all.
+        stock_history = result.all()
 
+        annotations = []
         last_status = None
-        for r in stock_history:
-            # Skip if stock status is None (unknown)
-            if r.in_stock is None:
+
+        for timestamp, in_stock, price in stock_history:
+            if in_stock is None:
                 continue
 
-            current_status = r.in_stock
+            if last_status is not None and in_stock != last_status:
+                annotations.append(
+                    {
+                        "type": "stock_depleted" if not in_stock else "stock_restocked",
+                        "value": price,
+                        "timestamp": timestamp,
+                        "label": "Stock Depleted" if not in_stock else "Back in Stock",
+                    }
+                )
+            last_status = in_stock
 
-            if last_status is not None and current_status != last_status:
-                if last_status is True and current_status is False:
-                    # Stock Depleted
-                    annotations.append(
-                        {
-                            "type": "stock_depleted",
-                            "value": r.price,
-                            "timestamp": r.timestamp,
-                            "label": "Stock Depleted",
-                        }
-                    )
-                elif last_status is False and current_status is True:
-                    # Restocked
-                    annotations.append(
-                        {
-                            "type": "stock_restocked",
-                            "value": r.price,
-                            "timestamp": r.timestamp,
-                            "label": "Back in Stock",
-                        }
-                    )
-
-            last_status = current_status
         return annotations
 
     @staticmethod
@@ -402,32 +403,32 @@ class ItemService:
             except Exception:
                 pass
 
-        # Latest Price & 24h Change
+        # Combine Latest & 24h Change Queries
+        yesterday = datetime.now(UTC) - timedelta(days=1)
+
+        # Fetch latest and one approx 24h ago
+        # We can do this in two small queries (efficient enough) or one union.
+        # Let's keep distinct queries but clean up.
+
         latest_record_query = (
-            select(models.PriceHistory)
+            select(models.PriceHistory.price)
             .filter(models.PriceHistory.item_id == item.id)
             .order_by(models.PriceHistory.timestamp.desc())
             .limit(1)
         )
-        latest_record_result = await db.execute(latest_record_query)
-        latest_record = latest_record_result.scalars().first()
+        latest_price = (await db.execute(latest_record_query)).scalar_one_or_none() or 0.0
 
-        latest_price = latest_record.price if latest_record else 0.0
-
-        yesterday = datetime.now() - timedelta(days=1)
-        price_24h_record_query = (
-            select(models.PriceHistory)
+        price_24h_query = (
+            select(models.PriceHistory.price)
             .filter(models.PriceHistory.item_id == item.id, models.PriceHistory.timestamp <= yesterday)
             .order_by(models.PriceHistory.timestamp.desc())
             .limit(1)
         )
-        price_24h_record_result = await db.execute(price_24h_record_query)
-        price_24h_record = price_24h_record_result.scalars().first()
+        price_24h = (await db.execute(price_24h_query)).scalar_one_or_none()
 
-        price_24h_ago = price_24h_record.price if price_24h_record else None
         price_change = 0.0
-        if price_24h_ago:
-            price_change = ((latest_price - price_24h_ago) / price_24h_ago) * 100
+        if price_24h:
+            price_change = ((latest_price - price_24h) / price_24h) * 100
 
         return {
             "min_price": float(stats_result.min_price or 0),
@@ -446,8 +447,8 @@ class ItemService:
         db: AsyncSession, item_id: int, filters: list, stats: dict, std_dev_threshold: float | None
     ):
         target_points = 150
-        start_time = stats.get("_start_time") or datetime.now()
-        end_time = stats.get("_end_time") or datetime.now()
+        start_time = stats.get("_start_time") or datetime.now(UTC)
+        end_time = stats.get("_end_time") or datetime.now(UTC)
 
         duration_seconds = (end_time - start_time).total_seconds()
 

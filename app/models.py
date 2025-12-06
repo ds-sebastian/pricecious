@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -59,7 +59,7 @@ class PriceHistory(Base):
     id: int = Column(Integer, primary_key=True, index=True)  # type: ignore
     item_id: int = Column(Integer, ForeignKey("items.id"))  # type: ignore
     price: float = Column(Float)  # type: ignore
-    timestamp: datetime = Column(DateTime, default=lambda: datetime.now())  # type: ignore
+    timestamp: datetime = Column(DateTime, default=lambda: datetime.now(UTC))  # type: ignore
     screenshot_path: str | None = Column(String, nullable=True)  # type: ignore
 
     # Confidence scores and AI metadata
