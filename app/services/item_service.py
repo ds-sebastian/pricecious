@@ -178,7 +178,9 @@ class ItemService:
             return due_items
 
     @staticmethod
-    def get_analytics_data(db: Session, item_id: int, std_dev_threshold: float | None = None, days_back: int | None = None):
+    def get_analytics_data(
+        db: Session, item_id: int, std_dev_threshold: float | None = None, days_back: int | None = None
+    ):
         item = db.query(models.Item).filter(models.Item.id == item_id).first()
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
@@ -192,27 +194,49 @@ class ItemService:
         if days_back:
             start_date = datetime.now() - timedelta(days=days_back)
             history_query = history_query.filter(models.PriceHistory.timestamp >= start_date)
-        
+
         history_records = history_query.all()
 
         if not history_records:
-            return {
-                "item_id": item.id,
-                "item_name": item.name,
-                "stats": {
-                    "min_price": 0.0,
-                    "max_price": 0.0,
-                    "avg_price": 0.0,
-                    "std_dev": 0.0,
-                    "latest_price": item.current_price or 0.0,
-                    "price_change_24h": 0.0,
-                },
-                "history": [],
-            }
+            return ItemService._empty_analytics_response(item)
 
+        # Calculate Stats
+        stats = ItemService._calculate_stats(history_records, item)
+
+        # Outlier Filtering
+        final_history = ItemService._filter_outliers(
+            history_records, stats["avg_price"], stats["std_dev"], std_dev_threshold
+        )
+
+        # Downsampling
+        final_history = ItemService._downsample_history(final_history, item_id)
+
+        return {
+            "item_id": item.id,
+            "item_name": item.name,
+            "stats": stats,
+            "history": final_history,
+        }
+
+    @staticmethod
+    def _empty_analytics_response(item):
+        return {
+            "item_id": item.id,
+            "item_name": item.name,
+            "stats": {
+                "min_price": 0.0,
+                "max_price": 0.0,
+                "avg_price": 0.0,
+                "std_dev": 0.0,
+                "latest_price": item.current_price or 0.0,
+                "price_change_24h": 0.0,
+            },
+            "history": [],
+        }
+
+    @staticmethod
+    def _calculate_stats(history_records, item):
         prices = [h.price for h in history_records]
-
-        # Basic Statistics
         import statistics
 
         try:
@@ -228,7 +252,6 @@ class ItemService:
 
         # Calculate 24h change
         yesterday = datetime.now() - timedelta(days=1)
-        # Find price closest to 24h ago
         price_24h_ago = None
         for h in reversed(history_records):
             if h.timestamp <= yesterday:
@@ -239,66 +262,64 @@ class ItemService:
         if price_24h_ago:
             price_change = ((latest_price - price_24h_ago) / price_24h_ago) * 100
 
-        # Outlier Filtering
-        final_history = history_records
-        if std_dev_threshold and stdev > 0:
-            lower_bound = mean - (std_dev_threshold * stdev)
-            upper_bound = mean + (std_dev_threshold * stdev)
-            final_history = [
-                h for h in history_records 
-                if lower_bound <= h.price <= upper_bound
-            ]
-
-        # Downsampling
-        TARGET_POINTS = 150
-        if len(final_history) > TARGET_POINTS:
-            # Sort just in case, though query ordered by timestamp
-            final_history.sort(key=lambda x: x.timestamp)
-            
-            start_time = final_history[0].timestamp
-            end_time = final_history[-1].timestamp
-            duration = (end_time - start_time).total_seconds()
-            
-            if duration > 0:
-                step = duration / TARGET_POINTS
-                buckets = {}
-                
-                for record in final_history:
-                    bucket_idx = int((record.timestamp - start_time).total_seconds() / step)
-                    # Handle edge case where last item is exactly at end_time/duration (idx = TARGET_POINTS)
-                    if bucket_idx >= TARGET_POINTS:
-                        bucket_idx = TARGET_POINTS - 1
-                        
-                    if bucket_idx not in buckets:
-                        buckets[bucket_idx] = []
-                    buckets[bucket_idx].append(record.price)
-                
-                aggregated = []
-                for idx in sorted(buckets.keys()):
-                    prices_in_bucket = buckets[idx]
-                    avg_price = sum(prices_in_bucket) / len(prices_in_bucket)
-                    # Use float timestamp calculation to minimize drift? Naive approach is fine for charts.
-                    bucket_time = start_time + timedelta(seconds=idx * step)
-                    
-                    aggregated.append(models.PriceHistory(
-                        id=0, # Placeholder ID for aggregated point
-                        item_id=item_id,
-                        price=avg_price,
-                        timestamp=bucket_time
-                    ))
-                
-                final_history = aggregated
-        
         return {
-            "item_id": item.id,
-            "item_name": item.name,
-            "stats": {
-                "min_price": min_price,
-                "max_price": max_price,
-                "avg_price": round(mean, 2),
-                "std_dev": round(stdev, 2),
-                "latest_price": latest_price,
-                "price_change_24h": round(price_change, 2)
-            },
-            "history": final_history
+            "min_price": min_price,
+            "max_price": max_price,
+            "avg_price": round(mean, 2),
+            "std_dev": round(stdev, 2),
+            "latest_price": latest_price,
+            "price_change_24h": round(price_change, 2),
         }
+
+    @staticmethod
+    def _filter_outliers(history_records, mean, stdev, threshold):
+        if not threshold or stdev <= 0:
+            return history_records
+
+        lower_bound = mean - (threshold * stdev)
+        upper_bound = mean + (threshold * stdev)
+        return [h for h in history_records if lower_bound <= h.price <= upper_bound]
+
+    @staticmethod
+    def _downsample_history(history_records, item_id, target_points=150):
+        if len(history_records) <= target_points:
+            return history_records
+
+        # Sort just in case
+        history_records.sort(key=lambda x: x.timestamp)
+
+        start_time = history_records[0].timestamp
+        end_time = history_records[-1].timestamp
+        duration = (end_time - start_time).total_seconds()
+
+        if duration <= 0:
+            return history_records
+
+        step = duration / target_points
+        buckets = {}
+
+        for record in history_records:
+            bucket_idx = int((record.timestamp - start_time).total_seconds() / step)
+            if bucket_idx >= target_points:
+                bucket_idx = target_points - 1
+
+            if bucket_idx not in buckets:
+                buckets[bucket_idx] = []
+            buckets[bucket_idx].append(record.price)
+
+        aggregated = []
+        for idx in sorted(buckets.keys()):
+            prices_in_bucket = buckets[idx]
+            avg_price = sum(prices_in_bucket) / len(prices_in_bucket)
+            bucket_time = start_time + timedelta(seconds=idx * step)
+
+            aggregated.append(
+                models.PriceHistory(
+                    id=0,
+                    item_id=item_id,
+                    price=avg_price,
+                    timestamp=bucket_time,
+                )
+            )
+
+        return aggregated

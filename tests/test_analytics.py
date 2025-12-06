@@ -97,7 +97,7 @@ def test_get_analytics_downsampling(db):
     item = models.Item(url="http://example.com/4", name="Test Item 4")
     db.add(item)
     db.commit()
-    
+
     # Create 300 history points (linear increase)
     # 0 to 299
     points = 300
@@ -105,28 +105,24 @@ def test_get_analytics_downsampling(db):
     start_time = now - timedelta(days=10)
     # Time step = 10 days / 300 = 48 minutes roughly
     step = timedelta(minutes=48)
-    
+
     for i in range(points):
-        ph = models.PriceHistory(
-            item_id=item.id, 
-            price=float(i), 
-            timestamp=start_time + (step * i)
-        )
+        ph = models.PriceHistory(item_id=item.id, price=float(i), timestamp=start_time + (step * i))
         db.add(ph)
-    
+
     db.commit()
 
     data = ItemService.get_analytics_data(db, item.id)
-    
+
     # Check that we downsampled
     history_len = len(data["history"])
     assert history_len <= 150
     assert history_len > 0
-    
+
     # Stats should be on RAW data
     assert data["stats"]["min_price"] == 0.0
     assert data["stats"]["max_price"] == 299.0
-    
+
     # Check that aggregation worked somewhat correctly (middle point should be ~150)
     # Since prices are 0..299, avg is ~150.
     assert 140 < data["stats"]["avg_price"] < 160
