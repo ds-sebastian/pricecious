@@ -85,15 +85,21 @@ async def test_forecasting_service():
             await ForecastingService.generate_forecast(1)
 
             # Verify Prophet configuration
+            # In this test, history is 20 days (Jan 1 - Jan 20).
+            # Duration = 19 days. < 500, so yearly_seasonality=False.
+            # Black Friday is Nov. Jan dates do not contain BF. So BF regressor should NOT be added.
+            
             MockProphet.assert_called_with(
-                seasonality_mode="additive",
+                seasonality_mode="multiplicative",
                 changepoint_prior_scale=0.01,
                 seasonality_prior_scale=1.0,
                 daily_seasonality=False,
                 weekly_seasonality=True,
-                yearly_seasonality=True,
+                yearly_seasonality=False,
             )
-            mock_model.add_regressor.assert_called_with("black_friday")
+            # Black Friday regressor should NOT be called because dates don't overlap with Nov
+            mock_model.add_regressor.assert_not_called()
+            
             mock_model.fit.assert_called()
             mock_model.predict.assert_called()
 

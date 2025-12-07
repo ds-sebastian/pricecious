@@ -59,18 +59,33 @@ class ForecastingService:
             # Remove time zone info to avoid Prophet warning
             df["ds"] = df["ds"].dt.tz_localize(None)
 
-            # 3. Configure Prophet
+            # 3. Analyze Data Characteristics
+            duration_days = (df["ds"].max() - df["ds"].min()).days
+            
+            # Horizon Capping (10:1 ratio)
+            max_horizon = max(1, duration_days // 10)
+            prediction_days = min(days, max_horizon)
+            
+            # Dynamic Seasonality
+            use_yearly = duration_days >= 500
+            
+            # Regressor Safety Check
             df["black_friday"] = df["ds"].apply(ForecastingService._is_black_friday_week)
+            has_bf = df["black_friday"].sum() > 0
+            has_non_bf = (df["black_friday"] == 0).sum() > 0
+            use_bf_regressor = has_bf and has_non_bf
 
             m = Prophet(
-                seasonality_mode="additive",
+                seasonality_mode="multiplicative",
                 changepoint_prior_scale=0.01,
                 seasonality_prior_scale=1.0,
                 daily_seasonality=False,
                 weekly_seasonality=True,
-                yearly_seasonality=True,
+                yearly_seasonality=use_yearly,
             )
-            m.add_regressor("black_friday")
+            
+            if use_bf_regressor:
+                m.add_regressor("black_friday")
 
             # 4. Fit & Predict
             try:
@@ -79,8 +94,17 @@ class ForecastingService:
                 logger.error(f"Prophet fit failed for item {item_id}: {e}")
                 return
 
-            future = m.make_future_dataframe(periods=days)
-            future["black_friday"] = future["ds"].apply(ForecastingService._is_black_friday_week)
+            future = m.make_future_dataframe(periods=prediction_days)
+            if use_bf_regressor:
+                future["black_friday"] = future["ds"].apply(ForecastingService._is_black_friday_week)
+            else:
+                # If regressor wasn't added to model, we don't need it in future df, 
+                # but Prophet might complain if we don't handle it consistently 
+                # if we had added it. Since we conditionally add_regressor, 
+                # we only need the column if we added it.
+                # However, to be safe against any residual state (unlikely here), 
+                # we can skip adding the column to future if not used.
+                pass
 
             forecast = m.predict(future)
 
@@ -98,9 +122,9 @@ class ForecastingService:
                     PriceForecast(
                         item_id=item_id,
                         forecast_date=row["ds"],
-                        predicted_price=row["yhat"],
-                        yhat_lower=row["yhat_lower"],
-                        yhat_upper=row["yhat_upper"],
+                        predicted_price=max(0, row["yhat"]),
+                        yhat_lower=max(0, row["yhat_lower"]),
+                        yhat_upper=max(0, row["yhat_upper"]),
                     )
                 )
 
