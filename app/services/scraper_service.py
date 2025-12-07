@@ -1,35 +1,19 @@
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 
-from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+from playwright.async_api import Browser, Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 logger = logging.getLogger(__name__)
-
 BROWSERLESS_URL = os.getenv("BROWSERLESS_URL", "ws://browserless:3000")
-
-POPUP_SELECTORS = [
-    "button[aria-label='Close']",
-    "button[aria-label='close']",
-    ".close-button",
-    ".modal-close",
-    "svg[data-name='Close']",
-    "[class*='popup'] button",
-    "[class*='modal'] button",
-    "button:has-text('No, thanks')",
-    "button:has-text('No thanks')",
-    "a:has-text('No, thanks')",
-    "div[role='dialog'] button[aria-label='Close']",
-]
 
 
 @dataclass
 class ScrapeConfig:
-    """Configuration for scraping parameters."""
-
     smart_scroll: bool = False
     scroll_pixels: int = 350
     text_length: int = 0
@@ -39,29 +23,22 @@ class ScrapeConfig:
 class ScraperService:
     _playwright = None
     _browser: Browser | None = None
-    _lock = asyncio.Lock()
+    _lock = asyncio.Lock()  # Keep lock to prevent race conditions during init
 
     @classmethod
     async def initialize(cls):
-        """Initialize the shared browser instance (Public, Thread-Safe)."""
+        """Initialize the shared browser instance."""
         async with cls._lock:
-            await cls._initialize()
-
-    @classmethod
-    async def _initialize(cls):
-        """Internal initialization logic (Assumes lock is held)."""
-        if cls._browser is None:
-            logger.info("Initializing ScraperService shared browser...")
-            cls._playwright = await async_playwright().start()
-            cls._browser = await cls._connect_browser(cls._playwright)
-            logger.info("ScraperService initialized.")
+            if not cls._browser:
+                logger.info("Initializing ScraperService shared browser...")
+                cls._playwright = await async_playwright().start()
+                cls._browser = await cls._playwright.chromium.connect_over_cdp(BROWSERLESS_URL)
 
     @classmethod
     async def shutdown(cls):
         """Shutdown the shared browser instance."""
         async with cls._lock:
             if cls._browser:
-                logger.info("Shutting down ScraperService shared browser...")
                 await cls._browser.close()
                 cls._browser = None
             if cls._playwright:
@@ -70,37 +47,18 @@ class ScraperService:
             logger.info("ScraperService shutdown complete.")
 
     @classmethod
-    async def _ensure_browser_connected(cls) -> bool:
-        """Ensure browser is connected, reconnect if needed."""
-        async with cls._lock:
-            try:
-                if cls._browser is None:
-                    logger.warning("Browser not initialized, initializing...")
-                    await cls._initialize()
-                    return cls._browser is not None
-
-                # Test if browser is still alive by trying to create a context
-                try:
-                    test_context = await cls._browser.new_context()
-                    await test_context.close()
-                    return True
-                except Exception as e:
-                    logger.error(f"Browser connection test failed: {e}")
-                    logger.info("Attempting to reconnect browser...")
-                    # Clear the old browser
-                    cls._browser = None
-                    if cls._playwright:
-                        try:
-                            await cls._playwright.stop()
-                        except Exception:
-                            pass
-                        cls._playwright = None
-                    # Reconnect
-                    await cls._initialize()
-                    return cls._browser is not None
-            except Exception as e:
-                logger.error(f"Failed to ensure browser connection: {e}")
-                return False
+    async def _ensure_connection(cls) -> bool:
+        """Check connection and reconnect if necessary."""
+        if cls._browser and cls._browser.is_connected():
+            return True
+        logger.warning("Browser disconnected, reconnecting...")
+        await cls.shutdown()
+        try:
+            await cls.initialize()
+            return True
+        except Exception as e:
+            logger.error(f"Reconnection failed: {e}")
+            return False
 
     @staticmethod
     async def scrape_item(
@@ -109,28 +67,16 @@ class ScraperService:
         item_id: int | None = None,
         config: ScrapeConfig | None = None,
     ) -> tuple[str | None, str]:
-        """
-        Scrapes the given URL using Browserless and Playwright.
-        Returns a tuple: (screenshot_path, page_text)
-        """
-        if config is None:
-            config = ScrapeConfig()
+        """Scrape URL using shared browser."""
+        config = config or ScrapeConfig()
 
-        # Input validation & defaults
-        scroll_pixels = max(350, config.scroll_pixels if config.scroll_pixels > 0 else 350)
-        timeout = max(30000, config.timeout if config.timeout > 0 else 90000)
-
-        # Ensure browser is connected and healthy
-        if not await ScraperService._ensure_browser_connected():
-            logger.error("Failed to establish browser connection")
+        if not await ScraperService._ensure_connection():
             return None, ""
 
         try:
-            context = await ScraperService._create_context(ScraperService._browser)
-            page = await context.new_page()
-
-            try:
-                await ScraperService._navigate_and_wait(page, url, timeout)
+            # Use a fresh context for each scrape to ensure isolation
+            async with ScraperService._scoped_context() as page:
+                await ScraperService._navigate(page, url, config.timeout)
                 await ScraperService._handle_popups(page)
 
                 if selector:
@@ -139,28 +85,23 @@ class ScraperService:
                     await ScraperService._auto_detect_price(page)
 
                 if config.smart_scroll:
-                    await ScraperService._smart_scroll(page, scroll_pixels)
+                    await page.evaluate(f"window.scrollBy(0, {config.scroll_pixels})")
+                    await page.wait_for_timeout(1000)
 
-                page_text = await ScraperService._extract_text(page, config.text_length)
-                screenshot_path = await ScraperService._take_screenshot(page, url, item_id)
+                text = await ScraperService._extract_text(page, config.text_length)
+                screenshot = await ScraperService._take_screenshot(page, url, item_id)
 
-                return screenshot_path, page_text
-
-            finally:
-                await context.close()
+                return screenshot, text
 
         except Exception as e:
             logger.error(f"Error scraping {url}: {e}")
             return None, ""
 
     @staticmethod
-    async def _connect_browser(p) -> Browser:
-        logger.info(f"Connecting to Browserless at {BROWSERLESS_URL}")
-        return await p.chromium.connect_over_cdp(BROWSERLESS_URL)
-
-    @staticmethod
-    async def _create_context(browser: Browser) -> BrowserContext:
-        context = await browser.new_context(
+    @asynccontextmanager
+    async def _scoped_context():
+        """Provide a scoped page instance with proper cleanup."""
+        context = await ScraperService._browser.new_context(
             viewport={"width": 1920, "height": 1080},
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -168,38 +109,41 @@ class ScraperService:
                 "Chrome/120.0.0.0 Safari/537.36"
             ),
         )
-        # Stealth mode / Ad blocking attempts
         await context.route("**/*", lambda route: route.continue_())
-        return context
+        page = await context.new_page()
+        try:
+            yield page
+        finally:
+            await context.close()
 
     @staticmethod
-    async def _navigate_and_wait(page: Page, url: str, timeout: int):
-        logger.info(f"Navigating to {url} (Timeout: {timeout}ms)")
+    async def _navigate(page: Page, url: str, timeout: int):
+        logger.info(f"Navigating to {url}")
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
-            logger.info(f"Page loaded (domcontentloaded): {url}")
-
             try:
                 await page.wait_for_load_state("networkidle", timeout=5000)
-                logger.info("Network idle reached")
             except PlaywrightTimeoutError:
-                logger.info("Network idle timed out (non-critical), proceeding...")
-
+                pass  # Non-critical
         except Exception as e:
-            logger.warning(f"Navigation warning for {url}: {e}")
-
-        # Wait a bit for dynamic content
+            logger.warning(f"Navigation issue: {e}")
         await page.wait_for_timeout(2000)
 
     @staticmethod
     async def _handle_popups(page: Page):
-        logger.info("Attempting to close popups...")
-        for popup_selector in POPUP_SELECTORS:
+        """Attempt to close common popups."""
+        common_selectors = [
+            "button[aria-label='Close']",
+            ".close-button",
+            ".modal-close",
+            "div[role='dialog'] button",
+            "svg[data-name='Close']",
+        ]
+        # Quick race to close popups if they exist
+        for selector in common_selectors:
             try:
-                if await page.locator(popup_selector).count() > 0:
-                    logger.info(f"Found popup close button: {popup_selector}")
-                    await page.locator(popup_selector).first.click(timeout=2000)
-                    await page.wait_for_timeout(1000)
+                if await page.locator(selector).count() > 0:
+                    await page.locator(selector).first.click(timeout=1000)
             except Exception:
                 pass
 
@@ -211,61 +155,35 @@ class ScraperService:
     @staticmethod
     async def _wait_for_selector(page: Page, selector: str):
         try:
-            logger.info(f"Waiting for selector: {selector}")
             await page.wait_for_selector(selector, timeout=5000)
-            element = page.locator(selector).first
-            await element.scroll_into_view_if_needed()
-            logger.info(f"Scrolled to selector: {selector}")
-        except Exception as e:
-            logger.warning(f"Selector {selector} not found or timed out: {e}")
+            await page.locator(selector).first.scroll_into_view_if_needed()
+        except Exception:
+            logger.warning(f"Selector {selector} not found")
 
     @staticmethod
     async def _auto_detect_price(page: Page):
-        logger.info("No selector provided. Attempting to find price element...")
         try:
-            price_locator = page.locator("text=/$[0-9,]+(\\.[0-9]{2})?/")
-            if await price_locator.count() > 0:
-                await price_locator.first.scroll_into_view_if_needed()
-                logger.info("Scrolled to potential price element")
-        except Exception as e:
-            logger.warning(f"Auto-price detection failed: {e}")
+            # Simple heuristic: look for currency symbol
+            locator = page.locator("text=/$[0-9,]+(\\.[0-9]{2})?/")
+            if await locator.count() > 0:
+                await locator.first.scroll_into_view_if_needed()
+        except Exception:
+            pass
 
     @staticmethod
-    async def _smart_scroll(page: Page, scroll_pixels: int):
-        logger.info(f"Performing smart scroll ({scroll_pixels}px)...")
-        try:
-            await page.evaluate(f"window.scrollBy(0, {scroll_pixels})")
-            await page.wait_for_timeout(1000)
-        except Exception as e:
-            logger.warning(f"Smart scroll failed: {e}")
-
-    @staticmethod
-    async def _extract_text(page: Page, text_length: int) -> str:
-        if text_length <= 0:
+    async def _extract_text(page: Page, limit: int) -> str:
+        if limit <= 0:
             return ""
-
         try:
-            logger.info(f"Extracting text (limit: {text_length} chars)...")
-            raw_text = await page.inner_text("body")
-            page_text = raw_text[:text_length]
-            logger.info(f"Extracted {len(page_text)} characters")
-            return page_text
-        except Exception as e:
-            logger.error(f"Text extraction failed: {e}")
+            text = await page.inner_text("body")
+            return text[:limit]
+        except Exception:
             return ""
 
     @staticmethod
     async def _take_screenshot(page: Page, url: str, item_id: int | None) -> str:
-        screenshot_dir = "screenshots"
-        os.makedirs(screenshot_dir, exist_ok=True)
-
-        if item_id:
-            filename = f"{screenshot_dir}/item_{item_id}.png"
-        else:
-            url_part = url.split("//")[-1].replace("/", "_")
-            timestamp = datetime.now().timestamp()
-            filename = f"{screenshot_dir}/{url_part}_{timestamp}.png"
-
-        await page.screenshot(path=filename, full_page=False)
-        logger.info(f"Screenshot saved to {filename}")
+        path = "screenshots"
+        os.makedirs(path, exist_ok=True)
+        filename = f"{path}/item_{item_id}.png" if item_id else f"{path}/scrape_{datetime.now().timestamp()}.png"
+        await page.screenshot(path=filename)
         return filename

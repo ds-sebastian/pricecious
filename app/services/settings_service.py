@@ -28,3 +28,8 @@ class SettingsService:
         result = await db.execute(select(models.Settings).where(models.Settings.key == key))
         setting = result.scalars().first()
         return setting.value if setting else default
+
+    @staticmethod
+    async def get_all_settings(db: AsyncSession) -> dict[str, str]:
+        result = await db.execute(select(models.Settings))
+        return {s.key: s.value for s in result.scalars().all()}

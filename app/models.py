@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
+from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
 
@@ -9,73 +10,73 @@ from .database import Base
 class NotificationProfile(Base):
     __tablename__ = "notification_profiles"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True)
-    apprise_url = Column(String)
-    notify_on_price_drop = Column(Boolean, default=True)
-    notify_on_target_price = Column(Boolean, default=True)
-    price_drop_threshold_percent = Column(Float, default=10.0)
-    notify_on_stock_change = Column(Boolean, default=True)
-    check_interval_minutes = Column(Integer, default=60)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, unique=True, index=True)
+    apprise_url: Mapped[str] = mapped_column(String)
+    notify_on_price_drop: Mapped[bool] = mapped_column(default=True)
+    notify_on_target_price: Mapped[bool] = mapped_column(default=True)
+    price_drop_threshold_percent: Mapped[float] = mapped_column(default=10.0)
+    notify_on_stock_change: Mapped[bool] = mapped_column(default=True)
+    check_interval_minutes: Mapped[int] = mapped_column(default=60)
 
-    items = relationship("Item", back_populates="notification_profile")
+    items: Mapped[list["Item"]] = relationship(back_populates="notification_profile")
 
 
 class Item(Base):
     __tablename__ = "items"
 
-    id: int = Column(Integer, primary_key=True, index=True)  # type: ignore
-    url: str = Column(String, index=True)  # type: ignore
-    name: str = Column(String)  # type: ignore
-    selector: str | None = Column(String, nullable=True)  # type: ignore
-    target_price: float | None = Column(Float, nullable=True)  # type: ignore
-    check_interval_minutes: int | None = Column(Integer, nullable=True, default=None)  # type: ignore
-    custom_prompt: str | None = Column(Text, nullable=True)  # type: ignore
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    url: Mapped[str] = mapped_column(String, index=True)
+    name: Mapped[str] = mapped_column(String)
+    selector: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_price: Mapped[float | None] = mapped_column(nullable=True)
+    check_interval_minutes: Mapped[int | None] = mapped_column(nullable=True, default=None)
+    custom_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # New fields
-    current_price: float | None = Column(Float, nullable=True)  # type: ignore
-    in_stock: bool | None = Column(Boolean, nullable=True)  # type: ignore
-    tags: str | None = Column(String, nullable=True)  # type: ignore
-    description: str | None = Column(String, nullable=True)  # type: ignore
+    current_price: Mapped[float | None] = mapped_column(nullable=True)
+    in_stock: Mapped[bool | None] = mapped_column(nullable=True)
+    tags: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Confidence scores for latest extraction
-    current_price_confidence: float | None = Column(Float, nullable=True)  # type: ignore
-    in_stock_confidence: float | None = Column(Float, nullable=True)  # type: ignore
+    current_price_confidence: Mapped[float | None] = mapped_column(nullable=True)
+    in_stock_confidence: Mapped[float | None] = mapped_column(nullable=True)
 
-    is_active: bool = Column(Boolean, default=True)  # type: ignore
-    last_checked: datetime | None = Column(DateTime, nullable=True)  # type: ignore
-    is_refreshing: bool = Column(Boolean, default=False)  # type: ignore
-    last_error: str | None = Column(String, nullable=True)  # type: ignore
+    is_active: Mapped[bool] = mapped_column(default=True)
+    last_checked: Mapped[datetime | None] = mapped_column(nullable=True)
+    is_refreshing: Mapped[bool] = mapped_column(default=False)
+    last_error: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    notification_profile_id: int | None = Column(Integer, ForeignKey("notification_profiles.id"), nullable=True)  # type: ignore
-    notification_profile = relationship("NotificationProfile", back_populates="items")
+    notification_profile_id: Mapped[int | None] = mapped_column(ForeignKey("notification_profiles.id"), nullable=True)
+    notification_profile: Mapped[Optional["NotificationProfile"]] = relationship(back_populates="items")
 
-    price_history = relationship("PriceHistory", back_populates="item", cascade="all, delete-orphan")
+    price_history: Mapped[list["PriceHistory"]] = relationship(back_populates="item", cascade="all, delete-orphan")
 
 
 class PriceHistory(Base):
     __tablename__ = "price_history"
 
-    id: int = Column(Integer, primary_key=True, index=True)  # type: ignore
-    item_id: int = Column(Integer, ForeignKey("items.id"))  # type: ignore
-    price: float = Column(Float)  # type: ignore
-    timestamp: datetime = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))  # type: ignore
-    screenshot_path: str | None = Column(String, nullable=True)  # type: ignore
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id"))
+    price: Mapped[float] = mapped_column()
+    timestamp: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC).replace(tzinfo=None))
+    screenshot_path: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Confidence scores and AI metadata
-    price_confidence: float | None = Column(Float, nullable=True)  # type: ignore
-    in_stock_confidence: float | None = Column(Float, nullable=True)  # type: ignore
-    in_stock: bool | None = Column(Boolean, nullable=True)  # type: ignore
-    ai_model: str | None = Column(String, nullable=True)  # type: ignore
-    ai_provider: str | None = Column(String, nullable=True)  # type: ignore
-    prompt_version: str | None = Column(String, nullable=True)  # type: ignore
-    repair_used: bool | None = Column(Boolean, nullable=True, default=False)  # type: ignore
+    price_confidence: Mapped[float | None] = mapped_column(nullable=True)
+    in_stock_confidence: Mapped[float | None] = mapped_column(nullable=True)
+    in_stock: Mapped[bool | None] = mapped_column(nullable=True)
+    ai_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    ai_provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    repair_used: Mapped[bool | None] = mapped_column(nullable=True, default=False)
 
-    item = relationship("Item", back_populates="price_history")
+    item: Mapped["Item"] = relationship(back_populates="price_history")
 
 
 class Settings(Base):
     __tablename__ = "settings"
 
-    key = Column(String, primary_key=True, index=True)
-    value = Column(Text)
+    key: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    value: Mapped[str] = mapped_column(Text)
