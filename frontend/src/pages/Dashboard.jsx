@@ -1,97 +1,106 @@
-import axios from "axios";
-import { Plus, RefreshCw, Search, X } from "lucide-react";
-import React, { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { DeleteConfirmationModal } from "@/components/dashboard/DeleteConfirmationModal";
 import { ItemCard } from "@/components/dashboard/ItemCard";
 import { ItemModal } from "@/components/dashboard/ItemModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import axios from "axios";
+import { Plus, RefreshCw, Search, X } from "lucide-react";
+import React, { useState } from "react";
+import { toast } from "sonner";
 
 import { API_URL } from "@/lib/api";
 
 export default function Dashboard() {
-	const [items, setItems] = useState([]);
+	const queryClient = useQueryClient();
 	const [searchTerm, setSearchTerm] = useState("");
 	const [showAddModal, setShowAddModal] = useState(false);
 	const [editingItem, setEditingItem] = useState(null);
 	const [itemToDelete, setItemToDelete] = useState(null);
 	const [zoomedImage, setZoomedImage] = useState(null);
 
-	const refreshItems = async () => {
-		try {
+	// Fetch items with polling
+	const { data: items = [] } = useQuery({
+		queryKey: ["items"],
+		queryFn: async () => {
 			const response = await axios.get(`${API_URL}/items`);
-			const sortedItems = response.data.sort((a, b) => a.id - b.id);
-			setItems(sortedItems);
-		} catch (error) {
-			console.error("Error fetching items:", error);
-			toast.error("Failed to fetch items");
-		}
-	};
+			return response.data.sort((a, b) => a.id - b.id);
+		},
+		refetchInterval: 30000,
+		refetchOnWindowFocus: true,
+	});
 
-	useEffect(() => {
-		refreshItems();
-
-		// Poll every 30 seconds, but only when page is visible
-		const interval = setInterval(() => {
-			if (!document.hidden) {
-				refreshItems();
-			}
-		}, 30000);
-
-		// Also refresh when page becomes visible again
-		const handleVisibilityChange = () => {
-			if (!document.hidden) {
-				refreshItems();
-			}
-		};
-
-		document.addEventListener("visibilitychange", handleVisibilityChange);
-
-		return () => {
-			clearInterval(interval);
-			document.removeEventListener("visibilitychange", handleVisibilityChange);
-		};
-	}, []);
-
-	const handleCheck = async (id) => {
-		try {
-			toast.info("Check triggered...");
+	// Mutations
+	const checkMutation = useMutation({
+		mutationFn: async (id) => {
 			await axios.post(`${API_URL}/items/${id}/check`);
+		},
+		onSuccess: () => {
 			toast.success("Check started in background");
-			refreshItems();
-		} catch (error) {
+			queryClient.invalidateQueries({ queryKey: ["items"] });
+		},
+		onError: (error) => {
 			console.error("Error triggering check:", error);
 			toast.error("Failed to trigger check");
-		}
-	};
+		},
+	});
 
-	const handleRefreshAll = async () => {
-		try {
-			toast.info("Triggering refresh for all items...");
-			setItems((prevItems) =>
-				prevItems.map((item) => ({ ...item, is_refreshing: true })),
-			);
+	const refreshAllMutation = useMutation({
+		mutationFn: async () => {
 			await axios.post(`${API_URL}/jobs/refresh-all`);
+		},
+		onMutate: async () => {
+			// Optimistically update UI to show refreshing state
+			await queryClient.cancelQueries({ queryKey: ["items"] });
+			const previousItems = queryClient.getQueryData(["items"]);
+			queryClient.setQueryData(["items"], (old) =>
+				old?.map((item) => ({ ...item, is_refreshing: true })),
+			);
+			return { previousItems };
+		},
+		onSuccess: () => {
 			toast.success("Refresh all started");
-		} catch (error) {
+		},
+		onError: (error, variables, context) => {
 			console.error("Error triggering refresh all:", error);
 			toast.error("Failed to trigger refresh all");
-			refreshItems();
-		}
-	};
+			if (context?.previousItems) {
+				queryClient.setQueryData(["items"], context.previousItems);
+			}
+		},
+		onSettled: () => {
+			queryClient.invalidateQueries({ queryKey: ["items"] });
+		},
+	});
 
-	const handleDelete = async () => {
-		if (!itemToDelete) return;
-		try {
-			await axios.delete(`${API_URL}/items/${itemToDelete.id}`);
+	const deleteMutation = useMutation({
+		mutationFn: async (id) => {
+			await axios.delete(`${API_URL}/items/${id}`);
+		},
+		onSuccess: () => {
 			toast.success("Item deleted");
-			refreshItems();
+			queryClient.invalidateQueries({ queryKey: ["items"] });
 			setItemToDelete(null);
-		} catch (error) {
+		},
+		onError: (error) => {
 			console.error("Error deleting item:", error);
 			toast.error("Failed to delete item");
-		}
+		},
+	});
+
+	const handleCheck = (id) => {
+		toast.info("Check triggered...");
+		checkMutation.mutate(id);
+	};
+
+	const handleRefreshAll = () => {
+		toast.info("Triggering refresh for all items...");
+		refreshAllMutation.mutate();
+	};
+
+	const handleDelete = () => {
+		if (!itemToDelete) return;
+		deleteMutation.mutate(itemToDelete.id);
 	};
 
 	const filteredItems = items.filter((item) => {
@@ -99,8 +108,8 @@ export default function Dashboard() {
 		return (
 			item.name.toLowerCase().includes(term) ||
 			item.url.toLowerCase().includes(term) ||
-			(item.tags && item.tags.toLowerCase().includes(term)) ||
-			(item.description && item.description.toLowerCase().includes(term))
+			item.tags?.toLowerCase().includes(term) ||
+			item.description?.toLowerCase().includes(term)
 		);
 	});
 
@@ -150,14 +159,14 @@ export default function Dashboard() {
 			<ItemModal
 				open={showAddModal}
 				onClose={() => setShowAddModal(false)}
-				onSaved={refreshItems}
+				onSaved={() => queryClient.invalidateQueries({ queryKey: ["items"] })}
 			/>
 
 			<ItemModal
 				open={!!editingItem}
 				item={editingItem}
 				onClose={() => setEditingItem(null)}
-				onSaved={refreshItems}
+				onSaved={() => queryClient.invalidateQueries({ queryKey: ["items"] })}
 			/>
 
 			<DeleteConfirmationModal

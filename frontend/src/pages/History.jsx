@@ -1,7 +1,3 @@
-import { format } from "date-fns";
-import { ArrowLeft, ArrowRight, Edit2, Loader2, Trash2 } from "lucide-react";
-import React, { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -29,6 +25,10 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { format } from "date-fns";
+import { ArrowLeft, ArrowRight, Edit2, Loader2, Trash2 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 export default function History() {
 	const [items, setItems] = useState([]);
@@ -119,7 +119,7 @@ export default function History() {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					price: parseFloat(updatePrice),
+					price: Number.parseFloat(updatePrice),
 					in_stock: updateInStock,
 				}),
 			});

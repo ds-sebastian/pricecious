@@ -1,6 +1,3 @@
-import axios from "axios";
-import React, { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -19,6 +16,9 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import axios from "axios";
+import React, { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { API_URL } from "@/lib/api";
 
@@ -93,13 +93,13 @@ export function ItemModal({ item, onClose, onSaved, open }) {
 				...formData,
 
 				target_price: formData.target_price
-					? parseFloat(formData.target_price)
+					? Number.parseFloat(formData.target_price)
 					: null,
 				notification_profile_id: formData.notification_profile_id
-					? parseInt(formData.notification_profile_id)
+					? Number.parseInt(formData.notification_profile_id)
 					: null,
 				current_price: formData.current_price
-					? parseFloat(formData.current_price)
+					? Number.parseFloat(formData.current_price)
 					: null,
 				in_stock:
 					formData.in_stock === "true"

@@ -1,12 +1,3 @@
-import {
-	AlertTriangle,
-	Clock,
-	Edit2,
-	ExternalLink,
-	RefreshCw,
-	Trash2,
-} from "lucide-react";
-import React from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -16,6 +7,15 @@ import {
 } from "@/components/ui/card";
 import { Marquee } from "@/components/ui/marquee";
 import { cn } from "@/lib/utils";
+import {
+	AlertTriangle,
+	Clock,
+	Edit2,
+	ExternalLink,
+	RefreshCw,
+	Trash2,
+} from "lucide-react";
+import React from "react";
 
 export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 	const getStockStatus = (inStock) => {

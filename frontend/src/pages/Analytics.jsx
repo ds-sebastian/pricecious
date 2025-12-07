@@ -1,6 +1,3 @@
-import axios from "axios";
-import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -19,6 +16,9 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import axios from "axios";
+import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { PriceChart } from "../components/dashboard/PriceChart";
 
 export default function Analytics() {
@@ -111,13 +111,11 @@ export default function Analytics() {
 		setLoading(true);
 		try {
 			// Find all items with this tag
-			const taggedItems = items.filter(
-				(item) =>
-					item.tags &&
-					item.tags
-						.split(",")
-						.map((t) => t.trim())
-						.includes(tag),
+			const taggedItems = items.filter((item) =>
+				item.tags
+					?.split(",")
+					.map((t) => t.trim())
+					.includes(tag),
 			);
 
 			if (taggedItems.length === 0) {
@@ -348,7 +346,10 @@ export default function Analytics() {
 								</CardHeader>
 								<CardContent>
 									<div className="text-2xl font-bold">
-										${parseFloat(analyticsData.stats.latest_price.toFixed(2))}
+										$
+										{Number.parseFloat(
+											analyticsData.stats.latest_price.toFixed(2),
+										)}
 									</div>
 									{analyticsData.stats.price_change_24h !== 0 && (
 										<p
@@ -372,7 +373,10 @@ export default function Analytics() {
 								</CardHeader>
 								<CardContent>
 									<div className="text-2xl font-bold">
-										${parseFloat(analyticsData.stats.avg_price.toFixed(2))}
+										$
+										{Number.parseFloat(
+											analyticsData.stats.avg_price.toFixed(2),
+										)}
 									</div>
 									<p className="text-xs text-muted-foreground">
 										σ: ${analyticsData.stats.std_dev}
@@ -387,7 +391,10 @@ export default function Analytics() {
 								</CardHeader>
 								<CardContent>
 									<div className="text-2xl font-bold">
-										${parseFloat(analyticsData.stats.min_price.toFixed(2))}
+										$
+										{Number.parseFloat(
+											analyticsData.stats.min_price.toFixed(2),
+										)}
 									</div>
 								</CardContent>
 							</Card>
@@ -399,7 +406,10 @@ export default function Analytics() {
 								</CardHeader>
 								<CardContent>
 									<div className="text-2xl font-bold">
-										${parseFloat(analyticsData.stats.max_price.toFixed(2))}
+										$
+										{Number.parseFloat(
+											analyticsData.stats.max_price.toFixed(2),
+										)}
 									</div>
 								</CardContent>
 							</Card>
