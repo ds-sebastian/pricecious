@@ -17,16 +17,11 @@
 
 ## Features
 
-*   **AI-Powered Analysis**: Uses GenAI Vision Models to "see" the price and stock status on any webpage, bypassing complex HTML structures.
-*   **Confidence Scoring**: AI provides confidence scores (0-1) for each extraction, enabling smart business rules and quality monitoring.
-*   **Robust JSON Parsing**: Hardened parsing pipeline with automatic JSON repair fallback when primary extraction fails.
-*   **Provider-Specific Optimization**: Leverages native JSON modes and structured output features for OpenAI, Ollama, and other providers.
-*   **Visual History**: Keeps a screenshot history of every check with full AI metadata (model, provider, confidence, etc.).
-*   **Smart Scrolling**: Automatically scrolls pages to load lazy-loaded content before capturing.
-*   **Text Context**: Optionally extracts page text to improve AI accuracy.
-*   **Notifications**: Supports multi-channel notifications (Discord, Telegram, Email, etc.) via [Apprise](https://github.com/caronc/apprise).
-*   **Dark Mode**: Beautiful UI with full dark/light mode support.
-*   **Dockerized**: Easy to deploy with Docker Compose.
+*   **AI Capture**: Uses Vision Models (GPT-4o, Claude 3.5, Gemini, Ollama) to see prices/stock.
+*   **Analysis & Tracking**: Full price history, stock status tracking, and Prophet-based price forecasting.
+*   **Reliability**: Smart scrolling, text fallback, and automatic JSON repair.
+*   **Performance**: Async backend (Granian) with caching and data downsampling.
+
 
 ## Prerequisites
 
@@ -87,6 +82,24 @@
 
 3.  **Access the Dashboard:**
     Open your browser and navigate to `http://localhost:8000`.
+
+## User Guide
+
+
+### 📊 Using Analytics & Forecasting
+The **Analytics** page offers deep insights into pricing trends.
+*   **Price History**: Solid lines show historical prices. Dotted lines indicate the **Forecast** (if enabled).
+*   **Outlier Filtering**: Toggle "Remove Outliers" to hide price spikes caused by scraper glitches. Adjust the sigma threshold (default 2.0σ) to control sensitivity.
+*   **Comparisons**: Switch to "By Tag" mode to compare multiple items (e.g., "GPU", "SSD") on the same chart.
+
+### 🧠 Optimizing AI Extraction
+Sometimes the AI needs a nudge to get the right price. Use these tools in the **Edit Item** modal:
+
+1.  **Custom Prompts**: Add specific instructions for tricky pages.
+    *   *Example*: "Ignore the 'refurbished' price, only extract 'New' condition."
+    *   *Example*: "The price is inside the red badge at the top right."
+2.  **Text Context**: If the image isn't enough, enable "Text Context" in Settings. This sends the page text to the AI along with the screenshot.
+3.  **Confidence Thresholds**: If you see too many wrong prices, raise the "Min Confidence" setting (default 0.7).
 
 ## Configuration
 
