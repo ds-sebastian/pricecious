@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-12-07
+
+### Added
+- **Analytics:** Comprehensive Item Analytics page with price history charts, statistics, outlier filtering, and time window selection.
+- **Forecasting:** Implemented Prophet model for price forecasting with dynamic seasonality, regressor configuration, and horizon capping.
+- **Stock Tracking:** Track and visualize in-stock status (depleted/restocked) in analytics charts.
+- **UI:** New Table UI component and Min/Max price annotations on charts.
+- **AI:** Custom AI prompt field for items.
+- **Server:** Switched to **Granian** as the web server for better performance.
+- **Settings:** Comprehensive settings management page.
+- **Development:** Integrated Biome for frontend formatting and Ruff updates.
+
+### Changed
+- **Database:** Major migration to **SQLAlchemy 2.0** async/await syntax.
+- **Performance:** Implemented analytics data caching and SQL-based aggregation.
+- **Performance:** Price history downsampling for large datasets.
+- **Refactor:** Standardized datetime handling to UTC across the application.
+- **Refactor:** Externalized database session management and improved scheduler thread safety.
+
+### Fixed
+- Fixed JSX issues in History page.
+- Addressed outlier prevention bugs.
+- Fixed asynchronous Alembic migrations by implementing async engine.
+
 ## [0.1.6] - 2025-11-27
 
 ### Added
