@@ -127,6 +127,9 @@ class AIService:
         elif config["provider"] == "openai" and not is_repair:
             kwargs["response_format"] = AIExtractionResponse
             kwargs["reasoning_effort"] = config["reasoning_effort"]
+        elif config["provider"]:
+            # Fallback for other providers (e.g. x-ai, anthropic) if not detected by model prefix
+            kwargs["custom_llm_provider"] = config["provider"]
 
         response = await acompletion(**kwargs)
         return response.choices[0].message.content
