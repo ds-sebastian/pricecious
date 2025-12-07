@@ -500,6 +500,9 @@ class ItemService:
         # Optimization: Clear only related keys. But clearing all is safer and easier.
         ItemService.clear_cache()
 
+        # Sync latest data to item table
+        await ItemService._sync_item_latest_data(db, record.item_id)
+
         return record
 
     @staticmethod
@@ -508,9 +511,43 @@ class ItemService:
         if not record:
             raise HTTPException(status_code=404, detail="History record not found")
 
+        item_id = record.item_id
         await db.delete(record)
         await db.commit()
 
         ItemService.clear_cache()
 
+        # Sync latest data to item table
+        await ItemService._sync_item_latest_data(db, item_id)
+
         return {"ok": True}
+
+    @staticmethod
+    async def _sync_item_latest_data(db: AsyncSession, item_id: int):
+        """Sync the Item table's current_price and in_stock with the latest history record."""
+        latest_history = (
+            await db.execute(
+                select(models.PriceHistory)
+                .filter(models.PriceHistory.item_id == item_id)
+                .order_by(models.PriceHistory.timestamp.desc())
+                .limit(1)
+            )
+        ).scalar()
+
+        item = await db.get(models.Item, item_id)
+        if not item:
+            return
+
+        if latest_history:
+            item.current_price = latest_history.price
+            item.in_stock = latest_history.in_stock
+            item.last_checked = latest_history.timestamp
+        else:
+            # No history left, reset fields? Or keep last known?
+            # Resetting seems safer to indicate "no data"
+            item.current_price = None
+            item.in_stock = None
+            # item.last_checked = None # Maybe keep last check time?
+
+        await db.commit()
+        await db.refresh(item)
