@@ -37,6 +37,7 @@ export default function Analytics() {
 	const [seriesConfig, setSeriesConfig] = useState([]);
 
 	const [loading, setLoading] = useState(false);
+	const [filterOutliers, setFilterOutliers] = useState(false);
 
 	const [showForecast, setShowForecast] = useState(false);
 

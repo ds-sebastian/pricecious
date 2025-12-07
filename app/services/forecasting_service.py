@@ -25,10 +25,7 @@ class ForecastingService:
         date = pd.to_datetime(ds)
         return (
             1
-            if (
-                date.month == BLACK_FRIDAY_MONTH
-                and BLACK_FRIDAY_START_DAY <= date.day <= BLACK_FRIDAY_END_DAY
-            )
+            if (date.month == BLACK_FRIDAY_MONTH and BLACK_FRIDAY_START_DAY <= date.day <= BLACK_FRIDAY_END_DAY)
             else 0
         )
 
