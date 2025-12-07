@@ -87,6 +87,23 @@ class PriceHistoryResponse(BaseModel):
         return v
 
 
+class PriceForecastResponse(BaseModel):
+    id: int
+    forecast_date: datetime
+    predicted_price: float
+    yhat_lower: float
+    yhat_upper: float
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("forecast_date", "created_at", mode="before")
+    @classmethod
+    def set_tz_utc(cls, v):
+        if isinstance(v, datetime) and v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
+        return v
+
+
 class ItemStats(BaseModel):
     min_price: float
     max_price: float
@@ -99,8 +116,10 @@ class ItemStats(BaseModel):
 class AnalyticsResponse(BaseModel):
     item_id: int
     item_name: str
+
     stats: ItemStats
     history: list[PriceHistoryResponse]
+    forecast: list[PriceForecastResponse] | None = None
 
 
 class HistoryFilter(BaseModel):

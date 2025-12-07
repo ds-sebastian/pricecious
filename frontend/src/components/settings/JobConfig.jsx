@@ -28,10 +28,10 @@ export function JobConfig() {
 		});
 
 	const updateJobConfigMutation = useMutation({
-		mutationFn: async (newInterval) => {
+		mutationFn: async ({ key, value }) => {
 			await axios.post(`${API_URL}/jobs/config`, {
-				key: "refresh_interval_minutes",
-				value: newInterval.toString(),
+				key: key,
+				value: value.toString(),
 			});
 		},
 		onSuccess: () => {
@@ -46,15 +46,38 @@ export function JobConfig() {
 	const [localInterval, setLocalInterval] = React.useState(
 		jobConfig.refresh_interval_minutes,
 	);
+	const [localForecastInterval, setLocalForecastInterval] = React.useState(
+		jobConfig.forecasting_interval_hours || 24,
+	);
 
 	// Sync local state when remote data changes
 	React.useEffect(() => {
 		setLocalInterval(jobConfig.refresh_interval_minutes);
-	}, [jobConfig.refresh_interval_minutes]);
+		setLocalForecastInterval(jobConfig.forecasting_interval_hours || 24);
+	}, [jobConfig]);
 
 	const handleSave = () => {
-		updateJobConfigMutation.mutate(localInterval);
+		updateJobConfigMutation.mutate({
+			key: "refresh_interval_minutes",
+			value: localInterval,
+		});
+		updateJobConfigMutation.mutate({
+			key: "forecasting_interval_hours",
+			value: localForecastInterval,
+		});
 	};
+
+	const triggerForecastMutation = useMutation({
+		mutationFn: async () => {
+			await axios.post(`${API_URL}/jobs/refresh-forecast`);
+		},
+		onSuccess: () => {
+			toast.success("Forecasting job triggered");
+		},
+		onError: () => {
+			toast.error("Failed to trigger forecasting");
+		},
+	});
 
 	return (
 		<Card>
@@ -69,9 +92,9 @@ export function JobConfig() {
 			</CardHeader>
 			<CardContent className="space-y-4">
 				<div className="space-y-2">
-					<Label>Default Refresh Interval (Minutes)</Label>
+					<Label>Checker Interval (Minutes)</Label>
 					<p className="text-sm text-muted-foreground">
-						Used when no specific interval is set on the item or its profile.
+						How often to check prices (defaults if not set per item).
 					</p>
 					<Input
 						type="number"
@@ -80,15 +103,39 @@ export function JobConfig() {
 						onChange={(e) => setLocalInterval(e.target.value)}
 					/>
 				</div>
+
+				<div className="space-y-2 pt-4 border-t">
+					<Label>Forecasting Interval (Hours)</Label>
+					<p className="text-sm text-muted-foreground">
+						How often to retrain and update price forecasts.
+					</p>
+					<div className="flex gap-2">
+						<Input
+							type="number"
+							min="1"
+							value={localForecastInterval}
+							onChange={(e) => setLocalForecastInterval(e.target.value)}
+						/>
+					</div>
+				</div>
 				<div className="text-sm text-muted-foreground space-y-1">
 					<p>Status: {jobConfig.running ? "Running" : "Idle"}</p>
 				</div>
-				<Button
-					onClick={handleSave}
-					disabled={updateJobConfigMutation.isPending}
-				>
-					Save Job Config
-				</Button>
+				<div className="flex gap-2">
+					<Button
+						onClick={handleSave}
+						disabled={updateJobConfigMutation.isPending}
+					>
+						Save Configuration
+					</Button>
+					<Button
+						variant="secondary"
+						onClick={() => triggerForecastMutation.mutate()}
+						disabled={triggerForecastMutation.isPending}
+					>
+						Run Forecast Now
+					</Button>
+				</div>
 			</CardContent>
 		</Card>
 	);

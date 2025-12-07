@@ -52,6 +52,7 @@ class Item(Base):
     notification_profile: Mapped[Optional["NotificationProfile"]] = relationship(back_populates="items")
 
     price_history: Mapped[list["PriceHistory"]] = relationship(back_populates="item", cascade="all, delete-orphan")
+    forecasts: Mapped[list["PriceForecast"]] = relationship(back_populates="item", cascade="all, delete-orphan")
 
 
 class PriceHistory(Base):
@@ -73,6 +74,20 @@ class PriceHistory(Base):
     repair_used: Mapped[bool | None] = mapped_column(nullable=True, default=False)
 
     item: Mapped["Item"] = relationship(back_populates="price_history")
+
+
+class PriceForecast(Base):
+    __tablename__ = "price_forecasts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id"))
+    forecast_date: Mapped[datetime] = mapped_column()
+    predicted_price: Mapped[float] = mapped_column()
+    yhat_lower: Mapped[float] = mapped_column()
+    yhat_upper: Mapped[float] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC).replace(tzinfo=None))
+
+    item: Mapped["Item"] = relationship(back_populates="forecasts")
 
 
 class Settings(Base):

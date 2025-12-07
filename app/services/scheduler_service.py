@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import database, models
 from app.ai_schema import AIExtractionMetadata, AIExtractionResponse
 from app.services.ai_service import AIService
+from app.services.forecasting_service import ForecastingService
 from app.services.item_service import ItemService
 from app.services.notification_service import NotificationService
 from app.services.scraper_service import ScrapeConfig, ScraperService
@@ -241,3 +242,24 @@ async def scheduled_refresh():
 
     except Exception as e:
         logger.error(f"Error in scheduled refresh: {e}", exc_info=True)
+
+
+async def scheduled_forecasting():
+    """Daily task to generate forecasts for all items."""
+    logger.info("Starting scheduled forecasting job")
+    try:
+        async with database.AsyncSessionLocal() as session:
+            result = await session.execute(select(models.Item.id).where(models.Item.is_active))
+            item_ids = result.scalars().all()
+
+        logger.info(f"Forecasting for {len(item_ids)} active items")
+
+        # Process sequentially to avoid memory spikes with Prophet
+        for item_id in item_ids:
+            try:
+                await ForecastingService.generate_forecast(item_id)
+            except Exception as e:
+                logger.error(f"Forecasting failed for item {item_id}: {e}")
+
+    except Exception as e:
+        logger.error(f"Error in scheduled forecasting: {e}", exc_info=True)

@@ -217,12 +217,21 @@ class ItemService:
         history = await ItemService._fetch_history(db, item_id, filters, stats, std_dev_threshold)
         annotations = await ItemService._get_annotations(db, stats, filters)
 
+        # Fetch forecasts
+        forecast_result = await db.execute(
+            select(models.PriceForecast)
+            .where(models.PriceForecast.item_id == item_id)
+            .order_by(models.PriceForecast.forecast_date)
+        )
+        forecasts = forecast_result.scalars().all()
+
         result = {
             "item_id": item.id,
             "item_name": item.name,
             "stats": stats,
             "history": history,
             "annotations": annotations,
+            "forecast": forecasts,
         }
 
         ItemService._analytics_cache[cache_key] = (result, datetime.now())

@@ -11,6 +11,7 @@ import {
 	Tooltip,
 	XAxis,
 	YAxis,
+	Area,
 } from "recharts";
 
 const COLORS = [
@@ -147,8 +148,31 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 							strokeOpacity={0}
 						>
 							{/* Only label the first major one to avoid clutter? Or none. */}
+
 						</ReferenceArea>
 					))}
+
+					{/* Forecast Confidence Interval */}
+					{series.find(s => s.key === "predicted_price") && (
+						<Area
+							type="monotone"
+							dataKey="yhat_upper"
+							stroke="none"
+							fill="#a855f7"
+							fillOpacity={0.1}
+							connectNulls
+						/>
+					)}
+					{series.find(s => s.key === "predicted_price") && (
+						<Area
+							type="monotone"
+							dataKey="yhat_lower"
+							stroke="none"
+							fill="#a855f7"
+							fillOpacity={0.1}
+							connectNulls
+						/>
+					)}
 
 					{chartSeries.map((s, index) => (
 						<Line
@@ -158,7 +182,8 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 							name={s.name}
 							stroke={s.color || COLORS[index % COLORS.length]}
 							strokeWidth={2}
-							dot={{ r: 4, fill: "hsl(var(--background))", strokeWidth: 2 }}
+							strokeDasharray={s.strokeDasharray}
+							dot={s.key === "predicted_price" ? false : { r: 4, fill: "hsl(var(--background))", strokeWidth: 2 }}
 							activeDot={{ r: 6 }}
 							connectNulls
 						/>
@@ -194,6 +219,6 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 						})}
 				</LineChart>
 			</ResponsiveContainer>
-		</div>
+		</div >
 	);
 }

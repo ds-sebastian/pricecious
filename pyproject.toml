@@ -24,6 +24,8 @@ dependencies = [
     "slowapi",
     "asyncpg>=0.31.0",
     "aiosqlite>=0.21.0",
+    "prophet",
+    "pandas",
 ]
 
 [build-system]

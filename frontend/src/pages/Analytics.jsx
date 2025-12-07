@@ -37,7 +37,8 @@ export default function Analytics() {
 	const [seriesConfig, setSeriesConfig] = useState([]);
 
 	const [loading, setLoading] = useState(false);
-	const [filterOutliers, setFilterOutliers] = useState(false);
+
+	const [showForecast, setShowForecast] = useState(false);
 
 	useEffect(() => {
 		fetchItems();
@@ -96,10 +97,35 @@ export default function Analytics() {
 			setAnalyticsData(response.data);
 
 			// Setup data for PriceChart
-			setMultiSeriesData(response.data.history);
-			setSeriesConfig([
-				{ key: "price", name: "Price", color: "hsl(var(--primary))" },
-			]);
+			// Setup data for PriceChart
+			let historyData = response.data.history;
+			let series = [{ key: "price", name: "Price", color: "hsl(var(--primary))" }];
+
+			if (response.data.forecast && response.data.forecast.length > 0) {
+				// We need to merge or append forecast data
+				// Current PriceChart expects a single array 'data'. 
+				// The forecast data has 'forecast_date' instead of 'timestamp'.
+				// And 'predicted_price', 'yhat_lower', 'yhat_upper'.
+
+				const forecastPoints = response.data.forecast.map(f => ({
+					timestamp: f.forecast_date,
+					predicted_price: f.predicted_price,
+					yhat_lower: f.yhat_lower,
+					yhat_upper: f.yhat_upper,
+				}));
+
+				historyData = [...historyData, ...forecastPoints];
+
+				series.push({
+					key: "predicted_price",
+					name: "Forecast",
+					color: "#a855f7",
+					strokeDasharray: "5 5"
+				});
+			}
+
+			setMultiSeriesData(historyData);
+			setSeriesConfig(series);
 		} catch (error) {
 			console.error("Failed to fetch analytics:", error);
 		} finally {
@@ -296,6 +322,23 @@ export default function Analytics() {
 							/>
 						</div>
 
+						{/* Forecast Toggle - Only in Single Item Mode */}
+						{mode === "single" && (
+							<div className="flex items-center justify-between">
+								<div className="flex flex-col gap-1">
+									<Label htmlFor="forecast">Show Forecast</Label>
+									<span className="text-xs text-muted-foreground">
+										Show predicted future prices
+									</span>
+								</div>
+								<Switch
+									id="forecast"
+									checked={showForecast}
+									onCheckedChange={setShowForecast}
+								/>
+							</div>
+						)}
+
 						{filterOutliers && (
 							<div className="space-y-2">
 								<Label>Threshold (σ)</Label>
@@ -329,7 +372,7 @@ export default function Analytics() {
 							) : (
 								<PriceChart
 									data={multiSeriesData}
-									series={seriesConfig}
+									series={seriesConfig.filter(s => showForecast || s.key !== "predicted_price")}
 									annotations={analyticsData?.annotations}
 								/>
 							)}
@@ -353,11 +396,10 @@ export default function Analytics() {
 									</div>
 									{analyticsData.stats.price_change_24h !== 0 && (
 										<p
-											className={`text-xs ${
-												analyticsData.stats.price_change_24h < 0
-													? "text-green-500"
-													: "text-red-500"
-											}`}
+											className={`text-xs ${analyticsData.stats.price_change_24h < 0
+												? "text-green-500"
+												: "text-red-500"
+												}`}
 										>
 											{analyticsData.stats.price_change_24h > 0 ? "+" : ""}
 											{analyticsData.stats.price_change_24h}% (24h)
