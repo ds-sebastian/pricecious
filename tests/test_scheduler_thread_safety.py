@@ -44,42 +44,50 @@ async def test_process_item_check_flow():
         await process_item_check(item_id)
 
         # Verify calls
-        mock_process_data.assert_called_once_with(item_id)
+        # We need to verify called with session, but session is internal to execute_check
+        # so we can just check called_once and check that arguments match pattern
+        assert mock_process_data.call_count == 1
+        # Check first arg is item_id, second is session (AsyncSession/AsyncMock)
+        assert mock_process_data.call_args[0][0] == item_id
+        assert isinstance(mock_process_data.call_args[0][1], AsyncMock | MagicMock)
+
         mock_scrape.assert_called_once()
         mock_analyze.assert_called_once()
-        mock_update_db.assert_called_once()
+
+        assert mock_update_db.call_count == 1
+        # Check args: item_id, update_data, session
+        assert mock_update_db.call_args[0][0] == item_id
+        assert isinstance(mock_update_db.call_args[0][2], AsyncMock | MagicMock)
+
         mock_notify.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_process_single_item_data_creates_session():
-    """Verify that _process_single_item_data creates its own session."""
+async def test_process_single_item_data_uses_provided_session():
+    """Verify that _process_single_item_data uses the provided session."""
     item_id = 1
+    mock_session = AsyncMock()
+
     with (
-        patch("app.services.scheduler_service.database.AsyncSessionLocal") as mock_session_cls,
         patch(
             "app.services.scheduler_service.ItemService.get_item_data_for_checking", new_callable=AsyncMock
         ) as mock_get_data,
         patch("app.services.scheduler_service._get_thresholds", new_callable=AsyncMock) as mock_get_thresh,
     ):
-        # Mock async context manager
-        mock_session = AsyncMock()
-        mock_session_cls.return_value.__aenter__.return_value = mock_session
-
         mock_get_data.return_value = ({"name": "Test"}, {})
         mock_get_thresh.return_value = {}
 
-        await _process_single_item_data(item_id)
+        await _process_single_item_data(item_id, mock_session)
 
-        # Verify AsyncSessionLocal was called
-        mock_session_cls.assert_called()
         # Verify get_item_data_for_checking was called with the session
         mock_get_data.assert_called_with(mock_session, item_id)
+        # Verify get_thresholds using session
+        mock_get_thresh.assert_called_with(mock_session)
 
 
 @pytest.mark.asyncio
-async def test_update_item_in_db_creates_session():
-    """Verify that _update_item_in_db creates its own session."""
+async def test_update_item_in_db_uses_provided_session():
+    """Verify that _update_item_in_db uses the provided session."""
     item_id = 1
     update_data = UpdateData(
         extraction=AIExtractionResponse(price=10.0, in_stock=True, price_confidence=1.0, in_stock_confidence=1.0),
@@ -95,19 +103,18 @@ async def test_update_item_in_db_creates_session():
         screenshot_path="path",
     )
 
-    with patch("app.services.scheduler_service.database.AsyncSessionLocal") as mock_session_cls:
-        # Mock async context manager
-        mock_session = AsyncMock()
-        mock_session_cls.return_value.__aenter__.return_value = mock_session
+    mock_session = AsyncMock()
 
-        # Mock db execute result
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.first.return_value = MagicMock(
-            current_price=5.0, in_stock=True, id=1, last_error=None
-        )
-        mock_session.execute.return_value = mock_result
+    # Mock db execute result
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = MagicMock(
+        current_price=5.0, in_stock=True, id=1, last_error=None
+    )
+    mock_session.execute.return_value = mock_result
 
-        await _update_item_in_db(item_id, update_data)
+    await _update_item_in_db(item_id, update_data, mock_session)
 
-        # Verify AsyncSessionLocal was called
-        mock_session_cls.assert_called()
+    # Verify session execute was called
+    assert mock_session.execute.call_count >= 1
+    # Verify commit
+    mock_session.commit.assert_called_once()

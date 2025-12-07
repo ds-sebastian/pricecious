@@ -29,10 +29,8 @@ class ItemService:
         result_list = []
         for item in items:
             # Determine interval (Effective Interval Logic)
-            interval = item.check_interval_minutes
-            if not interval and item.notification_profile:
-                interval = item.notification_profile.check_interval_minutes
-            interval = max(interval or global_interval, 5)
+            profile_int = item.notification_profile.check_interval_minutes if item.notification_profile else None
+            interval = ItemService._get_effective_interval(item.check_interval_minutes, profile_int, global_interval)
 
             # Display logic: Keep it aware or naive?
             # If we want to display next_check, it's safer to keep it consistent.
@@ -156,6 +154,14 @@ class ItemService:
         return item_data, config
 
     @staticmethod
+    def _get_effective_interval(item_interval: int | None, profile_interval: int | None, global_interval: int) -> int:
+        """Calculate effective check interval based on hierarchy: Item > Profile > Global."""
+        interval = item_interval
+        if not interval and profile_interval:
+            interval = profile_interval
+        return max(interval or global_interval, 5)
+
+    @staticmethod
     async def get_due_items():
         """Get items due for refresh. Creates and manages its own session."""
         async with database.AsyncSessionLocal() as db:
@@ -163,63 +169,46 @@ class ItemService:
             global_int = int(global_int_str)
             now = datetime.now(UTC)
 
+            # EFFICIENT QUERY: Select only necessary columns
             # Join with NotificationProfile to access its check_interval
-            # Logic:
-            # 1. Item has specific interval -> use it
-            # 2. Item has no interval, Profile has interval -> use it
-            # 3. Neither -> use global
-            # Calc 'due_threshold' for each: last_checked < now - interval
-
-            # Using coalesce(item.int, profile.int, global) is the check_interval.
-            # We want: last_checked < now - interval MINUTES
-            # Since SQLAlchemy interval math varies, we can use a hybrid approach or simpler filtering.
-
-            # Efficient Approach:
-            # Select IDs, last_checked, and the determined interval components.
-            # Filtering fully in SQL is better but requires DB-specific date math.
-            # We will fetch only candidates that MIGHT be due (last_checked < now - 5 min)
-            # and verify precise interval in python, avoiding full table scan.
-
-            # items with NO last_checked are due immediately
-            # items active only
-
             stmt = (
-                select(models.Item)
-                .options(selectinload(models.Item.notification_profile))
+                select(
+                    models.Item.id,
+                    models.Item.check_interval_minutes,
+                    models.Item.last_checked,
+                    models.NotificationProfile.check_interval_minutes.label("profile_interval"),
+                )
+                .outerjoin(models.Item.notification_profile)
                 .where(models.Item.is_active == True)  # noqa
+                .where(models.Item.is_refreshing == False)  # noqa
             )
 
             result = await db.execute(stmt)
-            items = result.scalars().all()
+            # result is list of Row objects (tuples)
+            rows = result.all()
 
             due_items = []
 
-            for item in items:
-                if item.is_refreshing:
+            for row in rows:
+                # row: (id, check_interval_minutes, last_checked, profile_interval)
+                item_id, item_interval, last_checked, profile_interval = row
+
+                interval = ItemService._get_effective_interval(item_interval, profile_interval, global_int)
+
+                if not last_checked:
+                    logger.debug(f"Item {item_id} due: Never checked (Interval: {interval}m)")
+                    due_items.append((item_id, interval, -1))
                     continue
 
-                # Effective Interval
-                interval = item.check_interval_minutes
-                if not interval and item.notification_profile:
-                    interval = item.notification_profile.check_interval_minutes
-                interval = max(interval or global_int, 5)
-
-                if not item.last_checked:
-                    logger.info(f"Item {item.id} due: Never checked (Interval: {interval}m)")
-                    due_items.append((item.id, interval, -1))
-                    continue
-
-                # Check time
-                # Ensure UTC awareness for calculation
-                last_checked = item.last_checked
+                # Ensure UTC awareness
                 if last_checked.tzinfo is None:
                     last_checked = last_checked.replace(tzinfo=UTC)
 
                 time_since = (now - last_checked).total_seconds() / 60
 
                 if time_since >= interval:
-                    logger.info(f"Item {item.id} due: Last checked {time_since:.1f}m ago (Interval: {interval}m)")
-                    due_items.append((item.id, interval, int(time_since)))
+                    logger.debug(f"Item {item_id} due: Last checked {time_since:.1f}m ago (Interval: {interval}m)")
+                    due_items.append((item_id, interval, int(time_since)))
 
             return due_items
 

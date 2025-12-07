@@ -48,78 +48,79 @@ async def _get_thresholds(session: AsyncSession) -> dict[str, float]:
     }
 
 
-async def _update_item_in_db(item_id: int, update_data: UpdateData) -> tuple[float | None, bool | None]:
+async def _update_item_in_db(
+    item_id: int, update_data: UpdateData, session: AsyncSession
+) -> tuple[float | None, bool | None]:
     """Update item in DB with new data. Returns (old_price, old_stock)."""
-    async with database.AsyncSessionLocal() as session:
-        result = await session.execute(select(models.Item).where(models.Item.id == item_id))
-        item = result.scalars().first()
-        if not item:
-            return None, None
+    result = await session.execute(select(models.Item).where(models.Item.id == item_id))
+    item = result.scalars().first()
+    if not item:
+        return None, None
 
-        old_price, old_stock = item.current_price, item.in_stock
-        price, in_stock = update_data.extraction.price, update_data.extraction.in_stock
-        p_conf, s_conf = update_data.extraction.price_confidence, update_data.extraction.in_stock_confidence
+    old_price, old_stock = item.current_price, item.in_stock
+    price, in_stock = update_data.extraction.price, update_data.extraction.in_stock
+    p_conf, s_conf = update_data.extraction.price_confidence, update_data.extraction.in_stock_confidence
 
-        if price is not None:
-            # Outlier Check
-            if old_price and old_price > 0:
-                percent_diff = ((price - old_price) / old_price) * 100
-                if percent_diff > update_data.thresholds["outlier_percent"]:
-                    error_msg = (
-                        f"Price rejected: {percent_diff:.1f}% increase exceeds outlier threshold "
-                        f"({update_data.thresholds['outlier_percent']}%)"
-                    )
-                    logger.warning(f"Item {item_id}: {error_msg}")
-                    item.last_error = error_msg
-                    item.last_checked = datetime.now(UTC).replace(tzinfo=None)
-                    item.is_refreshing = False
-                    await session.commit()
-                    return old_price, old_stock
-
-            if p_conf >= update_data.thresholds["price"]:
-                # Check for suspicious price changes (warning only)
-                if (
-                    old_price
-                    and (abs(price - old_price) / old_price * 100 > PRICE_CHANGE_THRESHOLD_PERCENT)
-                    and p_conf < LOW_CONFIDENCE_THRESHOLD
-                ):
-                    item.last_error = f"Uncertain: Large price change with low confidence ({p_conf:.2f})"
-                else:
-                    item.last_error = None
-                item.current_price = price
-                item.current_price_confidence = p_conf
-
-            session.add(
-                models.PriceHistory(
-                    item_id=item.id,
-                    price=price,
-                    screenshot_path=update_data.screenshot_path,
-                    price_confidence=p_conf,
-                    in_stock_confidence=s_conf,
-                    in_stock=in_stock,
-                    ai_model=update_data.metadata.model_name,
-                    ai_provider=update_data.metadata.provider,
-                    prompt_version=update_data.metadata.prompt_version,
-                    repair_used=update_data.metadata.repair_used,
+    if price is not None:
+        # Outlier Check
+        if old_price and old_price > 0:
+            percent_diff = ((price - old_price) / old_price) * 100
+            if percent_diff > update_data.thresholds["outlier_percent"]:
+                error_msg = (
+                    f"Price rejected: {percent_diff:.1f}% increase exceeds outlier threshold "
+                    f"({update_data.thresholds['outlier_percent']}%)"
                 )
+                logger.warning(f"Item {item_id}: {error_msg}")
+                item.last_error = error_msg
+                item.last_checked = datetime.now(UTC).replace(tzinfo=None)
+                item.is_refreshing = False
+                await session.commit()
+                return old_price, old_stock
+
+        if p_conf >= update_data.thresholds["price"]:
+            # Check for suspicious price changes (warning only)
+            if (
+                old_price
+                and (abs(price - old_price) / old_price * 100 > PRICE_CHANGE_THRESHOLD_PERCENT)
+                and p_conf < LOW_CONFIDENCE_THRESHOLD
+            ):
+                item.last_error = f"Uncertain: Large price change with low confidence ({p_conf:.2f})"
+            else:
+                item.last_error = None
+            item.current_price = price
+            item.current_price_confidence = p_conf
+
+        session.add(
+            models.PriceHistory(
+                item_id=item.id,
+                price=price,
+                screenshot_path=update_data.screenshot_path,
+                price_confidence=p_conf,
+                in_stock_confidence=s_conf,
+                in_stock=in_stock,
+                ai_model=update_data.metadata.model_name,
+                ai_provider=update_data.metadata.provider,
+                prompt_version=update_data.metadata.prompt_version,
+                repair_used=update_data.metadata.repair_used,
             )
-
-        if in_stock is not None and s_conf >= update_data.thresholds["stock"]:
-            item.in_stock = in_stock
-            item.in_stock_confidence = s_conf
-
-        old_timestamp = item.last_checked
-        item.last_checked = datetime.now(UTC).replace(tzinfo=None)
-        item.is_refreshing = False
-        if item.last_error and not item.last_error.startswith("Uncertain:"):
-            item.last_error = None
-
-        await session.commit()
-        logger.info(
-            f"Updated item {item_id}: price={price}, stock={in_stock} "
-            f"(last_checked: {old_timestamp} -> {item.last_checked})"
         )
-        return old_price, old_stock
+
+    if in_stock is not None and s_conf >= update_data.thresholds["stock"]:
+        item.in_stock = in_stock
+        item.in_stock_confidence = s_conf
+
+    old_timestamp = item.last_checked
+    item.last_checked = datetime.now(UTC).replace(tzinfo=None)
+    item.is_refreshing = False
+    if item.last_error and not item.last_error.startswith("Uncertain:"):
+        item.last_error = None
+
+    await session.commit()
+    logger.info(
+        f"Updated item {item_id}: price={price}, stock={in_stock} "
+        f"(last_checked: {old_timestamp} -> {item.last_checked})"
+    )
+    return old_price, old_stock
 
 
 async def _handle_error(item_id: int, error_msg: str):
@@ -134,15 +135,14 @@ async def _handle_error(item_id: int, error_msg: str):
             await session.commit()
 
 
-async def _process_single_item_data(item_id: int):
+async def _process_single_item_data(item_id: int, session: AsyncSession):
     """Fetch item data and config."""
-    async with database.AsyncSessionLocal() as session:
-        item_data, config = await ItemService.get_item_data_for_checking(session, item_id)
-        if not item_data:
-            return None
+    item_data, config = await ItemService.get_item_data_for_checking(session, item_id)
+    if not item_data:
+        return None
 
-        # Pre-fetch thresholds while we have the session
-        thresholds = await _get_thresholds(session)
+    # Pre-fetch thresholds while we have the session
+    thresholds = await _get_thresholds(session)
 
     return item_data, config, thresholds
 
@@ -158,14 +158,16 @@ async def process_item_check(item_id: int, semaphore: asyncio.Semaphore | None =
 
 async def _execute_check(item_id: int):
     try:
-        # 1. Fetch Data
-        result = await _process_single_item_data(item_id)
-        if not result:
-            logger.error(f"Item {item_id} not found")
-            return
-        item_data, config, thresholds = result
+        # Use a single session for the entire check process
+        async with database.AsyncSessionLocal() as session:
+            # 1. Fetch Data
+            result = await _process_single_item_data(item_id, session)
+            if not result:
+                logger.error(f"Item {item_id} not found")
+                return
+            item_data, config, thresholds = result
 
-        logger.info(f"Checking item: {item_data['name']} ({item_data['url']})")
+            logger.info(f"Checking item: {item_data['name']} ({item_data['url']})")
 
         # 2. Scrape
         scrape_config = ScrapeConfig(
@@ -202,7 +204,7 @@ async def _execute_check(item_id: int):
             screenshot_path=screenshot_path,
         )
 
-        old_price, old_stock = await _update_item_in_db(item_id, update_data)
+        old_price, old_stock = await _update_item_in_db(item_id, update_data, session)
 
         # 5. Notify
         await NotificationService.send_item_notifications(
