@@ -1,6 +1,7 @@
-from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from datetime import datetime, timezone
+
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class NotificationProfileCreate(BaseModel):
@@ -51,6 +52,13 @@ class ItemResponse(ItemCreate):
     interval: int | None = None
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("last_checked", "next_check", mode="before")
+    @classmethod
+    def set_tz_utc(cls, v):
+        if isinstance(v, datetime) and v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v
+
 
 class SettingsUpdate(BaseModel):
     key: str
@@ -67,6 +75,13 @@ class PriceHistoryResponse(BaseModel):
     in_stock: bool | None = None
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def set_tz_utc(cls, v):
+        if isinstance(v, datetime) and v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v
+
 
 class ItemStats(BaseModel):
     min_price: float
@@ -82,3 +97,4 @@ class AnalyticsResponse(BaseModel):
     item_name: str
     stats: ItemStats
     history: list[PriceHistoryResponse]
+
