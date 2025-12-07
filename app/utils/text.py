@@ -20,7 +20,10 @@ def clean_text(text: str) -> str:
     text = re.sub(r"<[^>]+>", "", text)
 
     # Remove non-printable characters (keep newlines and tabs)
-    text = re.sub(r"[^\x20-\x7E\n\t]", "", text)
+    # Remove non-printable characters (keep newlines and tabs)
+    # Allow all unicode characters except control characters (categories Cc, Cf, etc. roughly)
+    # But simple regex: remove C0 control codes (00-1F) and DEL (7F), except \t (09) and \n (0A) and \r (0D)
+    text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", text)
 
     # Collapse excessive whitespace
     text = re.sub(r"\s+", " ", text).strip()

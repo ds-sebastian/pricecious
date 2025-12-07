@@ -142,7 +142,7 @@ class AIService:
             config = await cls.get_ai_config()
             base64_image = await encode_image(image_path)
 
-            text_context = clean_text(page_text)[:5000] if page_text else None
+            text_context = clean_text(page_text) if page_text else None
             prompt = get_extraction_prompt(text_context, custom_prompt)
 
             messages = [
