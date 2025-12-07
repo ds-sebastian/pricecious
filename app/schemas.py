@@ -1,5 +1,4 @@
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -56,13 +55,18 @@ class ItemResponse(ItemCreate):
     @classmethod
     def set_tz_utc(cls, v):
         if isinstance(v, datetime) and v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
+            return v.replace(tzinfo=UTC)
         return v
 
 
 class SettingsUpdate(BaseModel):
     key: str
     value: str
+
+
+class PriceHistoryUpdate(BaseModel):
+    price: float | None = None
+    in_stock: bool | None = None
 
 
 class PriceHistoryResponse(BaseModel):
@@ -79,7 +83,7 @@ class PriceHistoryResponse(BaseModel):
     @classmethod
     def set_tz_utc(cls, v):
         if isinstance(v, datetime) and v.tzinfo is None:
-            return v.replace(tzinfo=timezone.utc)
+            return v.replace(tzinfo=UTC)
         return v
 
 
@@ -98,3 +102,9 @@ class AnalyticsResponse(BaseModel):
     stats: ItemStats
     history: list[PriceHistoryResponse]
 
+
+class PriceHistoryPaginatedResponse(BaseModel):
+    items: list[PriceHistoryResponse]
+    total: int
+    page: int
+    size: int

@@ -436,3 +436,65 @@ class ItemService:
             "history": [],
             "annotations": [],
         }
+
+    @staticmethod
+    async def get_history_raw(
+        db: AsyncSession, item_id: int, page: int = 1, size: int = 50, sort: str = "desc"
+    ) -> tuple[list[models.PriceHistory], int]:
+        """Fetch raw history for editing."""
+        offset = (page - 1) * size
+
+        # Count total
+        count_stmt = select(func.count(models.PriceHistory.id)).where(models.PriceHistory.item_id == item_id)
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        # Fetch page
+        stmt = select(models.PriceHistory).where(models.PriceHistory.item_id == item_id)
+        if sort == "asc":
+            stmt = stmt.order_by(models.PriceHistory.timestamp.asc())
+        else:
+            stmt = stmt.order_by(models.PriceHistory.timestamp.desc())
+
+        stmt = stmt.offset(offset).limit(size)
+        items = (await db.execute(stmt)).scalars().all()
+
+        return list(items), total
+
+    @staticmethod
+    async def update_history(
+        db: AsyncSession, history_id: int, update: schemas.PriceHistoryUpdate
+    ) -> models.PriceHistory:
+        record = await db.get(models.PriceHistory, history_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="History record not found")
+
+        if update.price is not None:
+            record.price = update.price
+            record.repair_used = True  # Mark as manually repaired/modified
+
+        if update.in_stock is not None:
+            record.in_stock = update.in_stock
+            record.repair_used = True
+
+        await db.commit()
+        await db.refresh(record)
+
+        # Invalidate analytics cache for this item
+        # We need to find the item_id to clear the cache properly, or just clear all for simplicity on edit
+        # Optimization: Clear only related keys. But clearing all is safer and easier.
+        ItemService.clear_cache()
+
+        return record
+
+    @staticmethod
+    async def delete_history(db: AsyncSession, history_id: int) -> dict:
+        record = await db.get(models.PriceHistory, history_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="History record not found")
+
+        await db.delete(record)
+        await db.commit()
+
+        ItemService.clear_cache()
+
+        return {"ok": True}
