@@ -16,7 +16,7 @@ async def test_process_item_check_flow():
     # Mock data
     mock_item_data = {"name": "Test Item", "url": "http://example.com", "selector": None}
     mock_config = {"smart_scroll": False, "smart_scroll_pixels": 350, "text_length": 0, "scraper_timeout": 90000}
-    mock_thresholds = {"price": 0.5, "stock": 0.5, "outlier_percent": 500.0}
+    mock_thresholds = {"price": 0.5, "stock": 0.5, "outlier_percent": 500.0, "outlier_enabled": False}
 
     mock_extraction = AIExtractionResponse(price=100.0, in_stock=True, price_confidence=0.9, in_stock_confidence=0.9)
     mock_metadata = AIExtractionMetadata(
@@ -99,7 +99,7 @@ async def test_update_item_in_db_uses_provided_session():
             multi_sample=False,
             sample_count=1,
         ),
-        thresholds={"price": 0.5, "stock": 0.5, "outlier_percent": 500.0},
+        thresholds={"price": 0.5, "stock": 0.5, "outlier_percent": 500.0, "outlier_enabled": False},
         screenshot_path="path",
     )
 

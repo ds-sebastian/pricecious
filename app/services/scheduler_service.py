@@ -36,7 +36,12 @@ class UpdateData:
 async def _get_thresholds(session: AsyncSession) -> dict[str, float]:
     """Fetch only necessary threshold settings."""
     # Optimization: Only fetch specific keys instead of all settings
-    keys = ["confidence_threshold_price", "confidence_threshold_stock", "price_outlier_threshold_percent"]
+    keys = [
+        "confidence_threshold_price",
+        "confidence_threshold_stock",
+        "price_outlier_threshold_percent",
+        "price_outlier_threshold_enabled",
+    ]
     result = await session.execute(
         select(models.Settings.key, models.Settings.value).where(models.Settings.key.in_(keys))
     )
@@ -45,6 +50,7 @@ async def _get_thresholds(session: AsyncSession) -> dict[str, float]:
         "price": float(settings_map.get("confidence_threshold_price", "0.5")),
         "stock": float(settings_map.get("confidence_threshold_stock", "0.5")),
         "outlier_percent": float(settings_map.get("price_outlier_threshold_percent", str(DEFAULT_OUTLIER_THRESHOLD))),
+        "outlier_enabled": settings_map.get("price_outlier_threshold_enabled", "false").lower() == "true",
     }
 
 
@@ -62,8 +68,8 @@ async def _update_item_in_db(
     p_conf, s_conf = update_data.extraction.price_confidence, update_data.extraction.in_stock_confidence
 
     if price is not None:
-        # Outlier Check
-        if old_price and old_price > 0:
+        # Outlier Check - Only if enabled
+        if update_data.thresholds["outlier_enabled"] and old_price and old_price > 0:
             percent_diff = ((price - old_price) / old_price) * 100
             if percent_diff > update_data.thresholds["outlier_percent"]:
                 error_msg = (

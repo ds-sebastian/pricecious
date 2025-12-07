@@ -31,7 +31,9 @@ export default function Settings() {
         text_context_enabled: false,
         text_context_length: 5000,
         scraper_timeout: 90000,
-        ai_reasoning_effort: 'low'
+        ai_reasoning_effort: 'low',
+        price_outlier_threshold_enabled: false,
+        price_outlier_threshold_percent: 500
     });
     const [newProfile, setNewProfile] = useState({
         name: '',
@@ -79,7 +81,10 @@ export default function Settings() {
                 text_context_enabled: settingsMap['text_context_enabled'] === 'true',
                 text_context_length: parseInt(settingsMap['text_context_length'] || '5000'),
                 scraper_timeout: parseInt(settingsMap['scraper_timeout'] || '90000'),
-                ai_reasoning_effort: settingsMap['ai_reasoning_effort'] || 'low'
+                scraper_timeout: parseInt(settingsMap['scraper_timeout'] || '90000'),
+                ai_reasoning_effort: settingsMap['ai_reasoning_effort'] || 'low',
+                price_outlier_threshold_enabled: settingsMap['price_outlier_threshold_enabled'] === 'true',
+                price_outlier_threshold_percent: parseFloat(settingsMap['price_outlier_threshold_percent'] || '500')
             });
         } catch (error) {
             toast.error('Failed to fetch settings');
@@ -287,6 +292,30 @@ export default function Settings() {
                                             value={config.confidence_threshold_stock}
                                             onChange={(e) => updateSetting('confidence_threshold_stock', parseFloat(e.target.value))}
                                         />
+                                    </div>
+                                    <div className="space-y-4 pt-4 border-t">
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="outlier_enabled">Price Outlier Protection</Label>
+                                            <Switch
+                                                id="outlier_enabled"
+                                                checked={config.price_outlier_threshold_enabled}
+                                                onCheckedChange={(checked) => updateSetting('price_outlier_threshold_enabled', checked)}
+                                            />
+                                        </div>
+                                        {config.price_outlier_threshold_enabled && (
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between">
+                                                    <Label>Outlier Threshold (%)</Label>
+                                                    <span className="text-xs text-muted-foreground">{config.price_outlier_threshold_percent}%</span>
+                                                </div>
+                                                <Input
+                                                    type="number"
+                                                    value={config.price_outlier_threshold_percent}
+                                                    onChange={(e) => updateSetting('price_outlier_threshold_percent', parseFloat(e.target.value))}
+                                                />
+                                                <p className="text-xs text-muted-foreground">Reject price increases larger than this percentage.</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

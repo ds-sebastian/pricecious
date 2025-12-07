@@ -32,6 +32,8 @@ class ItemCreate(BaseModel):
     description: str | None = None
     custom_prompt: str | None = None
     notification_profile_id: int | None = None
+    current_price: float | None = None
+    in_stock: bool | None = None
 
 
 class ItemResponse(ItemCreate):

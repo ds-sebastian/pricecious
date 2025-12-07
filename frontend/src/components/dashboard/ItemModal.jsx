@@ -17,8 +17,11 @@ export function ItemModal({ item, onClose, onSaved, open }) {
         selector: '',
         tags: '',
         description: '',
+
         custom_prompt: '',
-        notification_profile_id: ''
+        notification_profile_id: '',
+        current_price: '',
+        in_stock: 'unknown'
     });
     const [profiles, setProfiles] = useState([]);
 
@@ -31,8 +34,11 @@ export function ItemModal({ item, onClose, onSaved, open }) {
                 selector: item.selector || '',
                 tags: item.tags || '',
                 description: item.description || '',
+
                 custom_prompt: item.custom_prompt || '',
-                notification_profile_id: item.notification_profile_id ? item.notification_profile_id.toString() : ''
+                notification_profile_id: item.notification_profile_id ? item.notification_profile_id.toString() : '',
+                current_price: item.current_price || '',
+                in_stock: item.in_stock === true ? 'true' : item.in_stock === false ? 'false' : 'unknown'
             });
         } else {
             setFormData({
@@ -42,8 +48,11 @@ export function ItemModal({ item, onClose, onSaved, open }) {
                 selector: '',
                 tags: '',
                 description: '',
+
                 custom_prompt: '',
-                notification_profile_id: ''
+                notification_profile_id: '',
+                current_price: '',
+                in_stock: 'unknown'
             });
         }
     }, [item, open]);
@@ -59,8 +68,11 @@ export function ItemModal({ item, onClose, onSaved, open }) {
         try {
             const payload = {
                 ...formData,
+
                 target_price: formData.target_price ? parseFloat(formData.target_price) : null,
-                notification_profile_id: formData.notification_profile_id ? parseInt(formData.notification_profile_id) : null
+                notification_profile_id: formData.notification_profile_id ? parseInt(formData.notification_profile_id) : null,
+                current_price: formData.current_price ? parseFloat(formData.current_price) : null,
+                in_stock: formData.in_stock === 'true' ? true : formData.in_stock === 'false' ? false : null
             };
 
             if (item) {
@@ -131,6 +143,46 @@ export function ItemModal({ item, onClose, onSaved, open }) {
                             />
                         </div>
                     </div>
+
+                    {/* Manual Override Section */}
+                    {item && (
+                        <div className="rounded-md bg-muted/50 p-3 space-y-3 border border-border/50">
+                            <h4 className="text-sm font-medium">Manual Override</h4>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="current_price">Current Price ($)</Label>
+                                    <Input
+                                        id="current_price"
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="0.00"
+                                        value={formData.current_price}
+                                        onChange={e => setFormData({ ...formData, current_price: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="in_stock">Stock Status</Label>
+                                    <Select
+                                        value={formData.in_stock}
+                                        onValueChange={(value) => setFormData({ ...formData, in_stock: value })}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select status" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="unknown">Unknown</SelectItem>
+                                            <SelectItem value="true">In Stock</SelectItem>
+                                            <SelectItem value="false">Out of Stock</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                Manually setting these values helps correct bad data or reset the baseline for outlier detection.
+                            </p>
+                        </div>
+                    )}
+
                     <div className="space-y-2">
                         <Label htmlFor="profile">Notification Profile</Label>
                         <Select
@@ -184,6 +236,6 @@ export function ItemModal({ item, onClose, onSaved, open }) {
                     </DialogFooter>
                 </form>
             </DialogContent>
-        </Dialog>
+        </Dialog >
     );
 }
