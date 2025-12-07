@@ -57,10 +57,7 @@ async def test_forecasting_service():
     with patch("app.services.forecasting_service.Prophet") as MockProphet:
         # Mock database session execution result
         history_data = [
-            PriceHistory(
-                timestamp=datetime(2023, 1, 1) + timedelta(days=i), price=100.0 + i
-            )
-            for i in range(20)
+            PriceHistory(timestamp=datetime(2023, 1, 1) + timedelta(days=i), price=100.0 + i) for i in range(20)
         ]
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = history_data
@@ -88,7 +85,7 @@ async def test_forecasting_service():
             # In this test, history is 20 days (Jan 1 - Jan 20).
             # Duration = 19 days. < 500, so yearly_seasonality=False.
             # Black Friday is Nov. Jan dates do not contain BF. So BF regressor should NOT be added.
-            
+
             MockProphet.assert_called_with(
                 seasonality_mode="multiplicative",
                 changepoint_prior_scale=0.01,
@@ -99,7 +96,7 @@ async def test_forecasting_service():
             )
             # Black Friday regressor should NOT be called because dates don't overlap with Nov
             mock_model.add_regressor.assert_not_called()
-            
+
             mock_model.fit.assert_called()
             mock_model.predict.assert_called()
 

@@ -13,6 +13,8 @@ BLACK_FRIDAY_MONTH = 11
 BLACK_FRIDAY_START_DAY = 20
 BLACK_FRIDAY_END_DAY = 30
 MIN_HISTORY_FOR_FORECAST = 14
+MIN_HISTORY_FOR_YEARLY_SEASONALITY = 500
+HORIZON_CAP_RATIO = 10
 
 
 class ForecastingService:
@@ -61,14 +63,14 @@ class ForecastingService:
 
             # 3. Analyze Data Characteristics
             duration_days = (df["ds"].max() - df["ds"].min()).days
-            
+
             # Horizon Capping (10:1 ratio)
-            max_horizon = max(1, duration_days // 10)
+            max_horizon = max(1, duration_days // HORIZON_CAP_RATIO)
             prediction_days = min(days, max_horizon)
-            
+
             # Dynamic Seasonality
-            use_yearly = duration_days >= 500
-            
+            use_yearly = duration_days >= MIN_HISTORY_FOR_YEARLY_SEASONALITY
+
             # Regressor Safety Check
             df["black_friday"] = df["ds"].apply(ForecastingService._is_black_friday_week)
             has_bf = df["black_friday"].sum() > 0
@@ -83,7 +85,7 @@ class ForecastingService:
                 weekly_seasonality=True,
                 yearly_seasonality=use_yearly,
             )
-            
+
             if use_bf_regressor:
                 m.add_regressor("black_friday")
 
@@ -98,11 +100,11 @@ class ForecastingService:
             if use_bf_regressor:
                 future["black_friday"] = future["ds"].apply(ForecastingService._is_black_friday_week)
             else:
-                # If regressor wasn't added to model, we don't need it in future df, 
-                # but Prophet might complain if we don't handle it consistently 
-                # if we had added it. Since we conditionally add_regressor, 
+                # If regressor wasn't added to model, we don't need it in future df,
+                # but Prophet might complain if we don't handle it consistently
+                # if we had added it. Since we conditionally add_regressor,
                 # we only need the column if we added it.
-                # However, to be safe against any residual state (unlikely here), 
+                # However, to be safe against any residual state (unlikely here),
                 # we can skip adding the column to future if not used.
                 pass
 
