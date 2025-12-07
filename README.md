@@ -13,12 +13,14 @@
 
 **Pricecious** is a self-hosted, AI-powered price tracking application. It uses **GenAI Vision Models** (OpenAI, Anthropic, Ollama, etc.) to visually analyze product pages, detect prices, and monitor stock status.
 
-<img width="1186" height="482" alt="SCR-20251120-sdky" src="https://github.com/user-attachments/assets/b9c09142-496e-458e-9a86-9e3d7b1fb7c0" />
+<img width="1749" height="1008" alt="SCR-20251207-ordg" src="https://github.com/user-attachments/assets/c9393151-2ac7-4624-994f-88bc8c77f90b" />
 
 ## Features
 
 *   **AI Capture**: Uses Vision Models (GPT-4o, Claude 3.5, Gemini, Ollama) to see prices/stock.
 *   **Analysis & Tracking**: Full price history, stock status tracking, and Prophet-based price forecasting.
+>   <img width="1730" height="845" alt="SCR-20251207-orfh" src="https://github.com/user-attachments/assets/45e74f74-0493-41e1-94ec-dba1a92112d2" />
+
 *   **Reliability**: Smart scrolling, text fallback, and automatic JSON repair.
 *   **Performance**: Async backend (Granian) with caching and data downsampling.
 
