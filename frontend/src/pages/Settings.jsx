@@ -123,7 +123,7 @@ export default function Settings() {
 					settingsMap["text_context_length"] || "5000",
 				),
 				scraper_timeout: parseInt(settingsMap["scraper_timeout"] || "90000"),
-				scraper_timeout: parseInt(settingsMap["scraper_timeout"] || "90000"),
+
 				ai_reasoning_effort: settingsMap["ai_reasoning_effort"] || "low",
 				price_outlier_threshold_enabled:
 					settingsMap["price_outlier_threshold_enabled"] === "true",
