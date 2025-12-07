@@ -373,8 +373,9 @@ export default function History() {
 									</Button>
 								</div>
 							)}
+						</>
 					)}
-						</CardContent>
+				</CardContent>
 			</Card>
 
 			<Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
