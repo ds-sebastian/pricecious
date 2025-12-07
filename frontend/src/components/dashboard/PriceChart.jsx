@@ -106,7 +106,7 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 	};
 
 	return (
-		<div className="h-[400px] w-full">
+		<div className="h-[400px] w-full min-w-0">
 			<ResponsiveContainer
 				width="100%"
 				height="100%"

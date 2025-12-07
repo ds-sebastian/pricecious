@@ -439,23 +439,39 @@ class ItemService:
 
     @staticmethod
     async def get_history_raw(
-        db: AsyncSession, item_id: int, page: int = 1, size: int = 50, sort: str = "desc"
+        db: AsyncSession, item_id: int, filters: schemas.HistoryFilter
     ) -> tuple[list[models.PriceHistory], int]:
-        """Fetch raw history for editing."""
-        offset = (page - 1) * size
+        """Fetch raw history with filters."""
+        offset = (filters.page - 1) * filters.size
+
+        # Build base query
+        base_filters = [models.PriceHistory.item_id == item_id]
+
+        if filters.min_price is not None:
+            base_filters.append(models.PriceHistory.price >= filters.min_price)
+        if filters.max_price is not None:
+            base_filters.append(models.PriceHistory.price <= filters.max_price)
+        if filters.in_stock is not None:
+            base_filters.append(models.PriceHistory.in_stock == filters.in_stock)
+        if filters.min_confidence is not None:
+            # Check both price and stock confidence
+            base_filters.append(
+                (models.PriceHistory.price_confidence >= filters.min_confidence)
+                | (models.PriceHistory.price_confidence.is_(None))
+            )
 
         # Count total
-        count_stmt = select(func.count(models.PriceHistory.id)).where(models.PriceHistory.item_id == item_id)
+        count_stmt = select(func.count(models.PriceHistory.id)).filter(*base_filters)
         total = (await db.execute(count_stmt)).scalar() or 0
 
         # Fetch page
-        stmt = select(models.PriceHistory).where(models.PriceHistory.item_id == item_id)
-        if sort == "asc":
+        stmt = select(models.PriceHistory).filter(*base_filters)
+        if filters.sort == "asc":
             stmt = stmt.order_by(models.PriceHistory.timestamp.asc())
         else:
             stmt = stmt.order_by(models.PriceHistory.timestamp.desc())
 
-        stmt = stmt.offset(offset).limit(size)
+        stmt = stmt.offset(offset).limit(filters.size)
         items = (await db.execute(stmt)).scalars().all()
 
         return list(items), total

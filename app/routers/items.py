@@ -59,13 +59,11 @@ async def get_item_analytics(
 @router.get("/{item_id}/history", response_model=schemas.PriceHistoryPaginatedResponse)
 async def get_item_history(
     item_id: int,
-    page: int = 1,
-    size: int = 50,
-    sort: str = "desc",
+    filters: schemas.HistoryFilter = Depends(),
     db: AsyncSession = Depends(database.get_db),
 ):
-    items, total = await ItemService.get_history_raw(db, item_id, page, size, sort)
-    return {"items": items, "total": total, "page": page, "size": size}
+    items, total = await ItemService.get_history_raw(db, item_id, filters)
+    return {"items": items, "total": total, "page": filters.page, "size": filters.size}
 
 
 @router.put("/history/{history_id}", response_model=schemas.PriceHistoryResponse)

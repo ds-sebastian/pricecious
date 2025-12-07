@@ -45,6 +45,13 @@ export default function History() {
 	const [updatePrice, setUpdatePrice] = useState("");
 	const [updateInStock, setUpdateInStock] = useState(false);
 
+	// Filter states
+	const [filterMinPrice, setFilterMinPrice] = useState("");
+	const [filterMaxPrice, setFilterMaxPrice] = useState("");
+	const [filterInStock, setFilterInStock] = useState("all");
+	const [filterMinConfidence, setFilterMinConfidence] = useState("");
+
+
 	useEffect(() => {
 		fetchItems();
 	}, []);
@@ -56,7 +63,8 @@ export default function History() {
 			setHistoryData([]);
 			setTotalRecords(0);
 		}
-	}, [selectedItemId, page]);
+	}, [selectedItemId, page, filterMinPrice, filterMaxPrice, filterInStock, filterMinConfidence]);
+
 
 	const fetchItems = async () => {
 		try {
@@ -73,9 +81,21 @@ export default function History() {
 	const fetchHistory = async (itemId, pageNum) => {
 		setLoading(true);
 		try {
+			const queryParams = new URLSearchParams({
+				page: pageNum,
+				size: pageSize,
+				sort: "desc"
+			});
+
+			if (filterMinPrice) queryParams.append("min_price", filterMinPrice);
+			if (filterMaxPrice) queryParams.append("max_price", filterMaxPrice);
+			if (filterInStock !== "all") queryParams.append("in_stock", filterInStock === "true");
+			if (filterMinConfidence) queryParams.append("min_confidence", Number(filterMinConfidence) / 100);
+
 			const res = await fetch(
-				`/api/items/${itemId}/history?page=${pageNum}&size=${pageSize}`,
+				`/api/items/${itemId}/history?${queryParams.toString()}`,
 			);
+
 			if (!res.ok) throw new Error("Failed to fetch history");
 			const data = await res.json();
 			setHistoryData(data.items);
@@ -145,6 +165,7 @@ export default function History() {
 						onValueChange={(val) => {
 							setSelectedItemId(val);
 							setPage(1); // Reset to first page on item change
+							// Reset filters when item changes? Maybe not, keep them persistent is better UX usually.
 						}}
 					>
 						<SelectTrigger>
@@ -176,7 +197,74 @@ export default function History() {
 						</div>
 					) : (
 						<>
+							{/* Filters Bar */}
+							<div className="flex flex-wrap gap-4 mb-4 p-4 bg-muted/50 rounded-lg">
+								<div className="space-y-1">
+									<Label>Min Price</Label>
+									<Input
+										type="number"
+										placeholder="Min"
+										className="w-24"
+										value={filterMinPrice}
+										onChange={(e) => { setFilterMinPrice(e.target.value); setPage(1); }}
+									/>
+								</div>
+								<div className="space-y-1">
+									<Label>Max Price</Label>
+									<Input
+										type="number"
+										placeholder="Max"
+										className="w-24"
+										value={filterMaxPrice}
+										onChange={(e) => { setFilterMaxPrice(e.target.value); setPage(1); }}
+									/>
+								</div>
+								<div className="space-y-1">
+									<Label>Stock Status</Label>
+									<Select
+										value={filterInStock}
+										onValueChange={(val) => { setFilterInStock(val); setPage(1); }}
+									>
+										<SelectTrigger className="w-32">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="all">All</SelectItem>
+											<SelectItem value="true">In Stock</SelectItem>
+											<SelectItem value="false">Out of Stock</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+								<div className="space-y-1">
+									<Label>Min Confidence %</Label>
+									<Input
+										type="number"
+										placeholder="0-100"
+										className="w-32"
+										value={filterMinConfidence}
+										onChange={(e) => { setFilterMinConfidence(e.target.value); setPage(1); }}
+										min="0"
+										max="100"
+									/>
+								</div>
+								<div className="flex items-end">
+									<Button
+										variant="secondary"
+										onClick={() => {
+											setFilterMinPrice("");
+											setFilterMaxPrice("");
+											setFilterInStock("all");
+											setFilterMinConfidence("");
+											setPage(1);
+										}}
+									>
+										Reset
+									</Button>
+								</div>
+							</div>
+
 							<div className="rounded-md border">
+
 								<Table>
 									<TableHeader>
 										<TableRow>
@@ -215,11 +303,10 @@ export default function History() {
 													<TableCell>${record.price.toFixed(2)}</TableCell>
 													<TableCell>
 														<span
-															className={`px-2 py-1 rounded text-xs ${
-																record.in_stock
-																	? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-																	: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
-															}`}
+															className={`px-2 py-1 rounded text-xs ${record.in_stock
+																? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+																: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
+																}`}
 														>
 															{record.in_stock ? "In Stock" : "Out of Stock"}
 														</span>
@@ -231,8 +318,8 @@ export default function History() {
 														/{" "}
 														{record.in_stock_confidence
 															? `${(record.in_stock_confidence * 100).toFixed(
-																	0,
-																)}%`
+																0,
+															)}%`
 															: "-"}
 													</TableCell>
 													<TableCell className="text-right gap-2">
@@ -286,15 +373,17 @@ export default function History() {
 									</Button>
 								</div>
 							)}
-						</>
 					)}
-				</CardContent>
+						</CardContent>
 			</Card>
 
 			<Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>Edit History Record</DialogTitle>
+						<DialogDescription>
+							Make changes to this historical record.
+						</DialogDescription>
 					</DialogHeader>
 					<div className="grid gap-4 py-4">
 						<div className="grid grid-cols-4 items-center gap-4">

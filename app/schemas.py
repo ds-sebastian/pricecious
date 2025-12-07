@@ -103,6 +103,16 @@ class AnalyticsResponse(BaseModel):
     history: list[PriceHistoryResponse]
 
 
+class HistoryFilter(BaseModel):
+    page: int = 1
+    size: int = 50
+    sort: str = "desc"
+    min_price: float | None = None
+    max_price: float | None = None
+    in_stock: bool | None = None
+    min_confidence: float | None = None
+
+
 class PriceHistoryPaginatedResponse(BaseModel):
     items: list[PriceHistoryResponse]
     total: int
