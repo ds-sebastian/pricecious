@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 
+from app.models import PriceHistory
 from app.services.forecasting_service import ForecastingService
 
 
@@ -54,6 +55,16 @@ async def test_forecasting_service():
 
     # Mock Prophet
     with patch("app.services.forecasting_service.Prophet") as MockProphet:
+        # Mock database session execution result
+        history_data = [
+            PriceHistory(
+                timestamp=datetime(2023, 1, 1) + timedelta(days=i), price=100.0 + i
+            )
+            for i in range(20)
+        ]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = history_data
+        mock_session.execute.return_value = mock_result
         mock_model = MockProphet.return_value
         mock_model.make_future_dataframe.return_value = pd.DataFrame(
             {"ds": [datetime(2023, 1, 6), datetime(2023, 1, 7)]}
@@ -74,7 +85,14 @@ async def test_forecasting_service():
             await ForecastingService.generate_forecast(1)
 
             # Verify Prophet configuration
-            MockProphet.assert_called_with(seasonality_mode="multiplicative")
+            MockProphet.assert_called_with(
+                seasonality_mode="additive",
+                changepoint_prior_scale=0.01,
+                seasonality_prior_scale=1.0,
+                daily_seasonality=False,
+                weekly_seasonality=True,
+                yearly_seasonality=True,
+            )
             mock_model.add_regressor.assert_called_with("black_friday")
             mock_model.fit.assert_called()
             mock_model.predict.assert_called()

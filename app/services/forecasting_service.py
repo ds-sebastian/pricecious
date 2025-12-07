@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 BLACK_FRIDAY_MONTH = 11
 BLACK_FRIDAY_START_DAY = 20
 BLACK_FRIDAY_END_DAY = 30
-MIN_HISTORY_FOR_FORECAST = 5
+MIN_HISTORY_FOR_FORECAST = 14
 
 
 class ForecastingService:
@@ -62,7 +62,14 @@ class ForecastingService:
             # 3. Configure Prophet
             df["black_friday"] = df["ds"].apply(ForecastingService._is_black_friday_week)
 
-            m = Prophet(seasonality_mode="multiplicative")
+            m = Prophet(
+                seasonality_mode="additive",
+                changepoint_prior_scale=0.01,
+                seasonality_prior_scale=1.0,
+                daily_seasonality=False,
+                weekly_seasonality=True,
+                yearly_seasonality=True,
+            )
             m.add_regressor("black_friday")
 
             # 4. Fit & Predict
