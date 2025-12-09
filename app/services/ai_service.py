@@ -1,11 +1,9 @@
 import logging
-import json
-from typing import TypedDict, Any
+from typing import TypedDict
 
-import litellm
 import json_repair
+import litellm
 from litellm import acompletion
-from pydantic import ValidationError
 from sqlalchemy import select
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -95,14 +93,16 @@ class AIService:
         # json_repair handles markdown blocks, trailing commas, and more automatically
         data = json_repair.loads(text)
         if isinstance(data, list):
-             # Handle rare case where list is returned instead of dict
-             if data and isinstance(data[0], dict):
-                 data = data[0]
-             else:
-                 raise ValueError("Parsed JSON is a list, expected dictionary")
-        
+            # Handle rare case where list is returned instead of dict
+            if data and isinstance(data[0], dict):
+                data = data[0]
+            else:
+                raise ValueError(f"Parsed JSON is a list, expected dictionary. Content snippet: {str(data)[:200]}")
+
         if not isinstance(data, dict):
-             raise ValueError(f"Parsed JSON is not a dictionary: {type(data)}")
+            # Include snippet of what was actually parsed (or the original text if parsing failed to produce a structure)
+            snippet = str(data)[:200] if data else text[:200]
+            raise ValueError(f"Parsed JSON is not a dictionary: {type(data)}. Content snippet: {snippet}")
 
         return AIExtractionResponse(**data)
 
@@ -134,9 +134,9 @@ class AIService:
             kwargs["response_format"] = AIExtractionResponse
             kwargs["reasoning_effort"] = config["reasoning_effort"]
         elif not is_repair:
-             # Universal attempt to enable JSON mode for other providers
-             kwargs["response_format"] = {"type": "json_object"}
-        
+            # Universal attempt to enable JSON mode for other providers
+            kwargs["response_format"] = {"type": "json_object"}
+
         if config["provider"]:
             kwargs["custom_llm_provider"] = config["provider"]
 
@@ -144,8 +144,9 @@ class AIService:
             response = await acompletion(**kwargs)
             content = response.choices[0].message.content
             if not content:
-                logger.warning(f"LLM returned empty content. Model: {model}")
-                return ""
+                error_msg = f"LLM returned empty content. Model: {model}"
+                logger.warning(error_msg)
+                raise ValueError(error_msg)
             return content
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
@@ -196,11 +197,11 @@ class AIService:
                 )
             except Exception as e:
                 logger.info(f"Parsing failed: {e}. Attempting LLM repair...")
-                
+
                 # Unconditional LLM repair fallback
                 repair_msg = [{"role": "user", "content": get_repair_prompt(response_text)}]
                 repaired = await cls.call_llm(repair_msg, config, is_repair=True)
-                
+
                 result = cls.parse_response(repaired)
                 return result, AIExtractionMetadata(
                     model_name=config["model"],
