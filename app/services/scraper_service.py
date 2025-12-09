@@ -76,7 +76,9 @@ class ScraperService:
         try:
             # Use a fresh context for each scrape to ensure isolation
             async with ScraperService._scoped_context() as page:
-                await ScraperService._navigate(page, url, config.timeout)
+                if not await ScraperService._navigate(page, url, config.timeout):
+                    return None, ""
+
                 await ScraperService._handle_popups(page)
 
                 if selector:
@@ -117,7 +119,7 @@ class ScraperService:
             await context.close()
 
     @staticmethod
-    async def _navigate(page: Page, url: str, timeout: int):
+    async def _navigate(page: Page, url: str, timeout: int) -> bool:
         logger.info(f"Navigating to {url}")
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
@@ -125,9 +127,17 @@ class ScraperService:
                 await page.wait_for_load_state("networkidle", timeout=5000)
             except PlaywrightTimeoutError:
                 pass  # Non-critical
+
+            await page.wait_for_timeout(2000)
+            return True
         except Exception as e:
-            logger.warning(f"Navigation issue: {e}")
-        await page.wait_for_timeout(2000)
+            error_msg = str(e)
+            logger.warning(f"Navigation issue: {error_msg}")
+            if "Target page, context or browser has been closed" in error_msg:
+                # Critical error, force a reset for next time
+                logger.error("Browser usage error detected, forcing shutdown to reset state.")
+                await ScraperService.shutdown()
+            return False
 
     @staticmethod
     async def _handle_popups(page: Page):

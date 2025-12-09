@@ -135,10 +135,14 @@ class AIService:
             kwargs["reasoning_effort"] = config["reasoning_effort"]
         elif not is_repair:
             # Universal attempt to enable JSON mode for other providers
+            # This is safer than passing a Pydantic class which many providers via OpenRouter don't support well yet
             kwargs["response_format"] = {"type": "json_object"}
 
         if config["provider"]:
             kwargs["custom_llm_provider"] = config["provider"]
+        elif "ollama" in config.get("api_base", ""):
+            # Fallback: if provider is missing but api_base has ollama, assume ollama
+            kwargs["custom_llm_provider"] = "ollama"
 
         try:
             response = await acompletion(**kwargs)

@@ -169,9 +169,8 @@ class TestScraperErrorHandling:
             await ScraperService.initialize()
             res, _text = await ScraperService.scrape_item("http://example.com")
 
-            # Robust scraper continues and takes screenshot
-            assert res is not None
-            assert "screenshots/" in res
+            # Updated behavior: navigation failure leads to early exit, no screenshot
+            assert res is None
 
     # @pytest.mark.asyncio
     # async def test_reconnection_logic(self):
