@@ -26,6 +26,7 @@ dependencies = [
     "aiosqlite>=0.21.0",
     "prophet",
     "pandas",
+    "json-repair>=0.54.2",
 ]
 
 [build-system]

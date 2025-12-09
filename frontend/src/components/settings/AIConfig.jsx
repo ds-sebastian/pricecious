@@ -43,7 +43,7 @@ export function AIConfig() {
 		settings.confidence_threshold_stock || "0.5",
 	);
 
-	const enable_json_repair = settings.enable_json_repair !== "false";
+
 	const price_outlier_threshold_enabled =
 		settings.price_outlier_threshold_enabled === "true";
 	const price_outlier_threshold_percent = Number.parseFloat(
@@ -257,16 +257,7 @@ export function AIConfig() {
 										}
 									/>
 								</div>
-								<div className="flex items-center justify-between pt-2">
-									<Label htmlFor="json_repair">Enable JSON Repair</Label>
-									<Switch
-										id="json_repair"
-										checked={enable_json_repair}
-										onCheckedChange={(checked) =>
-											updateSetting("enable_json_repair", checked)
-										}
-									/>
-								</div>
+
 							</div>
 						</div>
 					</div>

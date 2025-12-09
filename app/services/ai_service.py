@@ -1,9 +1,9 @@
-import json
 import logging
-import re
-from typing import TypedDict
+import json
+from typing import TypedDict, Any
 
 import litellm
+import json_repair
 from litellm import acompletion
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -36,7 +36,6 @@ class AIConfig(TypedDict):
     temperature: float
     max_tokens: int
     timeout: int
-    enable_json_repair: bool
     enable_multi_sample: bool
     multi_sample_threshold: float
     reasoning_effort: str
@@ -50,7 +49,6 @@ DEFAULT_CONFIG: AIConfig = {
     "temperature": 0.1,
     "max_tokens": 1000,
     "timeout": 30,
-    "enable_json_repair": True,
     "enable_multi_sample": False,
     "multi_sample_threshold": 0.6,
     "reasoning_effort": "low",
@@ -83,7 +81,6 @@ class AIService:
                 "temperature": get("ai_temperature", DEFAULT_CONFIG["temperature"], float),
                 "max_tokens": get("ai_max_tokens", DEFAULT_CONFIG["max_tokens"], int),
                 "timeout": get("ai_timeout", DEFAULT_CONFIG["timeout"], int),
-                "enable_json_repair": get("enable_json_repair", "true") == "true",
                 "enable_multi_sample": get("enable_multi_sample", "false") == "true",
                 "multi_sample_threshold": get("multi_sample_confidence_threshold", 0.6, float),
                 "reasoning_effort": get("ai_reasoning_effort", "low"),
@@ -94,11 +91,20 @@ class AIService:
 
     @staticmethod
     def parse_response(text: str) -> AIExtractionResponse:
-        """Extract and parse JSON from response."""
-        # Try finding JSON block
-        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL) or re.search(r"\{.*\}", text, re.DOTALL)
-        json_str = match.group(1 if match.lastindex else 0) if match else text
-        return AIExtractionResponse(**json.loads(json_str))
+        """Extract and parse JSON from response using json_repair."""
+        # json_repair handles markdown blocks, trailing commas, and more automatically
+        data = json_repair.loads(text)
+        if isinstance(data, list):
+             # Handle rare case where list is returned instead of dict
+             if data and isinstance(data[0], dict):
+                 data = data[0]
+             else:
+                 raise ValueError("Parsed JSON is a list, expected dictionary")
+        
+        if not isinstance(data, dict):
+             raise ValueError(f"Parsed JSON is not a dictionary: {type(data)}")
+
+        return AIExtractionResponse(**data)
 
     @staticmethod
     async def call_llm(messages: list, config: AIConfig, is_repair: bool = False) -> str:
@@ -127,12 +133,23 @@ class AIService:
         elif config["provider"] == "openai" and not is_repair:
             kwargs["response_format"] = AIExtractionResponse
             kwargs["reasoning_effort"] = config["reasoning_effort"]
-        elif config["provider"]:
-            # Fallback for other providers (e.g. x-ai, anthropic) if not detected by model prefix
+        elif not is_repair:
+             # Universal attempt to enable JSON mode for other providers
+             kwargs["response_format"] = {"type": "json_object"}
+        
+        if config["provider"]:
             kwargs["custom_llm_provider"] = config["provider"]
 
-        response = await acompletion(**kwargs)
-        return response.choices[0].message.content
+        try:
+            response = await acompletion(**kwargs)
+            content = response.choices[0].message.content
+            if not content:
+                logger.warning(f"LLM returned empty content. Model: {model}")
+                return ""
+            return content
+        except Exception as e:
+            logger.error(f"LLM call failed: {e}")
+            raise
 
     @classmethod
     async def analyze_image(
@@ -165,28 +182,34 @@ class AIService:
                 return await cls.call_llm(messages, config)
 
             response_text = await protected_call()
+            logger.debug(f"Raw AI Response: {response_text}")
 
-            # Parsing & Repair
-            repair_used = False
             try:
                 result = cls.parse_response(response_text)
-            except (ValidationError, json.JSONDecodeError):
-                if not config["enable_json_repair"]:
-                    raise
-                logger.info("Reparing JSON...")
+                return result, AIExtractionMetadata(
+                    model_name=config["model"],
+                    provider=config["provider"],
+                    prompt_version=PROMPT_VERSION,
+                    repair_used=False,
+                    multi_sample=False,
+                    sample_count=1,
+                )
+            except Exception as e:
+                logger.info(f"Parsing failed: {e}. Attempting LLM repair...")
+                
+                # Unconditional LLM repair fallback
                 repair_msg = [{"role": "user", "content": get_repair_prompt(response_text)}]
                 repaired = await cls.call_llm(repair_msg, config, is_repair=True)
+                
                 result = cls.parse_response(repaired)
-                repair_used = True
-
-            return result, AIExtractionMetadata(
-                model_name=config["model"],
-                provider=config["provider"],
-                prompt_version=PROMPT_VERSION,
-                repair_used=repair_used,
-                multi_sample=False,
-                sample_count=1,
-            )
+                return result, AIExtractionMetadata(
+                    model_name=config["model"],
+                    provider=config["provider"],
+                    prompt_version=PROMPT_VERSION,
+                    repair_used=True,
+                    multi_sample=False,
+                    sample_count=1,
+                )
 
         except Exception as e:
             logger.error(f"Analysis failed: {e}")
