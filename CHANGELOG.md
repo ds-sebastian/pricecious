@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-12-10
+
+### Added
+- **Scheduler:** Implemented scheduled data refresh job with configurable interval.
+- **Robustness:** Added retry logic in `AIService` to handle empty LLM responses gracefully.
+- **Tests:** Added integration tests for scheduler startup and job registration.
+
+### Fixed
+- **Scraper:** Enhanced scraper to exit early on navigation failures and reset browser state.
+- **Hyperscaling:** Fixed heartbeat mechanism for `scheduled_refresh`.
+- **AI:** Automatically infer Ollama provider from API base URL.
+- **AI:** Enforced `json_repair` usage for more reliable JSON parsing.
+
+### Refactor
+- **Lifecycle:** Enhanced application lifespan management with robust error handling and graceful shutdown.
+
 ## [0.2.0] - 2025-12-07
 
 ### Added
