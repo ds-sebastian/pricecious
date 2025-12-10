@@ -95,6 +95,18 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 				>
 					{stockStatus.label}
 				</div>
+
+
+				{/* Error Badge */}
+				{item.last_error && (
+					<div
+						className="absolute left-3 top-3 flex items-center gap-1 rounded-full border border-red-400/50 bg-red-500/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm backdrop-blur-md"
+						title={item.last_error}
+					>
+						<AlertTriangle className="h-3 w-3" />
+						Error
+					</div>
+				)}
 			</button>
 
 			<CardContent className="p-5 relative">
@@ -229,13 +241,12 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 								</span>
 							</div>
 						)}
-						{item.last_error && (
-							<div
-								className="flex items-center gap-1 text-destructive"
-								title={item.last_error}
-							>
-								<AlertTriangle className="h-3 w-3" />
-								<span className="max-w-[100px] truncate">Error</span>
+						{item.next_check && (
+							<div className="flex items-center gap-1.5 border-l pl-3 border-zinc-200 dark:border-zinc-700">
+								<span>
+									Next: {new Date(item.next_check).toLocaleString()} (
+									{item.interval}m)
+								</span>
 							</div>
 						)}
 					</div>
@@ -274,6 +285,6 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 					</div>
 				</div>
 			</CardFooter>
-		</Card>
+		</Card >
 	);
 }
