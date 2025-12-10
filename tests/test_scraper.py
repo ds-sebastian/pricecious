@@ -177,3 +177,76 @@ class TestScraperErrorHandling:
     #     """Test that scraper attempts to reconnect if disconnected."""
     #     # TODO: Fix flaky test related to classmethod mocking
     #     pass
+
+
+class TestScraperConnectionLogic:
+    """Test the smart WebSocket URL resolution logic."""
+
+    def test_resolve_ws_url_success(self):
+        """Test successful discovery of Chrome WebSocket URL."""
+        with patch("app.services.scraper_service.requests.get") as mock_get:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"webSocketDebuggerUrl": "ws://chrome:9222/devtools/browser/123-uuid"}
+            mock_get.return_value = mock_response
+
+            base_url = "ws://chrome:9222"
+            resolved = ScraperService._resolve_ws_url(base_url)
+
+            assert resolved == "ws://chrome:9222/devtools/browser/123-uuid"
+            mock_get.assert_called_once()
+            args, _ = mock_get.call_args
+            assert args[0] == "http://chrome:9222/json/version"
+
+    def test_resolve_ws_url_fallback_connection_error(self):
+        """Test fallback when connection fails."""
+        with patch("app.services.scraper_service.requests.get") as mock_get:
+            mock_get.side_effect = Exception("Connection refused")
+
+            base_url = "ws://browserless:3000"
+            resolved = ScraperService._resolve_ws_url(base_url)
+
+            # Should fallback to original URL
+            assert resolved == base_url
+
+    def test_resolve_ws_url_fallback_invalid_json(self):
+        """Test fallback when response is not as expected."""
+        with patch("app.services.scraper_service.requests.get") as mock_get:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"other_field": "some_value"}
+            mock_get.return_value = mock_response
+
+            base_url = "ws://chrome:9222"
+            resolved = ScraperService._resolve_ws_url(base_url)
+
+            assert resolved == base_url
+
+    @pytest.mark.asyncio
+    async def test_initialize_uses_resolved_url(self):
+        """Test that initialize uses the resolved URL."""
+        # Clean up any existing state
+        ScraperService._browser = None
+        ScraperService._playwright = None
+
+        with patch("app.services.scraper_service.async_playwright") as mock_pw_cls:
+            # Mock resolving logic
+            with patch.object(ScraperService, "_resolve_ws_url") as mock_resolve:
+                mock_resolve.return_value = "ws://resolved-url:1234"
+
+                # Mock Playwright stuff
+                mock_pw_obj = AsyncMock()
+                mock_browser = AsyncMock()
+                mock_pw_context = MagicMock()
+                mock_pw_context.start = AsyncMock(return_value=mock_pw_obj)
+                mock_pw_cls.return_value = mock_pw_context
+
+                mock_pw_obj.chromium.connect_over_cdp.return_value = mock_browser
+
+                await ScraperService.initialize()
+
+                # Verify resolve was called
+                mock_resolve.assert_called_once()
+
+                # Verify connect_over_cdp was called with the RESOLVED url
+                mock_pw_obj.chromium.connect_over_cdp.assert_awaited_with("ws://resolved-url:1234")

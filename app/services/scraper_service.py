@@ -4,7 +4,9 @@ import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import urlparse
 
+import requests
 from playwright.async_api import Browser, Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
@@ -32,7 +34,52 @@ class ScraperService:
             if not cls._browser:
                 logger.info("Initializing ScraperService shared browser...")
                 cls._playwright = await async_playwright().start()
-                cls._browser = await cls._playwright.chromium.connect_over_cdp(BROWSERLESS_URL)
+
+                # Resolve the correct WebSocket URL (handles generic Chrome vs Browserless)
+                ws_url = cls._resolve_ws_url(BROWSERLESS_URL)
+                logger.info(f"Connecting to Chrome at: {ws_url}")
+
+                cls._browser = await cls._playwright.chromium.connect_over_cdp(ws_url)
+
+    @staticmethod
+    def _resolve_ws_url(base_url: str) -> str:
+        """
+        Attempt to resolve the full WebSocket URL from a Chrome instance.
+
+        Generic headless Chrome requires connecting to a specific WebSocket ID
+        (e.g., ws://host:port/devtools/browser/<uuid>), which can be discovered
+        via http://host:port/json/version.
+
+        Browserless and some other providers accept connection directly at the base URL.
+
+        Strategy:
+        1. Try to fetch /json/version from the host.
+        2. If successful and returns 'webSocketDebuggerUrl', use that.
+        3. Fallback to the original URL.
+        """
+        try:
+            parsed = urlparse(base_url)
+            # Construct HTTP URL for the version endpoint
+            # Assume http unless scheme is clearly wss -> https (which implies secure)
+            scheme = "https" if parsed.scheme == "wss" else "http"
+            # Use the netloc (host:port) from the WS URL
+            version_url = f"{scheme}://{parsed.netloc}/json/version"
+
+            logger.debug(f"Attempting to discover Chrome WebSocket URL from: {version_url}")
+            resp = requests.get(version_url, timeout=2.0)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                if "webSocketDebuggerUrl" in data:
+                    resolved = data["webSocketDebuggerUrl"]
+                    logger.info("Discovered dynamic Chrome WebSocket URL")
+                    return resolved
+        except Exception as e:
+            # If discovery fails (timeout, connection refused, not a JSON response),
+            # it might be Browserless or just not ready. Fallback to original.
+            logger.debug(f"Chrome URL discovery failed ({e}), falling back to direct connection.")
+
+        return base_url
 
     @classmethod
     async def shutdown(cls):
