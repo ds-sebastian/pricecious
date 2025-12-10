@@ -100,7 +100,8 @@ class AIService:
                 raise ValueError(f"Parsed JSON is a list, expected dictionary. Content snippet: {str(data)[:200]}")
 
         if not isinstance(data, dict):
-            # Include snippet of what was actually parsed (or the original text if parsing failed to produce a structure)
+            # Include snippet of what was actually parsed (or the original text
+            # if parsing failed to produce a structure)
             snippet = str(data)[:200] if data else text[:200]
             raise ValueError(f"Parsed JSON is not a dictionary: {type(data)}. Content snippet: {snippet}")
 

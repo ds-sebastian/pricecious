@@ -27,31 +27,34 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting smart scheduler (Heartbeat: 1 minute)")
+    try:
+        logger.info("Starting smart scheduler (Heartbeat: 1 minute)")
 
-    # Initialize services
-    await ScraperService.initialize()
+        # Initialize services
+        await ScraperService.initialize()
 
-    # Schedule forecasting dynamically
-    async with database.AsyncSessionLocal() as db:
-        forecast_hours = int(await SettingsService.get_setting_value(db, "forecasting_interval_hours", "24"))
+        # Schedule forecasting dynamically
+        async with database.AsyncSessionLocal() as db:
+            forecast_hours = int(await SettingsService.get_setting_value(db, "forecasting_interval_hours", "24"))
 
-    scheduler.add_job(
-        scheduled_forecasting, IntervalTrigger(hours=forecast_hours), id="forecasting_job", replace_existing=True
-    )
+        scheduler.add_job(
+            scheduled_forecasting, IntervalTrigger(hours=forecast_hours), id="forecasting_job", replace_existing=True
+        )
 
-    scheduler.start()
-    logger.info("Application started")
-
-    yield
-
-    logger.info("Shutting down scheduler...")
-    scheduler.shutdown(wait=True)
-
-    # Shutdown services
-    await ScraperService.shutdown()
-
-    logger.info("Application shutdown complete")
+        scheduler.start()
+        logger.info("Application started")
+        yield
+    except Exception:
+        logger.exception("Application startup failed")
+        raise
+    finally:
+        logger.info("Shutting down...")
+        try:
+            scheduler.shutdown(wait=True)
+        except Exception:
+            pass  # Scheduler might not be running
+        await ScraperService.shutdown()
+        logger.info("Application shutdown complete")
 
 
 app = FastAPI(title="Pricecious API", version="0.1.0", lifespan=lifespan)
