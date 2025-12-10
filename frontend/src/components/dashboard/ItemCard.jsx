@@ -241,14 +241,7 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 								</span>
 							</div>
 						)}
-						{item.next_check && (
-							<div className="flex items-center gap-1.5 border-l pl-3 border-zinc-200 dark:border-zinc-700">
-								<span>
-									Next: {new Date(item.next_check).toLocaleString()} (
-									{item.interval}m)
-								</span>
-							</div>
-						)}
+
 					</div>
 
 					<div className="flex gap-1">
