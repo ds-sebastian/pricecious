@@ -148,6 +148,17 @@ class AIService:
         try:
             response = await acompletion(**kwargs)
             content = response.choices[0].message.content
+
+            # Robustness: If content is empty and we asked for JSON format, try again without it
+            # Some models (e.g. nova-2-lite) fail to output anything when forced into json mode
+            has_json_format = kwargs.get("response_format") or kwargs.get("format") == "json"
+            if not content and not is_repair and has_json_format:
+                logger.warning(f"LLM returned empty content with JSON format. Retrying raw. Model: {model}")
+                kwargs.pop("response_format", None)
+                kwargs.pop("format", None)
+                response = await acompletion(**kwargs)
+                content = response.choices[0].message.content
+
             if not content:
                 error_msg = f"LLM returned empty content. Model: {model}"
                 logger.warning(error_msg)
