@@ -11,7 +11,9 @@ export function useSettings() {
 		queryFn: async () => {
 			const response = await axios.get(`${API_URL}/settings`);
 			const settingsMap = {};
-			response.data.forEach((s) => (settingsMap[s.key] = s.value));
+			for (const s of response.data) {
+				settingsMap[s.key] = s.value;
+			}
 			return settingsMap;
 		},
 	});

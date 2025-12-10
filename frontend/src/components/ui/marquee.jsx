@@ -6,6 +6,7 @@ export function Marquee({ text, className }) {
 	const containerRef = useRef(null);
 	const textRef = useRef(null);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: text is needed to trigger recalculation
 	useEffect(() => {
 		const checkOverflow = () => {
 			if (containerRef.current && textRef.current) {

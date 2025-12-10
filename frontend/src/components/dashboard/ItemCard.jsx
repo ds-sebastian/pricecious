@@ -39,9 +39,15 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 
 	return (
 		<Card className="group overflow-hidden transition-all duration-300 hover:shadow-md border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-			<div
-				className="relative aspect-video overflow-hidden bg-zinc-100 dark:bg-zinc-950 cursor-zoom-in group/image"
+			<button
+				type="button"
+				className="relative aspect-video w-full overflow-hidden bg-zinc-100 dark:bg-zinc-950 cursor-zoom-in group/image text-left p-0 border-0"
 				onClick={() => onZoom(item.screenshot_url)}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						onZoom(item.screenshot_url);
+					}
+				}}
 			>
 				{item.screenshot_url ? (
 					<>
@@ -89,7 +95,7 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 				>
 					{stockStatus.label}
 				</div>
-			</div>
+			</button>
 
 			<CardContent className="p-5 relative">
 				<div className="mb-4 flex items-start justify-between">

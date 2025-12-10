@@ -43,7 +43,6 @@ export function AIConfig() {
 		settings.confidence_threshold_stock || "0.5",
 	);
 
-
 	const price_outlier_threshold_enabled =
 		settings.price_outlier_threshold_enabled === "true";
 	const price_outlier_threshold_percent = Number.parseFloat(
@@ -257,7 +256,6 @@ export function AIConfig() {
 										}
 									/>
 								</div>
-
 							</div>
 						</div>
 					</div>

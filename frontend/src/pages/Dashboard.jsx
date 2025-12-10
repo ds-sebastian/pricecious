@@ -178,9 +178,11 @@ export default function Dashboard() {
 
 			{/* Image Zoom Modal */}
 			{zoomedImage && (
-				<div
-					className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+				<button
+					type="button"
+					className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 w-full h-full border-0 cursor-default"
 					onClick={() => setZoomedImage(null)}
+					onKeyDown={(e) => e.key === "Escape" && setZoomedImage(null)}
 				>
 					<div className="relative max-h-full max-w-full">
 						<img
@@ -197,7 +199,7 @@ export default function Dashboard() {
 							<X className="h-4 w-4" />
 						</Button>
 					</div>
-				</div>
+				</button>
 			)}
 		</div>
 	);

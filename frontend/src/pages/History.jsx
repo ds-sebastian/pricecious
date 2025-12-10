@@ -52,20 +52,32 @@ export default function History() {
 	const [filterInStock, setFilterInStock] = useState("all");
 	const [filterMinConfidence, setFilterMinConfidence] = useState("");
 
-
 	useEffect(() => {
 		fetchItems();
 	}, []);
 
 	useEffect(() => {
 		if (selectedItemId) {
-			fetchHistory(selectedItemId, page);
+			fetchHistory(
+				selectedItemId,
+				page,
+				filterMinPrice,
+				filterMaxPrice,
+				filterInStock,
+				filterMinConfidence,
+			);
 		} else {
 			setHistoryData([]);
 			setTotalRecords(0);
 		}
-	}, [selectedItemId, page, filterMinPrice, filterMaxPrice, filterInStock, filterMinConfidence]);
-
+	}, [
+		selectedItemId,
+		page,
+		filterMinPrice,
+		filterMaxPrice,
+		filterInStock,
+		filterMinConfidence,
+	]);
 
 	const fetchItems = async () => {
 		try {
@@ -79,19 +91,27 @@ export default function History() {
 		}
 	};
 
-	const fetchHistory = async (itemId, pageNum) => {
+	const fetchHistory = async (
+		itemId,
+		pageNum,
+		minPrice,
+		maxPrice,
+		inStock,
+		minConfidence,
+	) => {
 		setLoading(true);
 		try {
 			const queryParams = new URLSearchParams({
 				page: pageNum,
 				size: pageSize,
-				sort: "desc"
+				sort: "desc",
 			});
 
-			if (filterMinPrice) queryParams.append("min_price", filterMinPrice);
-			if (filterMaxPrice) queryParams.append("max_price", filterMaxPrice);
-			if (filterInStock !== "all") queryParams.append("in_stock", filterInStock === "true");
-			if (filterMinConfidence) queryParams.append("min_confidence", Number(filterMinConfidence) / 100);
+			if (minPrice) queryParams.append("min_price", minPrice);
+			if (maxPrice) queryParams.append("max_price", maxPrice);
+			if (inStock !== "all") queryParams.append("in_stock", inStock === "true");
+			if (minConfidence)
+				queryParams.append("min_confidence", Number(minConfidence) / 100);
 
 			const res = await fetch(
 				`/api/items/${itemId}/history?${queryParams.toString()}`,
@@ -120,7 +140,14 @@ export default function History() {
 			if (!res.ok) throw new Error("Failed to delete record");
 
 			toast.success("Record deleted");
-			fetchHistory(selectedItemId, page); // Refresh
+			fetchHistory(
+				selectedItemId,
+				page,
+				filterMinPrice,
+				filterMaxPrice,
+				filterInStock,
+				filterMinConfidence,
+			); // Refresh
 		} catch (error) {
 			toast.error("Failed to delete");
 			console.error(error);
@@ -149,7 +176,14 @@ export default function History() {
 
 			toast.success("Record updated");
 			setEditDialogOpen(false);
-			fetchHistory(selectedItemId, page);
+			fetchHistory(
+				selectedItemId,
+				page,
+				filterMinPrice,
+				filterMaxPrice,
+				filterInStock,
+				filterMinConfidence,
+			);
 		} catch (error) {
 			toast.error("Update failed");
 			console.error(error);
@@ -207,7 +241,10 @@ export default function History() {
 										placeholder="Min"
 										className="w-24"
 										value={filterMinPrice}
-										onChange={(e) => { setFilterMinPrice(e.target.value); setPage(1); }}
+										onChange={(e) => {
+											setFilterMinPrice(e.target.value);
+											setPage(1);
+										}}
 									/>
 								</div>
 								<div className="space-y-1">
@@ -217,14 +254,20 @@ export default function History() {
 										placeholder="Max"
 										className="w-24"
 										value={filterMaxPrice}
-										onChange={(e) => { setFilterMaxPrice(e.target.value); setPage(1); }}
+										onChange={(e) => {
+											setFilterMaxPrice(e.target.value);
+											setPage(1);
+										}}
 									/>
 								</div>
 								<div className="space-y-1">
 									<Label>Stock Status</Label>
 									<Select
 										value={filterInStock}
-										onValueChange={(val) => { setFilterInStock(val); setPage(1); }}
+										onValueChange={(val) => {
+											setFilterInStock(val);
+											setPage(1);
+										}}
 									>
 										<SelectTrigger className="w-32">
 											<SelectValue />
@@ -243,7 +286,10 @@ export default function History() {
 										placeholder="0-100"
 										className="w-32"
 										value={filterMinConfidence}
-										onChange={(e) => { setFilterMinConfidence(e.target.value); setPage(1); }}
+										onChange={(e) => {
+											setFilterMinConfidence(e.target.value);
+											setPage(1);
+										}}
 										min="0"
 										max="100"
 									/>
@@ -265,7 +311,6 @@ export default function History() {
 							</div>
 
 							<div className="rounded-md border">
-
 								<Table>
 									<TableHeader>
 										<TableRow>
@@ -304,10 +349,11 @@ export default function History() {
 													<TableCell>${record.price.toFixed(2)}</TableCell>
 													<TableCell>
 														<span
-															className={`px-2 py-1 rounded text-xs ${record.in_stock
-																? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-																: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
-																}`}
+															className={`px-2 py-1 rounded text-xs ${
+																record.in_stock
+																	? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+																	: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
+															}`}
 														>
 															{record.in_stock ? "In Stock" : "Out of Stock"}
 														</span>
@@ -319,8 +365,8 @@ export default function History() {
 														/{" "}
 														{record.in_stock_confidence
 															? `${(record.in_stock_confidence * 100).toFixed(
-																0,
-															)}%`
+																	0,
+																)}%`
 															: "-"}
 													</TableCell>
 													<TableCell className="text-right gap-2">

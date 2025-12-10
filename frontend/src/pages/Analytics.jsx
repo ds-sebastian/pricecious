@@ -47,9 +47,19 @@ export default function Analytics() {
 
 	useEffect(() => {
 		if (mode === "single" && selectedItemId) {
-			fetchSingleAnalytics(selectedItemId);
+			fetchSingleAnalytics(
+				selectedItemId,
+				timeWindowIds,
+				filterOutliers,
+				stdDevThreshold,
+			);
 		} else if (mode === "tag" && selectedTag) {
-			fetchTagAnalytics(selectedTag);
+			fetchTagAnalytics(
+				selectedTag,
+				timeWindowIds,
+				filterOutliers,
+				stdDevThreshold,
+			);
 		}
 	}, [
 		selectedItemId,
@@ -67,11 +77,13 @@ export default function Analytics() {
 
 			// Extract unique tags
 			const allTags = new Set();
-			response.data.forEach((item) => {
+			for (const item of response.data) {
 				if (item.tags) {
-					item.tags.split(",").forEach((tag) => allTags.add(tag.trim()));
+					for (const tag of item.tags.split(",")) {
+						allTags.add(tag.trim());
+					}
 				}
-			});
+			}
 			setTags(Array.from(allTags));
 
 			if (response.data.length > 0) {
@@ -87,12 +99,12 @@ export default function Analytics() {
 		}
 	};
 
-	const fetchSingleAnalytics = async (itemId) => {
+	const fetchSingleAnalytics = async (itemId, days, outliers, threshold) => {
 		setLoading(true);
 		try {
-			let url = `/api/items/${itemId}/analytics?days=${timeWindowIds}`;
-			if (filterOutliers) {
-				url += `&std_dev_threshold=${stdDevThreshold}`;
+			let url = `/api/items/${itemId}/analytics?days=${days}`;
+			if (outliers) {
+				url += `&std_dev_threshold=${threshold}`;
 			}
 			const response = await axios.get(url);
 			setAnalyticsData(response.data);
@@ -100,15 +112,17 @@ export default function Analytics() {
 			// Setup data for PriceChart
 			// Setup data for PriceChart
 			let historyData = response.data.history;
-			let series = [{ key: "price", name: "Price", color: "hsl(var(--primary))" }];
+			const series = [
+				{ key: "price", name: "Price", color: "hsl(var(--primary))" },
+			];
 
 			if (response.data.forecast && response.data.forecast.length > 0) {
 				// We need to merge or append forecast data
-				// Current PriceChart expects a single array 'data'. 
+				// Current PriceChart expects a single array 'data'.
 				// The forecast data has 'forecast_date' instead of 'timestamp'.
 				// And 'predicted_price', 'yhat_lower', 'yhat_upper'.
 
-				const forecastPoints = response.data.forecast.map(f => ({
+				const forecastPoints = response.data.forecast.map((f) => ({
 					timestamp: f.forecast_date,
 					predicted_price: f.predicted_price,
 					yhat_lower: f.yhat_lower,
@@ -121,7 +135,7 @@ export default function Analytics() {
 					key: "predicted_price",
 					name: "Forecast",
 					color: "#a855f7",
-					strokeDasharray: "5 5"
+					strokeDasharray: "5 5",
 				});
 			}
 
@@ -134,7 +148,7 @@ export default function Analytics() {
 		}
 	};
 
-	const fetchTagAnalytics = async (tag) => {
+	const fetchTagAnalytics = async (tag, days, outliers, threshold) => {
 		setLoading(true);
 		try {
 			// Find all items with this tag
@@ -153,9 +167,9 @@ export default function Analytics() {
 			}
 
 			const promises = taggedItems.map((item) => {
-				let url = `/api/items/${item.id}/analytics?days=${timeWindowIds}`;
-				if (filterOutliers) {
-					url += `&std_dev_threshold=${stdDevThreshold}`;
+				let url = `/api/items/${item.id}/analytics?days=${days}`;
+				if (outliers) {
+					url += `&std_dev_threshold=${threshold}`;
 				}
 				return axios.get(url).then((res) => ({
 					itemId: item.id,
@@ -186,21 +200,23 @@ export default function Analytics() {
 				"#f97316",
 			];
 
-			results.forEach((res, index) => {
+			let index = 0;
+			for (const res of results) {
 				const key = `price_${res.itemId}`;
 				series.push({
 					key: key,
 					name: res.name,
 					color: COLORS[index % COLORS.length],
 				});
+				index++;
 
-				res.data.forEach((point) => {
+				for (const point of res.data) {
 					mergedData.push({
 						timestamp: point.timestamp,
 						[key]: point.price,
 					});
-				});
-			});
+				}
+			}
 
 			setMultiSeriesData(mergedData);
 			setSeriesConfig(series);
@@ -373,7 +389,9 @@ export default function Analytics() {
 							) : (
 								<PriceChart
 									data={multiSeriesData}
-									series={seriesConfig.filter(s => showForecast || s.key !== "predicted_price")}
+									series={seriesConfig.filter(
+										(s) => showForecast || s.key !== "predicted_price",
+									)}
 									annotations={analyticsData?.annotations}
 								/>
 							)}
@@ -397,10 +415,11 @@ export default function Analytics() {
 									</div>
 									{analyticsData.stats.price_change_24h !== 0 && (
 										<p
-											className={`text-xs ${analyticsData.stats.price_change_24h < 0
-												? "text-green-500"
-												: "text-red-500"
-												}`}
+											className={`text-xs ${
+												analyticsData.stats.price_change_24h < 0
+													? "text-green-500"
+													: "text-red-500"
+											}`}
 										>
 											{analyticsData.stats.price_change_24h > 0 ? "+" : ""}
 											{analyticsData.stats.price_change_24h}% (24h)

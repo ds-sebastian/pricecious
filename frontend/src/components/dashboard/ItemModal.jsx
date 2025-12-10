@@ -75,7 +75,7 @@ export function ItemModal({ item, onClose, onSaved, open }) {
 				in_stock: "unknown",
 			});
 		}
-	}, [item, open]);
+	}, [item]);
 
 	useEffect(() => {
 		if (open) {

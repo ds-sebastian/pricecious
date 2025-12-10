@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import {
+	Area,
 	CartesianGrid,
 	Label,
 	Legend,
@@ -11,7 +12,6 @@ import {
 	Tooltip,
 	XAxis,
 	YAxis,
-	Area,
 } from "recharts";
 
 const COLORS = [
@@ -87,8 +87,12 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 					<p className="font-medium text-foreground">
 						{new Date(label).toLocaleString()}
 					</p>
-					{payload.map((entry, index) => (
-						<p key={index} className="text-sm" style={{ color: entry.color }}>
+					{payload.map((entry) => (
+						<p
+							key={entry.name || entry.dataKey}
+							className="text-sm"
+							style={{ color: entry.color }}
+						>
 							{entry.name}: ${entry.value?.toFixed(2)}
 						</p>
 					))}
@@ -138,9 +142,9 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 					<Legend />
 
 					{/* Render Out of Stock Areas */}
-					{outOfStockIntervals.map((interval, index) => (
+					{outOfStockIntervals.map((interval) => (
 						<ReferenceArea
-							key={`oos-${index}`}
+							key={`oos-${interval.x1}`}
 							x1={interval.x1}
 							x2={interval.x2}
 							fill="#ef4444"
@@ -148,12 +152,11 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 							strokeOpacity={0}
 						>
 							{/* Only label the first major one to avoid clutter? Or none. */}
-
 						</ReferenceArea>
 					))}
 
 					{/* Forecast Confidence Interval */}
-					{series.find(s => s.key === "predicted_price") && (
+					{series.find((s) => s.key === "predicted_price") && (
 						<Area
 							type="monotone"
 							dataKey="yhat_upper"
@@ -163,7 +166,7 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 							connectNulls
 						/>
 					)}
-					{series.find(s => s.key === "predicted_price") && (
+					{series.find((s) => s.key === "predicted_price") && (
 						<Area
 							type="monotone"
 							dataKey="yhat_lower"
@@ -183,14 +186,18 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 							stroke={s.color || COLORS[index % COLORS.length]}
 							strokeWidth={2}
 							strokeDasharray={s.strokeDasharray}
-							dot={s.key === "predicted_price" ? false : { r: 4, fill: "hsl(var(--background))", strokeWidth: 2 }}
+							dot={
+								s.key === "predicted_price"
+									? false
+									: { r: 4, fill: "hsl(var(--background))", strokeWidth: 2 }
+							}
 							activeDot={{ r: 6 }}
 							connectNulls
 						/>
 					))}
 					{/* Annotations */}
 					{series.length === 1 &&
-						annotations?.map((note, index) => {
+						annotations?.map((note) => {
 							let color = "#ef4444";
 							if (note.type === "min") color = "#22c55e"; // Green
 							if (note.type === "max") color = "#ef4444"; // Red
@@ -199,7 +206,7 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 
 							return (
 								<ReferenceDot
-									key={index}
+									key={`${note.type}-${note.timestamp}`}
 									x={note.timestamp}
 									y={note.value}
 									r={6}
@@ -219,6 +226,6 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 						})}
 				</LineChart>
 			</ResponsiveContainer>
-		</div >
+		</div>
 	);
 }
