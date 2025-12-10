@@ -224,7 +224,7 @@ async def _execute_check(item_id: int):
 
 async def scheduled_refresh():
     """Periodic task to check for items due for refresh."""
-    logger.info("Heartbeat: Checking for items due for refresh")
+    logger.debug("Heartbeat: Checking for items due for refresh")
 
     try:
         # Fetch due items
