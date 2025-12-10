@@ -13,7 +13,7 @@ from slowapi.errors import RateLimitExceeded
 from app import database
 from app.limiter import limiter
 from app.routers import items, jobs, notifications, settings
-from app.services.scheduler_service import scheduled_forecasting, scheduler
+from app.services.scheduler_service import scheduled_forecasting, scheduled_refresh, scheduler
 from app.services.scraper_service import ScraperService
 from app.services.settings_service import SettingsService
 
@@ -36,9 +36,14 @@ async def lifespan(app: FastAPI):
         # Schedule forecasting dynamically
         async with database.AsyncSessionLocal() as db:
             forecast_hours = int(await SettingsService.get_setting_value(db, "forecasting_interval_hours", "24"))
+            refresh_interval = int(await SettingsService.get_setting_value(db, "refresh_interval_minutes", "60"))
 
         scheduler.add_job(
             scheduled_forecasting, IntervalTrigger(hours=forecast_hours), id="forecasting_job", replace_existing=True
+        )
+
+        scheduler.add_job(
+            scheduled_refresh, IntervalTrigger(minutes=refresh_interval), id="refresh_job", replace_existing=True
         )
 
         scheduler.start()
