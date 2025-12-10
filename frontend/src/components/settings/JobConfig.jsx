@@ -92,9 +92,9 @@ export function JobConfig() {
 			</CardHeader>
 			<CardContent className="space-y-4">
 				<div className="space-y-2">
-					<Label>Checker Interval (Minutes)</Label>
+					<Label>Global Default Refresh Interval (Minutes)</Label>
 					<p className="text-sm text-muted-foreground">
-						How often to check prices (defaults if not set per item).
+						Default refresh rate for items that don't have a specific interval or profile assigned.
 					</p>
 					<Input
 						type="number"

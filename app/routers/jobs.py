@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import database, models, schemas
 from app.limiter import limiter
-from app.services.scheduler_service import process_item_check, scheduled_forecasting, scheduled_refresh, scheduler
+from app.services.scheduler_service import process_item_check, scheduled_forecasting, scheduler
 from app.services.settings_service import SettingsService
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -47,12 +47,8 @@ async def update_job_config(config: schemas.SettingsUpdate, db: AsyncSession = D
     await SettingsService.update_setting(db, config)
 
     if config.key == "refresh_interval_minutes":
-        try:
-            scheduler.reschedule_job("refresh_job", trigger=IntervalTrigger(minutes=value))
-        except Exception:
-            scheduler.add_job(
-                scheduled_refresh, IntervalTrigger(minutes=value), id="refresh_job", replace_existing=True
-            )
+        # We no longer reschedule the heartbeat job as it runs every minute
+        pass
 
     elif config.key == "forecasting_interval_hours":
         try:

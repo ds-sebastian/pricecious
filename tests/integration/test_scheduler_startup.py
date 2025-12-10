@@ -15,8 +15,8 @@ async def test_scheduler_startup():
 
     # Mock SettingsService to avoid DB calls
     with patch("app.main.SettingsService") as mock_settings:
-        # returns string "24" for forecasting, "60" for refresh
-        mock_settings.get_setting_value = AsyncMock(side_effect=["24", "60"])
+        # returns string "24" for forecasting. "refresh_interval_minutes" is no longer fetched in main
+        mock_settings.get_setting_value = AsyncMock(side_effect=["24"])
 
         async with lifespan(app):
             # 1. Verify Scheduler is running
@@ -30,5 +30,5 @@ async def test_scheduler_startup():
             assert job_forecasting is not None, "Forecasting job should be scheduled"
 
             # 3. Verify Refresh Job Configuration
-            # Default is 60 minutes
-            assert job_refresh.trigger.interval.total_seconds() == 3600, "Default refresh interval should be 60 minutes"
+            # Fixed to 1 minute
+            assert job_refresh.trigger.interval.total_seconds() == 60, "Refresh job should run every 1 minute"

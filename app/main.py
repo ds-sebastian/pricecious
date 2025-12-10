@@ -36,15 +36,14 @@ async def lifespan(app: FastAPI):
         # Schedule forecasting dynamically
         async with database.AsyncSessionLocal() as db:
             forecast_hours = int(await SettingsService.get_setting_value(db, "forecasting_interval_hours", "24"))
-            refresh_interval = int(await SettingsService.get_setting_value(db, "refresh_interval_minutes", "60"))
 
         scheduler.add_job(
             scheduled_forecasting, IntervalTrigger(hours=forecast_hours), id="forecasting_job", replace_existing=True
         )
 
-        scheduler.add_job(
-            scheduled_refresh, IntervalTrigger(minutes=refresh_interval), id="refresh_job", replace_existing=True
-        )
+        # Heartbeat runs every minute to check for items due for refresh
+        # The actual refresh frequency per item is controlled by item/global settings
+        scheduler.add_job(scheduled_refresh, IntervalTrigger(minutes=1), id="refresh_job", replace_existing=True)
 
         scheduler.start()
         logger.info("Application started")
