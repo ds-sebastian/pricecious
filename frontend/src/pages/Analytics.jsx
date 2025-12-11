@@ -343,7 +343,7 @@ export default function Analytics() {
 						{mode === "single" && (
 							<div className="flex items-center justify-between">
 								<div className="flex flex-col gap-1">
-									<Label htmlFor="forecast">Show Forecast</Label>
+									<Label htmlFor="forecast">Show Forecast [BETA]</Label>
 									<span className="text-xs text-muted-foreground">
 										Show predicted future prices
 									</span>
@@ -415,11 +415,10 @@ export default function Analytics() {
 									</div>
 									{analyticsData.stats.price_change_24h !== 0 && (
 										<p
-											className={`text-xs ${
-												analyticsData.stats.price_change_24h < 0
-													? "text-green-500"
-													: "text-red-500"
-											}`}
+											className={`text-xs ${analyticsData.stats.price_change_24h < 0
+												? "text-green-500"
+												: "text-red-500"
+												}`}
 										>
 											{analyticsData.stats.price_change_24h > 0 ? "+" : ""}
 											{analyticsData.stats.price_change_24h}% (24h)
