@@ -4,6 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from http import HTTPStatus
 from urllib.parse import urlparse
 
 import requests
@@ -39,7 +40,16 @@ class ScraperService:
                 ws_url = cls._resolve_ws_url(BROWSERLESS_URL)
                 logger.info(f"Connecting to Chrome at: {ws_url}")
 
-                cls._browser = await cls._playwright.chromium.connect_over_cdp(ws_url)
+                try:
+                    cls._browser = await cls._playwright.chromium.connect_over_cdp(ws_url)
+                except Exception as e:
+                    if "500 Internal Server Error" in str(e):
+                        logger.critical(
+                            "Failed to connect to Browserless (500 Error). "
+                            "This usually indicates invalid 'launch' arguments. "
+                            "Check if 'headless: \"new\"' is supported or try removing 'launch' args."
+                        )
+                    raise
 
     @staticmethod
     def _resolve_ws_url(base_url: str) -> str:
@@ -51,14 +61,17 @@ class ScraperService:
         via http://host:port/json/version.
 
         Browserless and some other providers accept connection directly at the base URL.
-
-        Strategy:
-        1. Try to fetch /json/version from the host.
-        2. If successful and returns 'webSocketDebuggerUrl', use that.
-        3. Fallback to the original URL.
+        If the URL already points to a specific endpoint (e.g. /chromium), skip discovery.
         """
         try:
             parsed = urlparse(base_url)
+
+            # If path indicates a specific endpoint (Browserless, or specific session), use it directly.
+            # Browserless v2 uses /chromium or /chrome.
+            if parsed.path in ["/chromium", "/chrome", "/webdriver"] or parsed.path.startswith("/devtools/browser/"):
+                logger.debug(f"Targeting specific endpoint {parsed.path}, skipping discovery.")
+                return base_url
+
             # Construct HTTP URL for the version endpoint
             # Assume http unless scheme is clearly wss -> https (which implies secure)
             scheme = "https" if parsed.scheme == "wss" else "http"
@@ -68,7 +81,7 @@ class ScraperService:
             logger.debug(f"Attempting to discover Chrome WebSocket URL from: {version_url}")
             resp = requests.get(version_url, timeout=2.0)
 
-            if resp.status_code == 200:
+            if resp.status_code == HTTPStatus.OK:
                 data = resp.json()
                 if "webSocketDebuggerUrl" in data:
                     resolved = data["webSocketDebuggerUrl"]
