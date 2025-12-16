@@ -1,15 +1,10 @@
-# Release 0.2.1
+# Release 0.2.2
 
 ## Added
-- **Scheduler:** Implemented scheduled data refresh job with configurable interval.
-- **Robustness:** Added retry logic in `AIService` to handle empty LLM responses gracefully.
-- **Tests:** Added integration tests for scheduler startup and job registration.
+- **Browserless:** Improved connection reliability and support for standard Chromium instances.
+- **Forecast:** Explicitly labeled forecasting as a beta feature.
 
 ## Fixed
-- **Scraper:** Enhanced scraper to exit early on navigation failures and reset browser state.
-- **Hyperscaling:** Fixed heartbeat mechanism for `scheduled_refresh`.
-- **AI:** Automatically infer Ollama provider from API base URL.
-- **AI:** Enforced `json_repair` usage for more reliable JSON parsing.
+- **UI:** Cleaned up ItemCard by removing redundant scheduling information.
+- **Tests:** Various test suite improvements and fix for mock handling.
 
-## Refactor
-- **Lifecycle:** Enhanced application lifespan management with robust error handling and graceful shutdown.
