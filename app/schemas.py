@@ -18,6 +18,10 @@ class NotificationProfileCreate(BaseModel):
     check_interval_minutes: int = 60
 
 
+class NotificationTestRequest(BaseModel):
+    apprise_url: str
+
+
 class NotificationProfileUpdate(NotificationProfileCreate):
     pass
 

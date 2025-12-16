@@ -17,6 +17,10 @@ export const fetchAnalytics = (itemId, { days, stdDevThreshold }) => {
 
 // Query key factories for consistent cache management
 export const queryKeys = {
-    items: ["items"],
     analytics: (itemId, params) => ["analytics", itemId, params],
 };
+
+export const testNotificationProfile = (appriseUrl) =>
+    axios
+        .post(`${API_URL}/notification-profiles/test`, { apprise_url: appriseUrl })
+        .then((r) => r.data);

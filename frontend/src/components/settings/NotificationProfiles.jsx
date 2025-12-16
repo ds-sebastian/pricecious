@@ -9,7 +9,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { API_URL } from "@/lib/api";
+import { API_URL, testNotificationProfile } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
@@ -21,6 +21,7 @@ import {
 	Edit2,
 	Trash2,
 	TrendingDown,
+	Send,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -84,6 +85,24 @@ export function NotificationProfiles() {
 			toast.error("Failed to delete profile");
 		},
 	});
+
+	// - [x] Explore codebase for notification logic <!-- id: 0 -->
+	// - [x] Backend: Implement `test_notification` logic and endpoint <!-- id: 1 -->
+	// - [/] Frontend: Add "Test" button to Notification Profile UI <!-- id: 2 -->
+	// - [ ] Validate changes <!-- id: 3 -->
+	const testProfileMutation = useMutation({
+		mutationFn: testNotificationProfile,
+		onSuccess: () => toast.success("Test notification sent"),
+		onError: () => toast.error("Failed to send test notification"),
+	});
+
+	const handleTest = (url) => {
+		if (!url) {
+			toast.error("Please enter an Apprise URL first");
+			return;
+		}
+		testProfileMutation.mutate(url);
+	};
 
 	const resetForm = () => {
 		setNewProfile({
@@ -170,17 +189,29 @@ export function NotificationProfiles() {
 						</div>
 						<div className="space-y-2">
 							<Label>Apprise URL</Label>
-							<Input
-								required
-								value={newProfile.apprise_url}
-								onChange={(e) =>
-									setNewProfile({
-										...newProfile,
-										apprise_url: e.target.value,
-									})
-								}
-								placeholder="mailto://user:pass@gmail.com"
-							/>
+							<div className="flex gap-2">
+								<Input
+									required
+									value={newProfile.apprise_url}
+									onChange={(e) =>
+										setNewProfile({
+											...newProfile,
+											apprise_url: e.target.value,
+										})
+									}
+									placeholder="mailto://user:pass@gmail.com"
+								/>
+								<Button
+									type="button"
+									variant="outline"
+									size="icon"
+									onClick={() => handleTest(newProfile.apprise_url)}
+									title="Send Test Notification"
+									disabled={testProfileMutation.isPending}
+								>
+									<Send className="h-4 w-4" />
+								</Button>
+							</div>
 						</div>
 					</div>
 					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -289,6 +320,16 @@ export function NotificationProfiles() {
 												</p>
 											</div>
 											<div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+												<Button
+													variant="ghost"
+													size="icon"
+													className="h-8 w-8"
+													onClick={() => handleTest(profile.apprise_url)}
+													title="Send Test Notification"
+													disabled={testProfileMutation.isPending}
+												>
+													<Send className="h-4 w-4" />
+												</Button>
 												<Button
 													variant="ghost"
 													size="icon"

@@ -94,3 +94,11 @@ class NotificationService:
             await notification_sender.send_notification(
                 [profile["apprise_url"]], f"Stock Alert: {item_data['name']}", f"Item is now {status}"
             )
+
+    @staticmethod
+    async def test_notification(apprise_url: str):
+        await notification_sender.send_notification(
+            [apprise_url],
+            "Test Notification",
+            "This is a test notification from Pricecious.",
+        )
