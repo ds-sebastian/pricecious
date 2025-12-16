@@ -16,165 +16,93 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { API_URL } from "@/lib/api";
+import { API_URL, fetchAnalytics, fetchItems } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { PriceChart } from "../components/dashboard/PriceChart";
 
 export default function Analytics() {
-	const [items, setItems] = useState([]);
-	const [tags, setTags] = useState([]);
 	const [mode, setMode] = useState("single"); // "single" or "tag"
-
 	const [selectedItemId, setSelectedItemId] = useState(null);
 	const [selectedTag, setSelectedTag] = useState(null);
-
-	const [timeWindowIds, setTimeWindowIds] = useState("30"); // days
+	const [timeWindowDays, setTimeWindowDays] = useState("30");
 	const [stdDevThreshold, setStdDevThreshold] = useState("2.0");
-
-	const [analyticsData, setAnalyticsData] = useState(null);
-	const [multiSeriesData, setMultiSeriesData] = useState([]);
-	const [seriesConfig, setSeriesConfig] = useState([]);
-
-	const [loading, setLoading] = useState(false);
 	const [filterOutliers, setFilterOutliers] = useState(false);
-
 	const [showForecast, setShowForecast] = useState(false);
 
-	useEffect(() => {
-		fetchItems();
-	}, []);
+	// Fetch all items with React Query
+	const { data: items = [] } = useQuery({
+		queryKey: ["items"],
+		queryFn: fetchItems,
+		onSuccess: (data) => {
+			// Auto-select first item if none selected
+			if (data.length > 0 && !selectedItemId) {
+				setSelectedItemId(data[0].id.toString());
+			}
+		},
+	});
 
-	useEffect(() => {
-		if (mode === "single" && selectedItemId) {
-			fetchSingleAnalytics(
-				selectedItemId,
-				timeWindowIds,
-				filterOutliers,
-				stdDevThreshold,
-			);
-		} else if (mode === "tag" && selectedTag) {
-			fetchTagAnalytics(
-				selectedTag,
-				timeWindowIds,
-				filterOutliers,
-				stdDevThreshold,
-			);
-		}
-	}, [
-		selectedItemId,
-		selectedTag,
-		mode,
-		timeWindowIds,
-		filterOutliers,
-		stdDevThreshold,
-	]);
-
-	const fetchItems = async () => {
-		try {
-			const response = await axios.get(`${API_URL}/items`);
-			setItems(response.data);
-
-			// Extract unique tags
-			const allTags = new Set();
-			for (const item of response.data) {
-				if (item.tags) {
-					for (const tag of item.tags.split(",")) {
-						allTags.add(tag.trim());
-					}
+	// Extract unique tags from items
+	const tags = useMemo(() => {
+		const allTags = new Set();
+		for (const item of items) {
+			if (item.tags) {
+				for (const tag of item.tags.split(",")) {
+					allTags.add(tag.trim());
 				}
 			}
-			setTags(Array.from(allTags));
-
-			if (response.data.length > 0) {
-				setSelectedItemId(response.data[0].id.toString());
-			}
-
-			if (allTags.size > 0 && !selectedTag) {
-				const tagList = Array.from(allTags);
-				setSelectedTag(tagList[0]);
-			}
-		} catch (error) {
-			console.error("Failed to fetch items:", error);
 		}
-	};
-
-	const fetchSingleAnalytics = async (itemId, days, outliers, threshold) => {
-		setLoading(true);
-		try {
-			let url = `${API_URL}/items/${itemId}/analytics?days=${days}`;
-			if (outliers) {
-				url += `&std_dev_threshold=${threshold}`;
-			}
-			const response = await axios.get(url);
-			setAnalyticsData(response.data);
-
-			// Setup data for PriceChart
-			// Setup data for PriceChart
-			let historyData = response.data.history;
-			const series = [
-				{ key: "price", name: "Price", color: "hsl(var(--primary))" },
-			];
-
-			if (response.data.forecast && response.data.forecast.length > 0) {
-				// We need to merge or append forecast data
-				// Current PriceChart expects a single array 'data'.
-				// The forecast data has 'forecast_date' instead of 'timestamp'.
-				// And 'predicted_price', 'yhat_lower', 'yhat_upper'.
-
-				const forecastPoints = response.data.forecast.map((f) => ({
-					timestamp: f.forecast_date,
-					predicted_price: f.predicted_price,
-					yhat_lower: f.yhat_lower,
-					yhat_upper: f.yhat_upper,
-				}));
-
-				historyData = [...historyData, ...forecastPoints];
-
-				series.push({
-					key: "predicted_price",
-					name: "Forecast",
-					color: "#a855f7",
-					strokeDasharray: "5 5",
-				});
-			}
-
-			setMultiSeriesData(historyData);
-			setSeriesConfig(series);
-		} catch (error) {
-			console.error("Failed to fetch analytics:", error);
-		} finally {
-			setLoading(false);
+		const tagList = Array.from(allTags);
+		// Auto-select first tag if none selected
+		if (tagList.length > 0 && !selectedTag) {
+			setSelectedTag(tagList[0]);
 		}
-	};
+		return tagList;
+	}, [items, selectedTag]);
 
-	const fetchTagAnalytics = async (tag, days, outliers, threshold) => {
-		setLoading(true);
-		try {
-			// Find all items with this tag
-			const taggedItems = items.filter((item) =>
+	// Fetch single item analytics with React Query
+	const analyticsParams = useMemo(
+		() => ({
+			days: timeWindowDays,
+			stdDevThreshold: filterOutliers ? stdDevThreshold : null,
+		}),
+		[timeWindowDays, filterOutliers, stdDevThreshold],
+	);
+
+	const { data: analyticsData, isLoading: isSingleLoading } = useQuery({
+		queryKey: ["analytics", selectedItemId, analyticsParams],
+		queryFn: () => fetchAnalytics(selectedItemId, analyticsParams),
+		enabled: mode === "single" && !!selectedItemId,
+	});
+
+	// Fetch tag analytics (multiple items) with React Query
+	const taggedItemIds = useMemo(() => {
+		if (mode !== "tag" || !selectedTag) return [];
+		return items
+			.filter((item) =>
 				item.tags
 					?.split(",")
 					.map((t) => t.trim())
-					.includes(tag),
-			);
+					.includes(selectedTag),
+			)
+			.map((item) => item.id);
+	}, [items, selectedTag, mode]);
 
-			if (taggedItems.length === 0) {
-				setMultiSeriesData([]);
-				setSeriesConfig([]);
-				setLoading(false);
-				return;
-			}
+	const { data: tagAnalyticsData, isLoading: isTagLoading } = useQuery({
+		queryKey: ["tagAnalytics", selectedTag, taggedItemIds, analyticsParams],
+		queryFn: async () => {
+			if (taggedItemIds.length === 0) return { series: [], data: [] };
 
-			const promises = taggedItems.map((item) => {
-				let url = `${API_URL}/items/${item.id}/analytics?days=${days}`;
-				if (outliers) {
-					url += `&std_dev_threshold=${threshold}`;
+			const promises = taggedItemIds.map((id) => {
+				let url = `${API_URL}/items/${id}/analytics?days=${analyticsParams.days}`;
+				if (analyticsParams.stdDevThreshold) {
+					url += `&std_dev_threshold=${analyticsParams.stdDevThreshold}`;
 				}
 				return axios.get(url).then((res) => ({
-					itemId: item.id,
-					name: item.name,
+					itemId: id,
+					name: items.find((i) => i.id === id)?.name || `Item ${id}`,
 					data: res.data.history,
 				}));
 			});
@@ -182,15 +110,6 @@ export default function Analytics() {
 			const results = await Promise.all(promises);
 
 			// Merge data for chart
-			// We need a unified timestamp axis.
-			// Strategy: Collect all unique timestamps, sort them.
-			// For each timestamp, find the price for each item.
-			// Since timestamps might not match exactly, we might want to round to hours or just plot points.
-			// Simplest for now: Just flatten all points and let connectNulls do the work,
-			// OR map each item's price to its own key "price_{itemId}" at its specific timestamp.
-
-			const mergedData = [];
-			const series = [];
 			const COLORS = [
 				"#ef4444",
 				"#3b82f6",
@@ -200,12 +119,14 @@ export default function Analytics() {
 				"#ec4899",
 				"#f97316",
 			];
+			const mergedData = [];
+			const series = [];
 
 			let index = 0;
 			for (const res of results) {
 				const key = `price_${res.itemId}`;
 				series.push({
-					key: key,
+					key,
 					name: res.name,
 					color: COLORS[index % COLORS.length],
 				});
@@ -219,15 +140,56 @@ export default function Analytics() {
 				}
 			}
 
-			setMultiSeriesData(mergedData);
-			setSeriesConfig(series);
-			setAnalyticsData(null); // Disable single item stats view
-		} catch (error) {
-			console.error("Failed to fetch tag analytics:", error);
-		} finally {
-			setLoading(false);
+			return { series, data: mergedData };
+		},
+		enabled: mode === "tag" && taggedItemIds.length > 0,
+	});
+
+	// Compute chart data and series based on mode
+	const { chartData, chartSeries, annotations } = useMemo(() => {
+		if (mode === "single" && analyticsData) {
+			let historyData = analyticsData.history || [];
+			const series = [
+				{ key: "price", name: "Price", color: "hsl(var(--primary))" },
+			];
+
+			if (analyticsData.forecast?.length > 0) {
+				const forecastPoints = analyticsData.forecast.map((f) => ({
+					timestamp: f.forecast_date,
+					predicted_price: f.predicted_price,
+					yhat_lower: f.yhat_lower,
+					yhat_upper: f.yhat_upper,
+				}));
+				historyData = [...historyData, ...forecastPoints];
+				series.push({
+					key: "predicted_price",
+					name: "Forecast",
+					color: "#a855f7",
+					strokeDasharray: "5 5",
+				});
+			}
+
+			return {
+				chartData: historyData,
+				chartSeries: series.filter(
+					(s) => showForecast || s.key !== "predicted_price",
+				),
+				annotations: analyticsData.annotations,
+			};
 		}
-	};
+
+		if (mode === "tag" && tagAnalyticsData) {
+			return {
+				chartData: tagAnalyticsData.data,
+				chartSeries: tagAnalyticsData.series,
+				annotations: null,
+			};
+		}
+
+		return { chartData: [], chartSeries: [], annotations: null };
+	}, [mode, analyticsData, tagAnalyticsData, showForecast]);
+
+	const loading = mode === "single" ? isSingleLoading : isTagLoading;
 
 	if (items.length === 0) {
 		return (
@@ -320,8 +282,8 @@ export default function Analytics() {
 							<Label>Time Window (Days)</Label>
 							<Input
 								type="number"
-								value={timeWindowIds}
-								onChange={(e) => setTimeWindowIds(e.target.value)}
+								value={timeWindowDays}
+								onChange={(e) => setTimeWindowDays(e.target.value)}
 								min="1"
 							/>
 						</div>
@@ -389,11 +351,9 @@ export default function Analytics() {
 								</div>
 							) : (
 								<PriceChart
-									data={multiSeriesData}
-									series={seriesConfig.filter(
-										(s) => showForecast || s.key !== "predicted_price",
-									)}
-									annotations={analyticsData?.annotations}
+									data={chartData}
+									series={chartSeries}
+									annotations={annotations}
 								/>
 							)}
 						</CardContent>

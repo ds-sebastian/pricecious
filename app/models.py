@@ -1,10 +1,10 @@
-from datetime import UTC, datetime
-from typing import Optional
+from datetime import datetime
 
 from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+from .utils.datetime_utils import utc_now_naive
 
 
 class NotificationProfile(Base):
@@ -49,7 +49,7 @@ class Item(Base):
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
 
     notification_profile_id: Mapped[int | None] = mapped_column(ForeignKey("notification_profiles.id"), nullable=True)
-    notification_profile: Mapped[Optional["NotificationProfile"]] = relationship(back_populates="items")
+    notification_profile: Mapped["NotificationProfile | None"] = relationship(back_populates="items")
 
     price_history: Mapped[list["PriceHistory"]] = relationship(back_populates="item", cascade="all, delete-orphan")
     forecasts: Mapped[list["PriceForecast"]] = relationship(back_populates="item", cascade="all, delete-orphan")
@@ -61,7 +61,7 @@ class PriceHistory(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id"))
     price: Mapped[float] = mapped_column()
-    timestamp: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC).replace(tzinfo=None))
+    timestamp: Mapped[datetime] = mapped_column(default=utc_now_naive)
     screenshot_path: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Confidence scores and AI metadata
@@ -85,7 +85,7 @@ class PriceForecast(Base):
     predicted_price: Mapped[float] = mapped_column()
     yhat_lower: Mapped[float] = mapped_column()
     yhat_upper: Mapped[float] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC).replace(tzinfo=None))
+    created_at: Mapped[datetime] = mapped_column(default=utc_now_naive)
 
     item: Mapped["Item"] = relationship(back_populates="forecasts")
 

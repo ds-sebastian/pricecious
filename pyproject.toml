@@ -10,7 +10,7 @@ dependencies = [
     "sqlalchemy",
     "psycopg2-binary",
     "playwright",
-    "requests",
+    "httpx",
     "pydantic",
     "apprise",
     "Pillow",

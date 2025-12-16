@@ -193,43 +193,60 @@ class TestScraperErrorHandling:
 class TestScraperConnectionLogic:
     """Test the smart WebSocket URL resolution logic."""
 
-    def test_resolve_ws_url_success(self):
+    @pytest.mark.asyncio
+    async def test_resolve_ws_url_success(self):
         """Test successful discovery of Chrome WebSocket URL."""
-        with patch("app.services.scraper_service.requests.get") as mock_get:
+        with patch("app.services.scraper_service.httpx.AsyncClient") as mock_client_cls:
+            # Setup mock response
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"webSocketDebuggerUrl": "ws://chrome:9222/devtools/browser/123-uuid"}
-            mock_get.return_value = mock_response
+
+            # Setup async client context manager
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
 
             base_url = "ws://chrome:9222"
-            resolved = ScraperService._resolve_ws_url(base_url)
+            resolved = await ScraperService._resolve_ws_url(base_url)
 
             assert resolved == "ws://chrome:9222/devtools/browser/123-uuid"
-            mock_get.assert_called_once()
-            args, _ = mock_get.call_args
+            mock_client.get.assert_called_once()
+            args, _ = mock_client.get.call_args
             assert args[0] == "http://chrome:9222/json/version"
 
-    def test_resolve_ws_url_fallback_connection_error(self):
+    @pytest.mark.asyncio
+    async def test_resolve_ws_url_fallback_connection_error(self):
         """Test fallback when connection fails."""
-        with patch("app.services.scraper_service.requests.get") as mock_get:
-            mock_get.side_effect = Exception("Connection refused")
+        with patch("app.services.scraper_service.httpx.AsyncClient") as mock_client_cls:
+            # Setup async client that raises on get
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=Exception("Connection refused"))
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
 
             base_url = "ws://browserless:3000"
-            resolved = ScraperService._resolve_ws_url(base_url)
+            resolved = await ScraperService._resolve_ws_url(base_url)
 
             # Should fallback to original URL
             assert resolved == base_url
 
-    def test_resolve_ws_url_fallback_invalid_json(self):
+    @pytest.mark.asyncio
+    async def test_resolve_ws_url_fallback_invalid_json(self):
         """Test fallback when response is not as expected."""
-        with patch("app.services.scraper_service.requests.get") as mock_get:
+        with patch("app.services.scraper_service.httpx.AsyncClient") as mock_client_cls:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"other_field": "some_value"}
-            mock_get.return_value = mock_response
+
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
 
             base_url = "ws://chrome:9222"
-            resolved = ScraperService._resolve_ws_url(base_url)
+            resolved = await ScraperService._resolve_ws_url(base_url)
 
             assert resolved == base_url
 

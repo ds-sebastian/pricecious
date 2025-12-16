@@ -7,7 +7,7 @@ from datetime import datetime
 from http import HTTPStatus
 from urllib.parse import urlparse
 
-import requests
+import httpx
 from playwright.async_api import Browser, Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
@@ -37,7 +37,7 @@ class ScraperService:
                 cls._playwright = await async_playwright().start()
 
                 # Resolve the correct WebSocket URL (handles generic Chrome vs Browserless)
-                ws_url = cls._resolve_ws_url(BROWSERLESS_URL)
+                ws_url = await cls._resolve_ws_url(BROWSERLESS_URL)
                 logger.info(f"Connecting to Chrome at: {ws_url}")
 
                 try:
@@ -52,7 +52,7 @@ class ScraperService:
                     raise
 
     @staticmethod
-    def _resolve_ws_url(base_url: str) -> str:
+    async def _resolve_ws_url(base_url: str) -> str:
         """
         Attempt to resolve the full WebSocket URL from a Chrome instance.
 
@@ -79,7 +79,8 @@ class ScraperService:
             version_url = f"{scheme}://{parsed.netloc}/json/version"
 
             logger.debug(f"Attempting to discover Chrome WebSocket URL from: {version_url}")
-            resp = requests.get(version_url, timeout=2.0)
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                resp = await client.get(version_url)
 
             if resp.status_code == HTTPStatus.OK:
                 data = resp.json()
