@@ -1,6 +1,6 @@
 import os
 from collections.abc import AsyncGenerator
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -47,6 +47,8 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
+    await engine.dispose()
+
 
 @pytest.fixture(scope="function")
 async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
@@ -58,10 +60,12 @@ async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
     app.dependency_overrides[get_db] = override_get_db
 
-    # Mock scheduler
+    # Mock scheduler and ScraperService to prevent real browser startup
     with (
         patch("app.main.scheduler.start"),
         patch("app.main.scheduler.shutdown"),
+        patch("app.services.scraper_service.ScraperService.initialize", new_callable=AsyncMock),
+        patch("app.services.scraper_service.ScraperService.shutdown", new_callable=AsyncMock),
         patch(
             "app.database.get_db", override_get_db
         ),  # Direct patch if needed, but dependency_override is usually enough

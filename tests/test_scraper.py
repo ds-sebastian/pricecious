@@ -55,7 +55,18 @@ class TestScraperInputValidation:
 
             # browser = await pw.chromium.connect_over_cdp(...)
             mock_pw_obj.chromium.connect_over_cdp.return_value = mock_browser
-            mock_browser.is_connected.return_value = True
+            # is_connected is a property/synchronous method on the browser object usually,
+            # but if it matches the signature of the real one it should be a method returning bool.
+            # In Playwright it's browser.is_connected() -> bool.
+            # Since we use AsyncMock for browser, methods are AsyncMocks by default.
+            # We need is_connected to be a sync Mock or just return value if it was sync.
+            # But here ScraperService calls it as: cls._browser.is_connected()
+            # If cls._browser is AsyncMock, calling it returns a coroutine.
+            # ScraperService:112: if cls._browser and cls._browser.is_connected():
+            # If it's a coroutine, bool(coroutine) is True.
+            # However, if it was never awaited, we get a warning.
+            # We should make is_connected a standard Mock returning True.
+            mock_browser.is_connected = MagicMock(return_value=True)
 
             # context = await browser.new_context(...)
             mock_browser.new_context.return_value = mock_context
@@ -87,7 +98,7 @@ class TestScraperInputValidation:
             mock_pw_cls.return_value = mock_pw_context
 
             mock_pw_obj.chromium.connect_over_cdp.return_value = mock_browser
-            mock_browser.is_connected.return_value = True
+            mock_browser.is_connected = MagicMock(return_value=True)
             mock_browser.new_context.return_value = mock_context
             mock_context.new_page.return_value = mock_page
 
@@ -116,7 +127,7 @@ class TestScraperScreenshot:
             mock_pw_cls.return_value = mock_pw_context
 
             mock_pw_obj.chromium.connect_over_cdp.return_value = mock_browser
-            mock_browser.is_connected.return_value = True
+            mock_browser.is_connected = MagicMock(return_value=True)
             mock_browser.new_context.return_value = mock_context
             mock_context.new_page.return_value = mock_page
 
@@ -159,7 +170,7 @@ class TestScraperErrorHandling:
             mock_pw_cls.return_value = mock_pw_context
 
             mock_pw_obj.chromium.connect_over_cdp.return_value = mock_browser
-            mock_browser.is_connected.return_value = True
+            mock_browser.is_connected = MagicMock(return_value=True)
             mock_browser.new_context.return_value = mock_context
             mock_context.new_page.return_value = mock_page
 
