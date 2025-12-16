@@ -1,9 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Menu, Moon, Sun } from "lucide-react";
-import React, { useState } from "react";
+import { Menu } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Nav } from "./Nav";
+import { ThemeToggle } from "./ThemeToggle";
 
 const Layout = ({ children, theme, toggleTheme }) => {
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -23,24 +24,12 @@ const Layout = ({ children, theme, toggleTheme }) => {
 					</div>
 					<Nav />
 					<div className="border-t p-4">
-						<Button
-							variant="ghost"
-							size="icon"
-							onClick={toggleTheme}
-							className="w-full justify-start gap-2 px-4"
-						>
-							{theme === "dark" ? (
-								<>
-									<Sun className="h-4 w-4" />
-									<span>Light Mode</span>
-								</>
-							) : (
-								<>
-									<Moon className="h-4 w-4" />
-									<span>Dark Mode</span>
-								</>
-							)}
-						</Button>
+						<ThemeToggle
+							theme={theme}
+							toggleTheme={toggleTheme}
+							showLabel
+							className="w-full px-4"
+						/>
 					</div>
 				</div>
 			</aside>
@@ -67,23 +56,12 @@ const Layout = ({ children, theme, toggleTheme }) => {
 							</div>
 							<Nav onItemClick={() => setMobileMenuOpen(false)} />
 							<div className="border-t p-4">
-								<Button
-									variant="ghost"
-									onClick={toggleTheme}
-									className="w-full justify-start gap-2"
-								>
-									{theme === "dark" ? (
-										<>
-											<Sun className="h-4 w-4" />
-											<span>Light Mode</span>
-										</>
-									) : (
-										<>
-											<Moon className="h-4 w-4" />
-											<span>Dark Mode</span>
-										</>
-									)}
-								</Button>
+								<ThemeToggle
+									theme={theme}
+									toggleTheme={toggleTheme}
+									showLabel
+									className="w-full"
+								/>
 							</div>
 						</div>
 					</SheetContent>
@@ -93,13 +71,7 @@ const Layout = ({ children, theme, toggleTheme }) => {
 					Pricecious
 				</Link>
 				<div className="ml-auto flex items-center gap-2">
-					<Button variant="ghost" size="icon" onClick={toggleTheme}>
-						{theme === "dark" ? (
-							<Sun className="h-4 w-4" />
-						) : (
-							<Moon className="h-4 w-4" />
-						)}
-					</Button>
+					<ThemeToggle theme={theme} toggleTheme={toggleTheme} />
 				</div>
 			</header>
 

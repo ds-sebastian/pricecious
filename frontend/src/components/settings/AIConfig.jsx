@@ -19,7 +19,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { useSettings } from "@/hooks/use-settings";
 import { ChevronDown, ChevronUp, Cpu } from "lucide-react";
-import React, { useState } from "react";
+import { useState } from "react";
 
 export function AIConfig() {
 	const { settings, updateSetting } = useSettings();

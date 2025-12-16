@@ -10,7 +10,6 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useSettings } from "@/hooks/use-settings";
 import { Settings as SettingsIcon } from "lucide-react";
-import React from "react";
 
 export function ScraperConfig() {
 	const { settings, updateSetting } = useSettings();

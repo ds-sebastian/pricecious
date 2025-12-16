@@ -26,9 +26,10 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { API_URL } from "@/lib/api";
 import { format } from "date-fns";
 import { ArrowLeft, ArrowRight, Edit2, Loader2, Trash2 } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function History() {
@@ -81,7 +82,7 @@ export default function History() {
 
 	const fetchItems = async () => {
 		try {
-			const res = await fetch("/api/items");
+			const res = await fetch(`${API_URL}/items`);
 			if (!res.ok) throw new Error("Failed to fetch items");
 			const data = await res.json();
 			setItems(data);
@@ -114,7 +115,7 @@ export default function History() {
 				queryParams.append("min_confidence", Number(minConfidence) / 100);
 
 			const res = await fetch(
-				`/api/items/${itemId}/history?${queryParams.toString()}`,
+				`${API_URL}/items/${itemId}/history?${queryParams.toString()}`,
 			);
 
 			if (!res.ok) throw new Error("Failed to fetch history");
@@ -134,7 +135,7 @@ export default function History() {
 		if (!confirm("Are you sure you want to delete this record?")) return;
 
 		try {
-			const res = await fetch(`/api/items/history/${historyId}`, {
+			const res = await fetch(`${API_URL}/items/history/${historyId}`, {
 				method: "DELETE",
 			});
 			if (!res.ok) throw new Error("Failed to delete record");
@@ -163,7 +164,7 @@ export default function History() {
 
 	const handleSaveEdit = async () => {
 		try {
-			const res = await fetch(`/api/items/history/${editingRecord.id}`, {
+			const res = await fetch(`${API_URL}/items/history/${editingRecord.id}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({

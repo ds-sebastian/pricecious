@@ -22,7 +22,7 @@ import {
 	Trash2,
 	TrendingDown,
 } from "lucide-react";
-import React, { useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 export function NotificationProfiles() {

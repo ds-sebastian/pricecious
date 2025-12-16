@@ -15,7 +15,6 @@ import {
 	RefreshCw,
 	Trash2,
 } from "lucide-react";
-import React from "react";
 
 export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 	const getStockStatus = (inStock) => {
@@ -95,7 +94,6 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 				>
 					{stockStatus.label}
 				</div>
-
 
 				{/* Error Badge */}
 				{item.last_error && (
@@ -241,7 +239,6 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 								</span>
 							</div>
 						)}
-
 					</div>
 
 					<div className="flex gap-1">
@@ -278,6 +275,6 @@ export function ItemCard({ item, onEdit, onDelete, onCheck, onZoom }) {
 					</div>
 				</div>
 			</CardFooter>
-		</Card >
+		</Card>
 	);
 }

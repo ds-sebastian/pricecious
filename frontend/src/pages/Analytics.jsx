@@ -16,6 +16,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { API_URL } from "@/lib/api";
 import axios from "axios";
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -72,7 +73,7 @@ export default function Analytics() {
 
 	const fetchItems = async () => {
 		try {
-			const response = await axios.get("/api/items");
+			const response = await axios.get(`${API_URL}/items`);
 			setItems(response.data);
 
 			// Extract unique tags
@@ -102,7 +103,7 @@ export default function Analytics() {
 	const fetchSingleAnalytics = async (itemId, days, outliers, threshold) => {
 		setLoading(true);
 		try {
-			let url = `/api/items/${itemId}/analytics?days=${days}`;
+			let url = `${API_URL}/items/${itemId}/analytics?days=${days}`;
 			if (outliers) {
 				url += `&std_dev_threshold=${threshold}`;
 			}
@@ -167,7 +168,7 @@ export default function Analytics() {
 			}
 
 			const promises = taggedItems.map((item) => {
-				let url = `/api/items/${item.id}/analytics?days=${days}`;
+				let url = `${API_URL}/items/${item.id}/analytics?days=${days}`;
 				if (outliers) {
 					url += `&std_dev_threshold=${threshold}`;
 				}
@@ -415,10 +416,11 @@ export default function Analytics() {
 									</div>
 									{analyticsData.stats.price_change_24h !== 0 && (
 										<p
-											className={`text-xs ${analyticsData.stats.price_change_24h < 0
-												? "text-green-500"
-												: "text-red-500"
-												}`}
+											className={`text-xs ${
+												analyticsData.stats.price_change_24h < 0
+													? "text-green-500"
+													: "text-red-500"
+											}`}
 										>
 											{analyticsData.stats.price_change_24h > 0 ? "+" : ""}
 											{analyticsData.stats.price_change_24h}% (24h)

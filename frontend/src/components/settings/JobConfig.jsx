@@ -94,7 +94,8 @@ export function JobConfig() {
 				<div className="space-y-2">
 					<Label>Global Default Refresh Interval (Minutes)</Label>
 					<p className="text-sm text-muted-foreground">
-						Default refresh rate for items that don't have a specific interval or profile assigned.
+						Default refresh rate for items that don't have a specific interval
+						or profile assigned.
 					</p>
 					<Input
 						type="number"

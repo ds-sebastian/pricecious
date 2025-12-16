@@ -1,3 +1,4 @@
+import { CHART_COLORS } from "@/lib/constants";
 import { useMemo } from "react";
 import {
 	Area,
@@ -14,27 +15,8 @@ import {
 	YAxis,
 } from "recharts";
 
-const COLORS = [
-	"hsl(var(--primary))",
-	"#ef4444", // red-500
-	"#3b82f6", // blue-500
-	"#22c55e", // green-500
-	"#eab308", // yellow-500
-	"#a855f7", // purple-500
-	"#ec4899", // pink-500
-	"#f97316", // orange-500
-];
-
 export function PriceChart({ data, series = [], annotations = [] }) {
-	if (!data || data.length === 0) {
-		return (
-			<div className="flex h-[300px] w-full items-center justify-center rounded-lg border border-dashed text-muted-foreground">
-				No price history available
-			</div>
-		);
-	}
-
-	// Default series if none provided
+	// Default series if none provided - hooks must be called before any early returns
 	const chartSeries = useMemo(
 		() =>
 			series.length > 0
@@ -45,39 +27,44 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 
 	const sortedData = useMemo(
 		() =>
-			[...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)),
+			data?.length
+				? [...data].sort(
+						(a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+					)
+				: [],
 		[data],
 	);
 
 	// Calculate out-of-stock intervals
 	const outOfStockIntervals = useMemo(() => {
+		if (!data?.length) return [];
 		const intervals = [];
 		if (series.length <= 1) {
-			// Single item mode or default
 			let currentStart = null;
 			for (let i = 0; i < sortedData.length; i++) {
 				const point = sortedData[i];
-				const isOutOfStock = point.in_stock === false; // Strict false check
-
+				const isOutOfStock = point.in_stock === false;
 				if (isOutOfStock) {
-					if (!currentStart) {
-						currentStart = point.timestamp;
-					}
-					// If it's the last point, close the interval
+					if (!currentStart) currentStart = point.timestamp;
 					if (i === sortedData.length - 1) {
 						intervals.push({ x1: currentStart, x2: point.timestamp });
 					}
-				} else {
-					if (currentStart) {
-						// End the interval at the current point (when it became in stock/unknown)
-						intervals.push({ x1: currentStart, x2: point.timestamp });
-						currentStart = null;
-					}
+				} else if (currentStart) {
+					intervals.push({ x1: currentStart, x2: point.timestamp });
+					currentStart = null;
 				}
 			}
 		}
 		return intervals;
-	}, [sortedData, series.length]);
+	}, [sortedData, series.length, data?.length]);
+
+	if (!data || data.length === 0) {
+		return (
+			<div className="flex h-[300px] w-full items-center justify-center rounded-lg border border-dashed text-muted-foreground">
+				No price history available
+			</div>
+		);
+	}
 
 	const CustomTooltip = ({ active, payload, label }) => {
 		if (active && payload && payload.length) {
@@ -183,7 +170,7 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 							type="monotone"
 							dataKey={s.key}
 							name={s.name}
-							stroke={s.color || COLORS[index % COLORS.length]}
+							stroke={s.color || CHART_COLORS[index % CHART_COLORS.length]}
 							strokeWidth={2}
 							strokeDasharray={s.strokeDasharray}
 							dot={
