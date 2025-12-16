@@ -474,13 +474,8 @@ class ItemService:
         total = (await db.execute(count_stmt)).scalar() or 0
 
         # Fetch page
-        stmt = select(models.PriceHistory).filter(*base_filters)
-        if filters.sort == "asc":
-            stmt = stmt.order_by(models.PriceHistory.timestamp.asc())
-        else:
-            stmt = stmt.order_by(models.PriceHistory.timestamp.desc())
-
-        stmt = stmt.offset(offset).limit(filters.size)
+        order = models.PriceHistory.timestamp.asc() if filters.sort == "asc" else models.PriceHistory.timestamp.desc()
+        stmt = select(models.PriceHistory).filter(*base_filters).order_by(order).offset(offset).limit(filters.size)
         items = (await db.execute(stmt)).scalars().all()
 
         return list(items), total

@@ -53,32 +53,37 @@ class NotificationService:
         in_stock: bool | None,
         old_stock: bool | None,
     ):
-        profile = item_data["notification_profile"]
-        if not profile:
+        if not (profile := item_data.get("notification_profile")):
             return
 
-        if profile["notify_on_price_drop"] and price is not None and old_price is not None:
-            if price < old_price:
-                drop_percent = ((old_price - price) / old_price) * 100
-                if drop_percent >= profile["price_drop_threshold_percent"]:
-                    await notification_sender.send_notification(
-                        [profile["apprise_url"]],
-                        f"Price Drop Alert: {item_data['name']}",
-                        f"Price dropped by {drop_percent:.1f}%! Now ${price} (was ${old_price})",
-                    )
+        # Price drop notification
+        if (
+            profile["notify_on_price_drop"]
+            and price is not None
+            and old_price is not None
+            and price < old_price
+            and (drop := (old_price - price) / old_price * 100) >= profile["price_drop_threshold_percent"]
+        ):
+            await notification_sender.send_notification(
+                [profile["apprise_url"]],
+                f"Price Drop Alert: {item_data['name']}",
+                f"Price dropped by {drop:.1f}%! Now ${price} (was ${old_price})",
+            )
 
+        # Target price notification
         if (
             profile["notify_on_target_price"]
             and price is not None
-            and item_data["target_price"]
-            and price <= item_data["target_price"]
+            and (target := item_data.get("target_price"))
+            and price <= target
         ):
             await notification_sender.send_notification(
                 [profile["apprise_url"]],
                 f"Target Price Alert: {item_data['name']}",
-                f"Price is ${price} (Target: ${item_data['target_price']})",
+                f"Price is ${price} (Target: ${target})",
             )
 
+        # Stock change notification
         if (
             profile["notify_on_stock_change"]
             and in_stock is not None
@@ -87,7 +92,5 @@ class NotificationService:
         ):
             status = "In Stock" if in_stock else "Out of Stock"
             await notification_sender.send_notification(
-                [profile["apprise_url"]],
-                f"Stock Alert: {item_data['name']}",
-                f"Item is now {status}",
+                [profile["apprise_url"]], f"Stock Alert: {item_data['name']}", f"Item is now {status}"
             )

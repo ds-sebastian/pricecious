@@ -118,17 +118,16 @@ class ForecastingService:
             # Delete old forecasts
             await session.execute(delete(PriceForecast).where(PriceForecast.item_id == item_id))
 
-            new_forecasts = []
-            for _, row in future_forecast.iterrows():
-                new_forecasts.append(
-                    PriceForecast(
-                        item_id=item_id,
-                        forecast_date=row["ds"],
-                        predicted_price=max(0, row["yhat"]),
-                        yhat_lower=max(0, row["yhat_lower"]),
-                        yhat_upper=max(0, row["yhat_upper"]),
-                    )
+            new_forecasts = [
+                PriceForecast(
+                    item_id=item_id,
+                    forecast_date=row["ds"],
+                    predicted_price=max(0, row["yhat"]),
+                    yhat_lower=max(0, row["yhat_lower"]),
+                    yhat_upper=max(0, row["yhat_upper"]),
                 )
+                for _, row in future_forecast.iterrows()
+            ]
 
             session.add_all(new_forecasts)
             await session.commit()

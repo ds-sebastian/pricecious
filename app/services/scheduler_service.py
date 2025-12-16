@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -156,10 +157,7 @@ async def _process_single_item_data(item_id: int, session: AsyncSession):
 
 async def process_item_check(item_id: int, semaphore: asyncio.Semaphore | None = None):
     """Process a single item check with concurrency limit."""
-    if semaphore:
-        async with semaphore:
-            await _execute_check(item_id)
-    else:
+    async with semaphore if semaphore else nullcontext():
         await _execute_check(item_id)
 
 
@@ -173,50 +171,39 @@ async def _execute_check(item_id: int):
                 logger.error(f"Item {item_id} not found")
                 return
             item_data, config, thresholds = result
-
             logger.info(f"Checking item: {item_data['name']} ({item_data['url']})")
 
-        # 2. Scrape
-        scrape_config = ScrapeConfig(
-            smart_scroll=config["smart_scroll"],
-            scroll_pixels=config["smart_scroll_pixels"],
-            text_length=config["text_length"],
-            timeout=config["scraper_timeout"],
-        )
-        screenshot_path, page_text = await ScraperService.scrape_item(
-            item_data["url"],
-            item_data["selector"],
-            item_id,
-            scrape_config,
-        )
+            # 2. Scrape (outside session is fine - no DB calls)
+            scrape_config = ScrapeConfig(
+                smart_scroll=config["smart_scroll"],
+                scroll_pixels=config["smart_scroll_pixels"],
+                text_length=config["text_length"],
+                timeout=config["scraper_timeout"],
+            )
+            screenshot_path, page_text = await ScraperService.scrape_item(
+                item_data["url"], item_data["selector"], item_id, scrape_config
+            )
+            if not screenshot_path:
+                raise Exception("Failed to capture screenshot")
 
-        if not screenshot_path:
-            raise Exception("Failed to capture screenshot")
-
-        # 3. Analyze with AI
-        if not (
-            ai_result := await AIService.analyze_image(
+            # 3. Analyze with AI
+            ai_result = await AIService.analyze_image(
                 screenshot_path, page_text=page_text, custom_prompt=item_data.get("custom_prompt")
             )
-        ):
-            raise Exception("AI analysis failed")
+            if not ai_result:
+                raise Exception("AI analysis failed")
+            extraction, metadata = ai_result
 
-        extraction, metadata = ai_result
+            # 4. Update Database (now inside session scope!)
+            update_data = UpdateData(
+                extraction=extraction, metadata=metadata, thresholds=thresholds, screenshot_path=screenshot_path
+            )
+            old_price, old_stock = await _update_item_in_db(item_id, update_data, session)
 
-        # 4. Update Database
-        update_data = UpdateData(
-            extraction=extraction,
-            metadata=metadata,
-            thresholds=thresholds,
-            screenshot_path=screenshot_path,
-        )
-
-        old_price, old_stock = await _update_item_in_db(item_id, update_data, session)
-
-        # 5. Notify
-        await NotificationService.send_item_notifications(
-            item_data, extraction.price, old_price, extraction.in_stock, old_stock
-        )
+            # 5. Notify
+            await NotificationService.send_item_notifications(
+                item_data, extraction.price, old_price, extraction.in_stock, old_stock
+            )
 
     except Exception as e:
         await _handle_error(item_id, str(e))

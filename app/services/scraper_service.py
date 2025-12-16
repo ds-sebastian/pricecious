@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from http import HTTPStatus
@@ -209,18 +209,12 @@ class ScraperService:
             "div[role='dialog'] button",
             "svg[data-name='Close']",
         ]
-        # Quick race to close popups if they exist
         for selector in common_selectors:
-            try:
+            with suppress(Exception):
                 if await page.locator(selector).count() > 0:
                     await page.locator(selector).first.click(timeout=1000)
-            except Exception:
-                pass
-
-        try:
+        with suppress(Exception):
             await page.keyboard.press("Escape")
-        except Exception:
-            pass
 
     @staticmethod
     async def _wait_for_selector(page: Page, selector: str):
@@ -232,13 +226,10 @@ class ScraperService:
 
     @staticmethod
     async def _auto_detect_price(page: Page):
-        try:
-            # Simple heuristic: look for currency symbol
+        with suppress(Exception):
             locator = page.locator("text=/$[0-9,]+(\\.[0-9]{2})?/")
             if await locator.count() > 0:
                 await locator.first.scroll_into_view_if_needed()
-        except Exception:
-            pass
 
     @staticmethod
     async def _extract_text(page: Page, limit: int) -> str:

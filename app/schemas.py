@@ -3,6 +3,11 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
+def _ensure_utc(v):
+    """Add UTC timezone to naive datetimes."""
+    return v.replace(tzinfo=UTC) if isinstance(v, datetime) and v.tzinfo is None else v
+
+
 class NotificationProfileCreate(BaseModel):
     name: str
     apprise_url: str
@@ -50,13 +55,7 @@ class ItemResponse(ItemCreate):
     next_check: datetime | None = None
     interval: int | None = None
     model_config = ConfigDict(from_attributes=True)
-
-    @field_validator("last_checked", "next_check", mode="before")
-    @classmethod
-    def set_tz_utc(cls, v):
-        if isinstance(v, datetime) and v.tzinfo is None:
-            return v.replace(tzinfo=UTC)
-        return v
+    _normalize_tz = field_validator("last_checked", "next_check", mode="before")(_ensure_utc)
 
 
 class SettingsUpdate(BaseModel):
@@ -78,13 +77,7 @@ class PriceHistoryResponse(BaseModel):
     in_stock_confidence: float | None = None
     in_stock: bool | None = None
     model_config = ConfigDict(from_attributes=True)
-
-    @field_validator("timestamp", mode="before")
-    @classmethod
-    def set_tz_utc(cls, v):
-        if isinstance(v, datetime) and v.tzinfo is None:
-            return v.replace(tzinfo=UTC)
-        return v
+    _normalize_tz = field_validator("timestamp", mode="before")(_ensure_utc)
 
 
 class PriceForecastResponse(BaseModel):
@@ -95,13 +88,7 @@ class PriceForecastResponse(BaseModel):
     yhat_upper: float
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
-
-    @field_validator("forecast_date", "created_at", mode="before")
-    @classmethod
-    def set_tz_utc(cls, v):
-        if isinstance(v, datetime) and v.tzinfo is None:
-            return v.replace(tzinfo=UTC)
-        return v
+    _normalize_tz = field_validator("forecast_date", "created_at", mode="before")(_ensure_utc)
 
 
 class ItemStats(BaseModel):

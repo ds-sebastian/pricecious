@@ -175,9 +175,7 @@ class AIService:
         try:
             config = await cls.get_ai_config()
             base64_image = await encode_image(image_path)
-
-            text_context = clean_text(page_text) if page_text else None
-            prompt = get_extraction_prompt(text_context, custom_prompt)
+            prompt = get_extraction_prompt(clean_text(page_text) if page_text else None, custom_prompt)
 
             messages = [
                 {
@@ -189,7 +187,6 @@ class AIService:
                 }
             ]
 
-            # Retry wrapper for the call
             @retry(
                 retry=retry_if_exception_type((TimeoutError, ConnectionError, ValueError)),
                 stop=stop_after_attempt(3),
@@ -198,35 +195,26 @@ class AIService:
             async def protected_call():
                 return await cls.call_llm(messages, config)
 
+            def make_meta(repair_used: bool) -> AIExtractionMetadata:
+                return AIExtractionMetadata(
+                    model_name=config["model"],
+                    provider=config["provider"],
+                    prompt_version=PROMPT_VERSION,
+                    repair_used=repair_used,
+                    multi_sample=False,
+                    sample_count=1,
+                )
+
             response_text = await protected_call()
             logger.debug(f"Raw AI Response: {response_text}")
 
             try:
-                result = cls.parse_response(response_text)
-                return result, AIExtractionMetadata(
-                    model_name=config["model"],
-                    provider=config["provider"],
-                    prompt_version=PROMPT_VERSION,
-                    repair_used=False,
-                    multi_sample=False,
-                    sample_count=1,
-                )
+                return cls.parse_response(response_text), make_meta(False)
             except Exception as e:
                 logger.info(f"Parsing failed: {e}. Attempting LLM repair...")
-
-                # Unconditional LLM repair fallback
                 repair_msg = [{"role": "user", "content": get_repair_prompt(response_text)}]
                 repaired = await cls.call_llm(repair_msg, config, is_repair=True)
-
-                result = cls.parse_response(repaired)
-                return result, AIExtractionMetadata(
-                    model_name=config["model"],
-                    provider=config["provider"],
-                    prompt_version=PROMPT_VERSION,
-                    repair_used=True,
-                    multi_sample=False,
-                    sample_count=1,
-                )
+                return cls.parse_response(repaired), make_meta(True)
 
         except Exception as e:
             logger.error(f"Analysis failed: {e}")
