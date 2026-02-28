@@ -82,6 +82,43 @@ async def test_outlier_rejection_disabled(mock_session, mock_item, update_data):
 
 
 @pytest.mark.asyncio
+async def test_low_confidence_sets_last_error(mock_session, mock_item, update_data):
+    """Price found but confidence below threshold should set last_error."""
+    mock_session.execute.return_value.scalars().first.return_value = mock_item
+    update_data.extraction.price = 120.0
+    update_data.extraction.price_confidence = 0.3  # Below 0.5 threshold
+    update_data.thresholds["outlier_enabled"] = False  # Disable outlier check
+
+    _old_price, _old_stock = await _update_item_in_db(1, update_data, mock_session)
+
+    # Price should NOT be updated
+    assert mock_item.current_price == 100.0
+    # last_error should explain the low confidence
+    assert mock_item.last_error is not None
+    assert "Low confidence" in mock_item.last_error
+    assert "120.00" in mock_item.last_error
+    assert "0.30" in mock_item.last_error
+
+
+@pytest.mark.asyncio
+async def test_sufficient_confidence_clears_low_confidence_error(mock_session, mock_item, update_data):
+    """A successful high-confidence update should clear a previous low-confidence error."""
+    mock_session.execute.return_value.scalars().first.return_value = mock_item
+    mock_item.last_error = "Low confidence: price found (99.00) but confidence (0.20) is below threshold (0.50)"
+    mock_item.current_price = 100.0
+    update_data.extraction.price = 110.0
+    update_data.extraction.price_confidence = 0.9  # High confidence
+    update_data.thresholds["outlier_enabled"] = False
+
+    _old_price, _old_stock = await _update_item_in_db(1, update_data, mock_session)
+
+    # Price should be updated
+    assert mock_item.current_price == 110.0
+    # last_error should be cleared
+    assert mock_item.last_error is None
+
+
+@pytest.mark.asyncio
 async def test_outlier_acceptance_within_threshold(mock_session, mock_item, update_data):
     # Setup
     mock_session.execute.return_value.scalars().first.return_value = mock_item
