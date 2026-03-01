@@ -73,6 +73,11 @@ class ItemService:
         if not db_item:
             raise HTTPException(status_code=404, detail="Item not found")
 
+        try:
+            validate_url(item_update.url)
+        except URLValidationError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid URL: {e}") from e
+
         for key, value in item_update.model_dump().items():
             setattr(db_item, key, value)
 

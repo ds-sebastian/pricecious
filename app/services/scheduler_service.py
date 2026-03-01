@@ -123,6 +123,13 @@ async def _update_item_in_db(
     if item.last_error and not item.last_error.startswith("Uncertain:"):
         item.last_error = None
 
+    # Warn when price was extracted but confidence is too low to apply
+    if price is not None and p_conf < update_data.thresholds["price"]:
+        item.last_error = (
+            f"Low confidence: price found ({price:.2f}) but confidence ({p_conf:.2f}) "
+            f"is below threshold ({update_data.thresholds['price']:.2f})"
+        )
+
     await session.commit()
     logger.info(
         f"Updated item {item_id}: price={price}, stock={in_stock} "
