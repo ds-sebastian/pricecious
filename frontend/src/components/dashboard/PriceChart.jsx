@@ -1,4 +1,3 @@
-import { CHART_COLORS } from "@/lib/constants";
 import { useMemo } from "react";
 import {
 	Area,
@@ -14,6 +13,7 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
+import { CHART_COLORS } from "@/lib/constants";
 
 export function PriceChart({ data, series = [], annotations = [] }) {
 	// Default series if none provided - hooks must be called before any early returns

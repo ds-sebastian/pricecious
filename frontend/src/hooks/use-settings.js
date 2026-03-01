@@ -1,7 +1,7 @@
-import { API_URL } from "@/lib/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { toast } from "sonner";
+import { API_URL } from "@/lib/api";
 
 export function useSettings() {
 	const queryClient = useQueryClient();
