@@ -9,62 +9,43 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: user
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: pricewatch_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install uv
-      uses: astral-sh/setup-uv@v4
-    
+      uses: astral-sh/setup-uv@v6
+
     - name: Set up Python 3.12
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    
+
     - name: Install dependencies
-      run: |
-        uv pip install --system -e ".[dev]"
-    
+      run: uv sync --extra dev
+
     - name: Run Ruff Linting
-      run: uvx ruff check .
-    
+      run: uv run ruff check .
+
     - name: Run Ruff Formatting Check
-      run: uvx ruff format --check .
-    
+      run: uv run ruff format --check .
+
     - name: Run Bandit Security Scan
-      run: uvx bandit -r app/ -ll --format json -o bandit-report.json || true
+      run: uv run bandit -r app/ -ll --format json -o bandit-report.json || true
       continue-on-error: true
-    
+
     - name: Run pip-audit
-      run: uvx pip-audit --require-hashes --disable-pip || true
+      run: uv run pip-audit --disable-pip || true
       continue-on-error: true
-    
 
     - name: Run Tests with Coverage
-      env:
-        DATABASE_URL: postgresql://user:password@localhost:5432/pricewatch_test
       run: |
-        pytest --cov=app --cov-report=xml --cov-report=term-missing
-    
+        uv run pytest --cov=app --cov-report=xml --cov-report=term-missing
+
     - name: Upload Coverage
       uses: codecov/codecov-action@v5
       if: always()
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        file: ./coverage.xml
+        files: ./coverage.xml
         fail_ci_if_error: false
