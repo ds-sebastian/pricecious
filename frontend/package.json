@@ -24,7 +24,7 @@
 		"date-fns": "^4.0.0",
 		"lucide-react": "^0.292.0",
 		"react": "^18.2.0",
-		"react-dom": "^18.2.0",
+		"react-dom": "^19.2.4",
 		"react-router-dom": "^6.30.2",
 		"recharts": "^3.5.1",
 		"sonner": "^1.4.0",
@@ -34,7 +34,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
 		"@types/react": "^18.2.37",
-		"@types/react-dom": "^18.2.15",
+		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^4.2.0",
 		"autoprefixer": "^10.4.22",
 		"postcss": "^8.4.31",
