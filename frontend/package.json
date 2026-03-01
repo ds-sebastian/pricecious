@@ -22,7 +22,7 @@
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"date-fns": "^4.0.0",
-		"lucide-react": "^0.292.0",
+		"lucide-react": "^0.575.0",
 		"react": "^18.2.0",
 		"react-dom": "^18.2.0",
 		"react-router-dom": "^6.30.2",
