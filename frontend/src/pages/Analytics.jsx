@@ -1,3 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
+import { Loader2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -17,10 +21,6 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { API_URL, fetchAnalytics, fetchItems } from "@/lib/api";
-import { useQuery } from "@tanstack/react-query";
-import axios from "axios";
-import { Loader2 } from "lucide-react";
-import { useMemo, useState } from "react";
 import { PriceChart } from "../components/dashboard/PriceChart";
 
 export default function Analytics() {

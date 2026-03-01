@@ -1,3 +1,4 @@
+import { Settings as SettingsIcon } from "lucide-react";
 import {
 	Card,
 	CardContent,
@@ -9,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useSettings } from "@/hooks/use-settings";
-import { Settings as SettingsIcon } from "lucide-react";
 
 export function ScraperConfig() {
 	const { settings, updateSetting } = useSettings();

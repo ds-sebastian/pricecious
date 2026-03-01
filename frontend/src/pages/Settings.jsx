@@ -1,8 +1,8 @@
+import React from "react";
 import { AIConfig } from "@/components/settings/AIConfig";
 import { JobConfig } from "@/components/settings/JobConfig";
 import { NotificationProfiles } from "@/components/settings/NotificationProfiles";
 import { ScraperConfig } from "@/components/settings/ScraperConfig";
-import React from "react";
 
 export default function Settings() {
 	return (
