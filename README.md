@@ -111,10 +111,13 @@ The following environment variables can be configured in your `docker-compose.ym
 | Variable | Description | Default | Example |
 | :--- | :--- | :--- | :--- |
 | `DATABASE_URL` | PostgreSQL connection string. Use container name for Docker networking. | `postgresql://user:password@db:5432/pricewatch` | `postgresql://u:p@postgresql:5432/db` |
-| `BROWSERLESS_URL` | WebSocket URL for Browserless. Basic URL without complex query params. | `ws://browserless:3000` | `ws://host:port/chromium` |
-| `BROWSERLESS_TOKEN` | Browserless authentication token (avoids shell-escaping in URL). | *(empty)* | `my-secret-token` |
+| `BROWSERLESS_URL` | WebSocket URL for Browserless. | `ws://browserless:3000` | `ws://host:port/chromium` |
+| `BROWSERLESS_TOKEN` | Browserless authentication token. | *(empty)* | `my-secret-token` |
 | `BROWSERLESS_BLOCK_ADS` | Enable ad blocking in Browserless. | `false` | `true` |
-| `BROWSERLESS_LAUNCH_OPTS_BASE64` | Base64-encoded JSON launch options for Browserless (avoids shell-escaping). | *(empty)* | See tip below |
+| `BROWSERLESS_STEALTH` | Enable stealth mode in Browserless. | `false` | `true` |
+| `BROWSERLESS_HEADLESS` | Headless mode value passed to Browserless. | *(empty)* | `new` |
+| `BROWSERLESS_VIEWPORT_WIDTH` | Viewport width in pixels. | *(empty)* | `1920` |
+| `BROWSERLESS_VIEWPORT_HEIGHT` | Viewport height in pixels. | *(empty)* | `1080` |
 | `LOG_LEVEL` | Application logging level | `INFO` | `DEBUG` |
 | `SQL_ECHO` | Log all SQL queries to console | `false` | `true` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `*` | `http://localhost:3000,https://myapp.com` |
@@ -129,16 +132,12 @@ The following environment variables can be configured in your `docker-compose.ym
 > BROWSERLESS_URL=ws://{IP}:{PORT}/chromium
 > BROWSERLESS_TOKEN={TOKEN}
 > BROWSERLESS_BLOCK_ADS=true
-> # Generate base64 launch options (run on your host):
-> # echo '{"defaultViewport":{"height":1080,"width":1920},"headless":"new","stealth":true}' | base64
-> BROWSERLESS_LAUNCH_OPTS_BASE64=eyJkZWZhdWx0Vmlld3BvcnQiOnsiaGVpZ2h0IjoxMDgwLCJ3aWR0aCI6MTkyMH0sImhlYWRsZXNzIjoibmV3Iiwic3RlYWx0aCJ6dHJ1ZX0=
+> BROWSERLESS_STEALTH=true
+> BROWSERLESS_HEADLESS=new
+> BROWSERLESS_VIEWPORT_WIDTH=1920
+> BROWSERLESS_VIEWPORT_HEIGHT=1080
 > ```
-> Or, inline in docker-compose.yml:
-> ```yaml
-> environment:
->   BROWSERLESS_LAUNCH_OPTS_BASE64: "eyJkZWZhdWx0Vmlld3BvcnQiOnsiaGVpZ2h0IjoxMDgwLCJ3aWR0aCI6MTkyMH0sImhlYWRsZXNzIjoibmV3Iiwic3RlYWx0aCl6dHJ1ZX0="
-> ```
-> These are appended as query parameters to the URL, eliminating shell escaping problems with `"`, `{`, and `&` characters.
+> These are assembled into the correct Browserless query parameters automatically, eliminating shell escaping problems with `"`, `{`, and `&` characters.
 
 ### Scraper Settings
 All scraper settings are configured via the **Settings** page in the UI:

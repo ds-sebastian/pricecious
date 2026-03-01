@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import json
 import logging
 import os
@@ -23,8 +22,13 @@ def _build_browserless_url(base_url: str) -> str:
     Supports the following environment variables that are appended as query parameters:
     - ``BROWSERLESS_TOKEN``: authentication token.
     - ``BROWSERLESS_BLOCK_ADS``: set to ``true`` to enable ad blocking.
-    - ``BROWSERLESS_LAUNCH_OPTS_BASE64``: base64-encoded JSON launch options, avoiding
-      shell escaping issues with complex JSON strings.
+    - ``BROWSERLESS_STEALTH``: set to ``true`` to enable stealth mode.
+    - ``BROWSERLESS_HEADLESS``: headless mode value (e.g. ``new`` or ``true``).
+    - ``BROWSERLESS_VIEWPORT_WIDTH``: viewport width in pixels (e.g. ``1920``).
+    - ``BROWSERLESS_VIEWPORT_HEIGHT``: viewport height in pixels (e.g. ``1080``).
+
+    The stealth/headless/viewport values are assembled into a ``launch`` JSON object
+    and appended as a single ``launch`` query parameter.
     """
     params: dict[str, str] = {}
 
@@ -35,14 +39,34 @@ def _build_browserless_url(base_url: str) -> str:
     if os.getenv("BROWSERLESS_BLOCK_ADS", "").lower() in ("true", "1", "yes"):
         params["blockAds"] = "true"
 
-    launch_b64 = os.getenv("BROWSERLESS_LAUNCH_OPTS_BASE64", "")
-    if launch_b64:
+    launch: dict = {}
+    if os.getenv("BROWSERLESS_STEALTH", "").lower() in ("true", "1", "yes"):
+        launch["stealth"] = True
+    headless = os.getenv("BROWSERLESS_HEADLESS", "")
+    if headless:
+        # Convert "true"/"false" to booleans; preserve other values (e.g. "new") as strings
+        if headless.lower() == "true":
+            launch["headless"] = True
+        elif headless.lower() == "false":
+            launch["headless"] = False
+        else:
+            launch["headless"] = headless
+    vp_width = os.getenv("BROWSERLESS_VIEWPORT_WIDTH", "")
+    vp_height = os.getenv("BROWSERLESS_VIEWPORT_HEIGHT", "")
+    if vp_width or vp_height:
+        viewport: dict = {}
         try:
-            decoded = base64.b64decode(launch_b64).decode("utf-8")
-            json.loads(decoded)  # validate JSON
-            params["launch"] = decoded
-        except (ValueError, base64.binascii.Error, json.JSONDecodeError):
-            logger.warning("BROWSERLESS_LAUNCH_OPTS_BASE64 is not valid base64-encoded JSON, ignoring.")
+            if vp_width:
+                viewport["width"] = int(vp_width)
+            if vp_height:
+                viewport["height"] = int(vp_height)
+        except ValueError:
+            logger.warning("BROWSERLESS_VIEWPORT_WIDTH/HEIGHT must be integers, ignoring viewport settings.")
+            viewport = {}
+        if viewport:
+            launch["defaultViewport"] = viewport
+    if launch:
+        params["launch"] = json.dumps(launch, separators=(",", ":"))
 
     if not params:
         return base_url
