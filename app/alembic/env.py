@@ -6,7 +6,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from app.database import DATABASE_URL
+from app.database import _get_database_url
 from app.models import Base
 
 # this is the Alembic Config object, which provides
@@ -44,7 +44,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = DATABASE_URL
+    url = _get_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -70,7 +70,7 @@ async def run_async_migrations() -> None:
     """
 
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = DATABASE_URL
+    configuration["sqlalchemy.url"] = _get_database_url()
 
     connectable = async_engine_from_config(
         configuration,
