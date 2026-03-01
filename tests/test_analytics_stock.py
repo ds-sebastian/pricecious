@@ -3,14 +3,14 @@ from datetime import datetime, timedelta
 import pytest
 
 from app import models
-from app.services.item_service import ItemService
+from app.services.analytics_service import AnalyticsService
 
 
 @pytest.fixture(autouse=True)
 def clear_cache():
-    ItemService.clear_cache()
+    AnalyticsService.clear_cache()
     yield
-    ItemService.clear_cache()
+    AnalyticsService.clear_cache()
 
 
 @pytest.mark.asyncio
@@ -38,7 +38,7 @@ async def test_get_analytics_stock_annotations(db):
 
     await db.commit()
 
-    data = await ItemService.get_analytics_data(db, item.id)
+    data = await AnalyticsService.get_analytics_data(db, item.id)
     annotations = data["annotations"]
 
     stock_notes = [a for a in annotations if "stock" in a["type"]]

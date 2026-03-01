@@ -3,14 +3,14 @@ from datetime import datetime, timedelta
 import pytest
 
 from app import models
-from app.services.item_service import ItemService
+from app.services.analytics_service import AnalyticsService
 
 
 @pytest.fixture(autouse=True)
 def clear_cache():
-    ItemService.clear_cache()
+    AnalyticsService.clear_cache()
     yield
-    ItemService.clear_cache()
+    AnalyticsService.clear_cache()
 
 
 @pytest.mark.asyncio
@@ -21,7 +21,7 @@ async def test_get_analytics_data_empty(db):
     await db.commit()
     await db.refresh(item)
 
-    data = await ItemService.get_analytics_data(db, item.id)
+    data = await AnalyticsService.get_analytics_data(db, item.id)
     assert data["item_id"] == item.id
     assert data["stats"]["avg_price"] == 0.0
     assert len(data["history"]) == 0
@@ -46,7 +46,7 @@ async def test_get_analytics_data_stats(db):
 
     await db.commit()
 
-    data = await ItemService.get_analytics_data(db, item.id)
+    data = await AnalyticsService.get_analytics_data(db, item.id)
     assert data["stats"]["min_price"] == 98.0
     assert data["stats"]["max_price"] == 102.0
     assert data["stats"]["avg_price"] == 100.0
@@ -75,7 +75,7 @@ async def test_get_analytics_outlier_filtering(db):
     await db.commit()
 
     # Without filter
-    data = await ItemService.get_analytics_data(db, item.id)
+    data = await AnalyticsService.get_analytics_data(db, item.id)
     assert len(data["history"]) == 11
     assert data["stats"]["max_price"] == 1000.0
 
@@ -93,7 +93,7 @@ async def test_get_analytics_outlier_filtering(db):
     # Range 2 sigma: 181 +/- 542 = [-361, 723].
     # 1000 is outside 723. It should be filtered.
 
-    data_filtered = await ItemService.get_analytics_data(db, item.id, std_dev_threshold=2.0)
+    data_filtered = await AnalyticsService.get_analytics_data(db, item.id, std_dev_threshold=2.0)
 
     # Outlier should be gone
     assert len(data_filtered["history"]) == 10
@@ -125,7 +125,7 @@ async def test_get_analytics_downsampling(db):
 
     await db.commit()
 
-    data = await ItemService.get_analytics_data(db, item.id)
+    data = await AnalyticsService.get_analytics_data(db, item.id)
 
     # Check that we downsampled
     history_len = len(data["history"])
@@ -162,7 +162,7 @@ async def test_get_analytics_annotations(db):
 
     await db.commit()
 
-    data = await ItemService.get_analytics_data(db, item.id)
+    data = await AnalyticsService.get_analytics_data(db, item.id)
 
     annotations = data["annotations"]
     assert len(annotations) == 2
@@ -205,7 +205,7 @@ async def test_get_analytics_stock_history(db):
 
     await db.commit()
 
-    data = await ItemService.get_analytics_data(db, item.id)
+    data = await AnalyticsService.get_analytics_data(db, item.id)
 
     # Check if history contains correct stock status
     history = data["history"]
@@ -244,7 +244,7 @@ async def test_get_analytics_stock_history_aggregation(db):
 
     await db.commit()
 
-    data = await ItemService.get_analytics_data(db, item.id)
+    data = await AnalyticsService.get_analytics_data(db, item.id)
     history = data["history"]
 
     # Should be downsampled

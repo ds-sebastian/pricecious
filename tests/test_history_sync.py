@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app import models, schemas
+from app.services.history_service import HistoryService
 from app.services.item_service import ItemService
 
 
@@ -41,7 +42,7 @@ async def test_history_sync_on_delete_and_update(db):
     await db.commit()
 
     # 3. Delete the latest record (h2)
-    await ItemService.delete_history(db, h2.id)
+    await HistoryService.delete_history(db, h2.id)
 
     # 4. Verify item reverted to h1's data
     await db.refresh(item)
@@ -50,14 +51,14 @@ async def test_history_sync_on_delete_and_update(db):
 
     # 5. Update the remaining record (h1)
     update = schemas.PriceHistoryUpdate(price=15.0, in_stock=True)
-    await ItemService.update_history(db, h1.id, update)
+    await HistoryService.update_history(db, h1.id, update)
 
     # 6. Verify item reflects the update
     await db.refresh(item)
     assert item.current_price == 15.0
 
     # 7. Delete the last record (h1)
-    await ItemService.delete_history(db, h1.id)
+    await HistoryService.delete_history(db, h1.id)
 
     # 8. Verify item data is cleared
     await db.refresh(item)

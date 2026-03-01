@@ -27,6 +27,7 @@ dependencies = [
     "prophet",
     "pandas",
     "json-repair>=0.54.2",
+    "cachetools>=7.0.1",
 ]
 
 [build-system]

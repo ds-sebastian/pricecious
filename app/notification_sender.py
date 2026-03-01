@@ -1,9 +1,14 @@
 import asyncio
+import concurrent.futures
 import logging
 
 import apprise
 
 logger = logging.getLogger(__name__)
+
+# Dedicated thread pool for notifications — prevents competing with
+# image encoding and other I/O in the default executor.
+_notification_executor = concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="notif")
 
 
 def _send_sync(urls: list, title: str, body: str):
@@ -30,7 +35,7 @@ def _send_sync(urls: list, title: str, body: str):
 
 async def send_notification(urls: list, title: str, body: str):
     """
-    Async wrapper for sending notifications.
+    Async wrapper for sending notifications via dedicated thread pool.
     """
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, _send_sync, urls, title, body)
+    await loop.run_in_executor(_notification_executor, _send_sync, urls, title, body)

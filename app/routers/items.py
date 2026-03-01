@@ -3,6 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import database, schemas
 from app.limiter import limiter
+from app.services.analytics_service import AnalyticsService
+from app.services.history_service import HistoryService
 from app.services.item_service import ItemService
 from app.services.scheduler_service import process_item_check
 
@@ -53,7 +55,7 @@ async def get_item_analytics(
     days: int | None = None,
     db: AsyncSession = Depends(database.get_db),
 ):
-    return await ItemService.get_analytics_data(db, item_id, std_dev_threshold, days)
+    return await AnalyticsService.get_analytics_data(db, item_id, std_dev_threshold, days)
 
 
 @router.get("/{item_id}/history", response_model=schemas.PriceHistoryPaginatedResponse)
@@ -62,7 +64,7 @@ async def get_item_history(
     filters: schemas.HistoryFilter = Depends(),
     db: AsyncSession = Depends(database.get_db),
 ):
-    items, total = await ItemService.get_history_raw(db, item_id, filters)
+    items, total = await HistoryService.get_history_raw(db, item_id, filters)
     return {"items": items, "total": total, "page": filters.page, "size": filters.size}
 
 
@@ -70,9 +72,9 @@ async def get_item_history(
 async def update_history_record(
     history_id: int, update: schemas.PriceHistoryUpdate, db: AsyncSession = Depends(database.get_db)
 ):
-    return await ItemService.update_history(db, history_id, update)
+    return await HistoryService.update_history(db, history_id, update)
 
 
 @router.delete("/history/{history_id}")
 async def delete_history_record(history_id: int, db: AsyncSession = Depends(database.get_db)):
-    return await ItemService.delete_history(db, history_id)
+    return await HistoryService.delete_history(db, history_id)

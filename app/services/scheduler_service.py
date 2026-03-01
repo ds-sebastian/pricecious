@@ -59,7 +59,10 @@ async def _get_thresholds(session: AsyncSession) -> dict[str, float]:
 async def _update_item_in_db(
     item_id: int, update_data: UpdateData, session: AsyncSession
 ) -> tuple[float | None, bool | None]:
-    """Update item in DB with new data. Returns (old_price, old_stock)."""
+    """Update item in DB with new data. Returns (old_price, old_stock).
+
+    All mutations are committed in a single transaction at the end.
+    """
     result = await session.execute(select(models.Item).where(models.Item.id == item_id))
     item = result.scalars().first()
     if not item:
@@ -68,6 +71,8 @@ async def _update_item_in_db(
     old_price, old_stock = item.current_price, item.in_stock
     price, in_stock = update_data.extraction.price, update_data.extraction.in_stock
     p_conf, s_conf = update_data.extraction.price_confidence, update_data.extraction.in_stock_confidence
+
+    outlier_rejected = False
 
     if price is not None:
         # Outlier Check - Only if enabled
@@ -80,56 +85,57 @@ async def _update_item_in_db(
                 )
                 logger.warning(f"Item {item_id}: {error_msg}")
                 item.last_error = error_msg
-                item.last_checked = utc_now_naive()
-                item.is_refreshing = False
-                await session.commit()
-                return old_price, old_stock
+                outlier_rejected = True
 
-        if p_conf >= update_data.thresholds["price"]:
-            # Check for suspicious price changes (warning only)
-            if (
-                old_price
-                and (abs(price - old_price) / old_price * 100 > PRICE_CHANGE_THRESHOLD_PERCENT)
-                and p_conf < LOW_CONFIDENCE_THRESHOLD
-            ):
-                item.last_error = f"Uncertain: Large price change with low confidence ({p_conf:.2f})"
-            else:
-                item.last_error = None
-            item.current_price = price
-            item.current_price_confidence = p_conf
+        if not outlier_rejected:
+            if p_conf >= update_data.thresholds["price"]:
+                # Check for suspicious price changes (warning only)
+                if (
+                    old_price
+                    and (abs(price - old_price) / old_price * 100 > PRICE_CHANGE_THRESHOLD_PERCENT)
+                    and p_conf < LOW_CONFIDENCE_THRESHOLD
+                ):
+                    item.last_error = f"Uncertain: Large price change with low confidence ({p_conf:.2f})"
+                else:
+                    item.last_error = None
+                item.current_price = price
+                item.current_price_confidence = p_conf
 
-        session.add(
-            models.PriceHistory(
-                item_id=item.id,
-                price=price,
-                screenshot_path=update_data.screenshot_path,
-                price_confidence=p_conf,
-                in_stock_confidence=s_conf,
-                in_stock=in_stock,
-                ai_model=update_data.metadata.model_name,
-                ai_provider=update_data.metadata.provider,
-                prompt_version=update_data.metadata.prompt_version,
-                repair_used=update_data.metadata.repair_used,
+            session.add(
+                models.PriceHistory(
+                    item_id=item.id,
+                    price=price,
+                    screenshot_path=update_data.screenshot_path,
+                    price_confidence=p_conf,
+                    in_stock_confidence=s_conf,
+                    in_stock=in_stock,
+                    ai_model=update_data.metadata.model_name,
+                    ai_provider=update_data.metadata.provider,
+                    prompt_version=update_data.metadata.prompt_version,
+                    repair_used=update_data.metadata.repair_used,
+                )
             )
-        )
 
-    if in_stock is not None and s_conf >= update_data.thresholds["stock"]:
+    if not outlier_rejected and in_stock is not None and s_conf >= update_data.thresholds["stock"]:
         item.in_stock = in_stock
         item.in_stock_confidence = s_conf
 
     old_timestamp = item.last_checked
     item.last_checked = utc_now_naive()
     item.is_refreshing = False
-    if item.last_error and not item.last_error.startswith("Uncertain:"):
-        item.last_error = None
 
-    # Warn when price was extracted but confidence is too low to apply
-    if price is not None and p_conf < update_data.thresholds["price"]:
-        item.last_error = (
-            f"Low confidence: price found ({price:.2f}) but confidence ({p_conf:.2f}) "
-            f"is below threshold ({update_data.thresholds['price']:.2f})"
-        )
+    if not outlier_rejected:
+        if item.last_error and not item.last_error.startswith("Uncertain:"):
+            item.last_error = None
 
+        # Warn when price was extracted but confidence is too low to apply
+        if price is not None and p_conf < update_data.thresholds["price"]:
+            item.last_error = (
+                f"Low confidence: price found ({price:.2f}) but confidence ({p_conf:.2f}) "
+                f"is below threshold ({update_data.thresholds['price']:.2f})"
+            )
+
+    # Single atomic commit for all mutations
     await session.commit()
     logger.info(
         f"Updated item {item_id}: price={price}, stock={in_stock} "
