@@ -1,11 +1,12 @@
 import asyncio
+import json
 import logging
 import os
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from http import HTTPStatus
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from playwright.async_api import Browser, Page, async_playwright
@@ -13,6 +14,68 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 logger = logging.getLogger(__name__)
 BROWSERLESS_URL = os.getenv("BROWSERLESS_URL", "ws://browserless:3000")
+
+
+def _build_browserless_url(base_url: str) -> str:
+    """Build the final Browserless connection URL from the base URL and optional env vars.
+
+    Supports the following environment variables that are appended as query parameters:
+    - ``BROWSERLESS_TOKEN``: authentication token.
+    - ``BROWSERLESS_BLOCK_ADS``: set to ``true`` to enable ad blocking.
+    - ``BROWSERLESS_STEALTH``: set to ``true`` to enable stealth mode.
+    - ``BROWSERLESS_HEADLESS``: headless mode value (e.g. ``new`` or ``true``).
+    - ``BROWSERLESS_VIEWPORT_WIDTH``: viewport width in pixels (e.g. ``1920``).
+    - ``BROWSERLESS_VIEWPORT_HEIGHT``: viewport height in pixels (e.g. ``1080``).
+
+    The stealth/headless/viewport values are assembled into a ``launch`` JSON object
+    and appended as a single ``launch`` query parameter.
+    """
+    params: dict[str, str] = {}
+
+    token = os.getenv("BROWSERLESS_TOKEN", "")
+    if token:
+        params["token"] = token
+
+    if os.getenv("BROWSERLESS_BLOCK_ADS", "").lower() in ("true", "1", "yes"):
+        params["blockAds"] = "true"
+
+    launch: dict = {}
+    if os.getenv("BROWSERLESS_STEALTH", "").lower() in ("true", "1", "yes"):
+        launch["stealth"] = True
+    headless = os.getenv("BROWSERLESS_HEADLESS", "")
+    if headless:
+        # Convert "true"/"false" to booleans; preserve other values (e.g. "new") as strings
+        if headless.lower() == "true":
+            launch["headless"] = True
+        elif headless.lower() == "false":
+            launch["headless"] = False
+        else:
+            launch["headless"] = headless
+    vp_width = os.getenv("BROWSERLESS_VIEWPORT_WIDTH", "")
+    vp_height = os.getenv("BROWSERLESS_VIEWPORT_HEIGHT", "")
+    if vp_width or vp_height:
+        viewport: dict = {}
+        try:
+            if vp_width:
+                viewport["width"] = int(vp_width)
+            if vp_height:
+                viewport["height"] = int(vp_height)
+        except ValueError:
+            logger.warning("BROWSERLESS_VIEWPORT_WIDTH/HEIGHT must be integers, ignoring viewport settings.")
+            viewport = {}
+        if viewport:
+            launch["defaultViewport"] = viewport
+    if launch:
+        params["launch"] = json.dumps(launch, separators=(",", ":"))
+
+    if not params:
+        return base_url
+
+    parsed = urlparse(base_url)
+    existing = parsed.query
+    extra = urlencode(params)
+    full_query = f"{existing}&{extra}" if existing else extra
+    return urlunparse(parsed._replace(query=full_query))
 
 
 @dataclass
@@ -37,7 +100,7 @@ class ScraperService:
                 cls._playwright = await async_playwright().start()
 
                 # Resolve the correct WebSocket URL (handles generic Chrome vs Browserless)
-                ws_url = await cls._resolve_ws_url(BROWSERLESS_URL)
+                ws_url = await cls._resolve_ws_url(_build_browserless_url(BROWSERLESS_URL))
                 logger.info(f"Connecting to Chrome at: {ws_url}")
 
                 try:

@@ -110,8 +110,14 @@ The following environment variables can be configured in your `docker-compose.ym
 
 | Variable | Description | Default | Example |
 | :--- | :--- | :--- | :--- |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:password@db:5432/pricewatch` | `postgresql://u:p@localhost:5432/db` |
-| `BROWSERLESS_URL` | WebSocket URL for Browserless. Supports tokens and launch args via query string. | `ws://browserless:3000` | `ws://host:port/chromium?token=TOKEN` |
+| `DATABASE_URL` | PostgreSQL connection string. Use container name for Docker networking. | `postgresql://user:password@db:5432/pricewatch` | `postgresql://u:p@postgresql:5432/db` |
+| `BROWSERLESS_URL` | WebSocket URL for Browserless. | `ws://browserless:3000` | `ws://host:port/chromium` |
+| `BROWSERLESS_TOKEN` | Browserless authentication token. | *(empty)* | `my-secret-token` |
+| `BROWSERLESS_BLOCK_ADS` | Enable ad blocking in Browserless. | `false` | `true` |
+| `BROWSERLESS_STEALTH` | Enable stealth mode in Browserless. | `false` | `true` |
+| `BROWSERLESS_HEADLESS` | Headless mode value passed to Browserless. | *(empty)* | `new` |
+| `BROWSERLESS_VIEWPORT_WIDTH` | Viewport width in pixels. | *(empty)* | `1920` |
+| `BROWSERLESS_VIEWPORT_HEIGHT` | Viewport height in pixels. | *(empty)* | `1080` |
 | `LOG_LEVEL` | Application logging level | `INFO` | `DEBUG` |
 | `SQL_ECHO` | Log all SQL queries to console | `false` | `true` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `*` | `http://localhost:3000,https://myapp.com` |
@@ -121,10 +127,17 @@ The following environment variables can be configured in your `docker-compose.ym
 
 > [!TIP]
 > **Browserless Configuration**
-> If you are using a protected instance of Browserless (e.g., `browserless-v2`), you can pass the token and launch arguments directly in the URL query string:
+> If you are using a protected Browserless instance with custom launch options, use the separate env vars to avoid shell-escaping issues with complex JSON strings:
 > ```bash
-> BROWSERLESS_URL=ws://{IP}:{PORT}/chromium?token={TOKEN}&launch={"defaultViewport":{"height":1080,"width":1920},"headless":"new","stealth":true}&blockAds=true
+> BROWSERLESS_URL=ws://{IP}:{PORT}/chromium
+> BROWSERLESS_TOKEN={TOKEN}
+> BROWSERLESS_BLOCK_ADS=true
+> BROWSERLESS_STEALTH=true
+> BROWSERLESS_HEADLESS=new
+> BROWSERLESS_VIEWPORT_WIDTH=1920
+> BROWSERLESS_VIEWPORT_HEIGHT=1080
 > ```
+> These are assembled into the correct Browserless query parameters automatically, eliminating shell escaping problems with `"`, `{`, and `&` characters.
 
 ### Scraper Settings
 All scraper settings are configured via the **Settings** page in the UI:
