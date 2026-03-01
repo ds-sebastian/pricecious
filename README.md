@@ -118,6 +118,7 @@ The following environment variables can be configured in your `docker-compose.ym
 | `BROWSERLESS_HEADLESS` | Headless mode value passed to Browserless. | *(empty)* | `new` |
 | `BROWSERLESS_VIEWPORT_WIDTH` | Viewport width in pixels. | *(empty)* | `1920` |
 | `BROWSERLESS_VIEWPORT_HEIGHT` | Viewport height in pixels. | *(empty)* | `1080` |
+| `SCREENSHOT_DIR` | Directory for storing scraper screenshots. | `screenshots` | `/app/data/screenshots` |
 | `LOG_LEVEL` | Application logging level | `INFO` | `DEBUG` |
 | `SQL_ECHO` | Log all SQL queries to console | `false` | `true` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `*` | `http://localhost:3000,https://myapp.com` |

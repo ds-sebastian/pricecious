@@ -137,6 +137,35 @@ class TestScraperScreenshot:
             assert path == "screenshots/item_123.png"
             mock_page.screenshot.assert_called_with(path="screenshots/item_123.png")
 
+    @pytest.mark.asyncio
+    async def test_screenshot_anonymous_uses_hash(self):
+        """Test that anonymous screenshots use hashed URL filenames."""
+        with patch("app.services.scraper_service.async_playwright") as mock_pw_cls:
+            mock_pw_obj = AsyncMock()
+            mock_browser = AsyncMock()
+            mock_context = AsyncMock()
+            mock_page = AsyncMock()
+
+            mock_pw_context = MagicMock()
+            mock_pw_context.start = AsyncMock(return_value=mock_pw_obj)
+            mock_pw_cls.return_value = mock_pw_context
+
+            mock_pw_obj.chromium.connect_over_cdp.return_value = mock_browser
+            mock_browser.is_connected = MagicMock(return_value=True)
+            mock_browser.new_context.return_value = mock_context
+            mock_context.new_page.return_value = mock_page
+
+            await ScraperService.initialize()
+            path, _ = await ScraperService.scrape_item("http://example.com")
+
+            # Pattern: screenshots/scrape_YYYYMMDD_HHMMSS_<10-char-hash>.png
+            assert path.startswith("screenshots/scrape_")
+            assert path.endswith(".png")
+            stem = path.removeprefix("screenshots/scrape_").removesuffix(".png")
+            parts = stem.split("_")
+            assert len(parts) == 3  # YYYYMMDD, HHMMSS, hash
+            assert len(parts[2]) == 10  # 10-char SHA-1 prefix
+
 
 class TestScraperErrorHandling:
     """Test error handling in scraper."""

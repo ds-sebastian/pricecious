@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -163,10 +164,12 @@ class ScraperService:
         """Shutdown the shared browser instance."""
         async with cls._lock:
             if cls._browser:
-                await cls._browser.close()
+                with suppress(Exception):
+                    await cls._browser.close()
                 cls._browser = None
             if cls._playwright:
-                await cls._playwright.stop()
+                with suppress(Exception):
+                    await cls._playwright.stop()
                 cls._playwright = None
             logger.info("ScraperService shutdown complete.")
 
@@ -291,7 +294,7 @@ class ScraperService:
     @staticmethod
     async def _auto_detect_price(page: Page):
         with suppress(Exception):
-            locator = page.locator("text=/$[0-9,]+(\\.[0-9]{2})?/")
+            locator = page.locator("text=/(\\$|€|£)\\s*[0-9,]+\\.?[0-9]{0,2}/i")
             if await locator.count() > 0:
                 await locator.first.scroll_into_view_if_needed()
 
@@ -300,15 +303,21 @@ class ScraperService:
         if limit <= 0:
             return ""
         try:
-            text = await page.inner_text("body")
-            return text[:limit]
+            raw = await page.inner_text("body")
+            clean = " ".join(raw.split())
+            return clean[:limit]
         except Exception:
             return ""
 
     @staticmethod
     async def _take_screenshot(page: Page, url: str, item_id: int | None) -> str:
-        path = "screenshots"
+        path = os.getenv("SCREENSHOT_DIR", "screenshots")
         os.makedirs(path, exist_ok=True)
-        filename = f"{path}/item_{item_id}.png" if item_id else f"{path}/scrape_{datetime.now().timestamp()}.png"
+        if item_id:
+            filename = f"{path}/item_{item_id}.png"
+        else:
+            url_hash = hashlib.sha1(url.encode()).hexdigest()[:10]
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{path}/scrape_{ts}_{url_hash}.png"
         await page.screenshot(path=filename)
         return filename
