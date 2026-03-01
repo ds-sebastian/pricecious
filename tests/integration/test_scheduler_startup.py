@@ -13,8 +13,12 @@ async def test_scheduler_startup():
     if scheduler.running:
         scheduler.shutdown()
 
-    # Mock SettingsService to avoid DB calls
-    with patch("app.main.SettingsService") as mock_settings:
+    # Mock SettingsService and ScraperService to avoid DB/browser calls
+    with (
+        patch("app.main.SettingsService") as mock_settings,
+        patch("app.services.scraper_service.ScraperService.initialize", new_callable=AsyncMock),
+        patch("app.services.scraper_service.ScraperService.shutdown", new_callable=AsyncMock),
+    ):
         # returns string "24" for forecasting. "refresh_interval_minutes" is no longer fetched in main
         mock_settings.get_setting_value = AsyncMock(side_effect=["24"])
 

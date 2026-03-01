@@ -73,6 +73,7 @@ known-first-party = ["app"]
 "tests/*" = ["PLR2004"]
 "app/routers/*" = ["B008"]
 "app/main.py" = ["B008"]
+"app/services/scraper_service.py" = ["PLR0912"]
 
 
 [tool.pytest.ini_options]
