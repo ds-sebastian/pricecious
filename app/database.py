@@ -15,7 +15,7 @@ def _get_database_url() -> str:
     """Resolve and normalize the DATABASE_URL."""
     url = os.getenv("DATABASE_URL")
     if not url:
-        raise RuntimeError("DATABASE_URL environment variable is required. " "Set it before making any database calls.")
+        raise RuntimeError("DATABASE_URL environment variable is required. Set it before making any database calls.")
 
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
