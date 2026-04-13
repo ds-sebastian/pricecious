@@ -1224,11 +1224,11 @@ wheels = [
 
 [[package]]
 name = "json-repair"
-version = "0.58.7"
+version = "0.59.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/7b/68/119efc8f5f9fc8cf4f35bbfe28c5b84a14e237be4647a53cb29390e06102/json_repair-0.58.7.tar.gz", hash = "sha256:2ea5c841cc1d91dbbe79e9ed4b2b77a5cc04d20892d62a15261b70ce999ec758", size = 46312, upload-time = "2026-03-26T19:12:13.654Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/cb/a49f1661737a78098ce33668350590c981a4163055bc9a01e0cc688d896a/json_repair-0.59.2.tar.gz", hash = "sha256:1d8abb2fa94c4035a66ef9892ea3785dace8dcf09c583e6de781cfd31b278b3d", size = 48341, upload-time = "2026-04-11T15:55:41.145Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/70/1c3d2304b7972a3e9430f1672b4fe20061c0ffc56662ad7c63d0e77a7d1a/json_repair-0.58.7-py3-none-any.whl", hash = "sha256:af0c7ff6a2ddd80bb1e7e6121c1a86d8bb57a539aa211acbfb25c64087b7116f", size = 44545, upload-time = "2026-03-26T19:12:12.445Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/03/7afcecb4242d93b684708b47fb014abdc1922a01b38c0e30f1117ae74a83/json_repair-0.59.2-py3-none-any.whl", hash = "sha256:6ca6238519c24f671bcb05d1f38a0d6a452bb4ca5af82137595c5c2f1a0fb785", size = 46918, upload-time = "2026-04-11T15:55:39.817Z" },
 ]
 
 [[package]]
@@ -2163,7 +2163,7 @@ wheels = [
 
 [[package]]
 name = "pricecious-backend"
-version = "0.2.3"
+version = "0.2.4"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
@@ -2227,7 +2227,7 @@ requires-dist = [
     { name = "granian" },
     { name = "httpx" },
     { name = "httpx", marker = "extra == 'dev'" },
-    { name = "json-repair", specifier = ">=0.54.2" },
+    { name = "json-repair", specifier = ">=0.59.2" },
     { name = "litellm" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "pandas" },
