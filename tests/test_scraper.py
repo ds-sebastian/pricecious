@@ -3,11 +3,18 @@ Unit tests for scraper module.
 """
 
 import asyncio
+import random as rng
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from PIL import Image as PILImage
 
-from app.services.scraper_service import ScrapeConfig, ScraperService
+from app.services.scraper_service import (
+    COOKIE_CONSENT_SELECTORS,
+    USER_AGENTS,
+    ScrapeConfig,
+    ScraperService,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -330,7 +337,6 @@ class TestCookieConsentHandling:
     @pytest.mark.asyncio
     async def test_cookie_selectors_tried_before_generic(self):
         """Verify cookie-specific selectors are tried before generic close buttons."""
-        from app.services.scraper_service import COOKIE_CONSENT_SELECTORS, ScraperService
 
         mock_page = AsyncMock()
         mock_locator = MagicMock()
@@ -400,11 +406,8 @@ class TestScreenshotValidation:
     @pytest.mark.asyncio
     async def test_valid_screenshot_accepted(self, tmp_path):
         """A real-looking screenshot passes validation."""
-        from PIL import Image as PILImage
-
         # Create a colorful test image (not solid color)
         img = PILImage.new("RGB", (200, 200))
-        import random as rng
 
         rng.seed(42)
         pixels = img.load()
@@ -423,10 +426,7 @@ class TestScreenshotValidation:
     @pytest.mark.asyncio
     async def test_blocked_page_short_text_rejected(self, tmp_path):
         """A page with blocked phrases and very short text is rejected."""
-        from PIL import Image as PILImage
-
         img = PILImage.new("RGB", (200, 200))
-        import random as rng
 
         rng.seed(42)
         pixels = img.load()
@@ -449,7 +449,6 @@ class TestUserAgentRotation:
     @pytest.mark.asyncio
     async def test_ua_is_from_pool(self):
         """Verify the UA comes from our pool, not hardcoded."""
-        from app.services.scraper_service import USER_AGENTS
 
         with patch("app.services.scraper_service.async_playwright") as mock_pw_cls:
             mock_pw_obj = AsyncMock()

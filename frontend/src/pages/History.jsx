@@ -55,7 +55,7 @@ export default function History() {
 
 	useEffect(() => {
 		fetchItems();
-	}, []);
+	}, [fetchItems]);
 
 	useEffect(() => {
 		if (selectedItemId) {
@@ -78,6 +78,7 @@ export default function History() {
 		filterMaxPrice,
 		filterInStock,
 		filterMinConfidence,
+		fetchHistory,
 	]);
 
 	const fetchItems = async () => {

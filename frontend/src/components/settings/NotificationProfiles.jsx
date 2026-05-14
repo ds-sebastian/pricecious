@@ -224,7 +224,7 @@ export function NotificationProfiles() {
 								onChange={(e) =>
 									setNewProfile({
 										...newProfile,
-										check_interval_minutes: Number.parseInt(e.target.value),
+										check_interval_minutes: Number.parseInt(e.target.value, 10),
 									})
 								}
 							/>

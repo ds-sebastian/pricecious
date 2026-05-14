@@ -96,7 +96,7 @@ export function ItemModal({ item, onClose, onSaved, open }) {
 					? Number.parseFloat(formData.target_price)
 					: null,
 				notification_profile_id: formData.notification_profile_id
-					? Number.parseInt(formData.notification_profile_id)
+					? Number.parseInt(formData.notification_profile_id, 10)
 					: null,
 				current_price: formData.current_price
 					? Number.parseFloat(formData.current_price)

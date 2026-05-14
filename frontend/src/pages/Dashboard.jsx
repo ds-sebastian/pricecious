@@ -61,7 +61,7 @@ export default function Dashboard() {
 		onSuccess: () => {
 			toast.success("Refresh all started");
 		},
-		onError: (error, variables, context) => {
+		onError: (error, _variables, context) => {
 			console.error("Error triggering refresh all:", error);
 			toast.error("Failed to trigger refresh all");
 			if (context?.previousItems) {

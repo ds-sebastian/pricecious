@@ -17,12 +17,17 @@ export function ScraperConfig() {
 	const smart_scroll_enabled = settings.smart_scroll_enabled === "true";
 	const smart_scroll_pixels = Number.parseInt(
 		settings.smart_scroll_pixels || "350",
+		10,
 	);
 	const text_context_enabled = settings.text_context_enabled === "true";
 	const text_context_length = Number.parseInt(
 		settings.text_context_length || "5000",
+		10,
 	);
-	const scraper_timeout = Number.parseInt(settings.scraper_timeout || "90000");
+	const scraper_timeout = Number.parseInt(
+		settings.scraper_timeout || "90000",
+		10,
+	);
 
 	return (
 		<Card>
@@ -59,7 +64,7 @@ export function ScraperConfig() {
 							onChange={(e) =>
 								updateSetting(
 									"smart_scroll_pixels",
-									Number.parseInt(e.target.value),
+									Number.parseInt(e.target.value, 10),
 								)
 							}
 						/>
@@ -88,7 +93,7 @@ export function ScraperConfig() {
 							onChange={(e) =>
 								updateSetting(
 									"text_context_length",
-									Number.parseInt(e.target.value),
+									Number.parseInt(e.target.value, 10),
 								)
 							}
 						/>
@@ -100,7 +105,10 @@ export function ScraperConfig() {
 						type="number"
 						value={scraper_timeout}
 						onChange={(e) =>
-							updateSetting("scraper_timeout", Number.parseInt(e.target.value))
+							updateSetting(
+								"scraper_timeout",
+								Number.parseInt(e.target.value, 10),
+							)
 						}
 					/>
 				</div>

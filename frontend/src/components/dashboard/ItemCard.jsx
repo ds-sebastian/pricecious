@@ -7,12 +7,7 @@ import {
 	Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardFooter,
-	CardHeader,
-} from "@/components/ui/card";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Marquee } from "@/components/ui/marquee";
 import { cn } from "@/lib/utils";
 

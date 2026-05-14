@@ -1,4 +1,3 @@
-import React from "react";
 import { AIConfig } from "@/components/settings/AIConfig";
 import { JobConfig } from "@/components/settings/JobConfig";
 import { NotificationProfiles } from "@/components/settings/NotificationProfiles";

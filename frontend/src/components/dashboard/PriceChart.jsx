@@ -67,7 +67,7 @@ export function PriceChart({ data, series = [], annotations = [] }) {
 	}
 
 	const CustomTooltip = ({ active, payload, label }) => {
-		if (active && payload && payload.length) {
+		if (active && payload?.length) {
 			const dataPoint = payload[0].payload;
 			return (
 				<div className="rounded-lg border bg-background p-2 shadow-sm">

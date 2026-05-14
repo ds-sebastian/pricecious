@@ -33,7 +33,7 @@ export function AIConfig() {
 			? settings.ai_api_base
 			: "http://ollama:11434";
 	const ai_temperature = Number.parseFloat(settings.ai_temperature || "0.1");
-	const ai_max_tokens = Number.parseInt(settings.ai_max_tokens || "300");
+	const ai_max_tokens = Number.parseInt(settings.ai_max_tokens || "300", 10);
 	const ai_reasoning_effort = settings.ai_reasoning_effort || "low";
 
 	const confidence_threshold_price = Number.parseFloat(
@@ -251,7 +251,7 @@ export function AIConfig() {
 										onChange={(e) =>
 											updateSetting(
 												"ai_max_tokens",
-												Number.parseInt(e.target.value),
+												Number.parseInt(e.target.value, 10),
 											)
 										}
 									/>
