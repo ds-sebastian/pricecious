@@ -1,7 +1,7 @@
 """Add failure tracking columns
 
 Revision ID: b2c3d4e5f6a7
-Revises: a1b2c3d4e5f6
+Revises: 64feb33cef5d
 Create Date: 2026-05-14 03:10:00.000000
 
 """
@@ -18,7 +18,7 @@ target_metadata = Base.metadata
 
 # revision identifiers, used by Alembic.
 revision: str = "b2c3d4e5f6a7"
-down_revision: str | None = "a1b2c3d4e5f6"
+down_revision: str | None = "64feb33cef5d"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

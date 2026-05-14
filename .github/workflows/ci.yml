@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,6 +22,8 @@ jobs:
 
     - name: Install uv
       uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
 
     - name: Set up Python 3.12
       uses: actions/setup-python@v6
@@ -30,14 +39,6 @@ jobs:
     - name: Run Ruff Formatting Check
       run: uv run ruff format --check .
 
-    - name: Run Bandit Security Scan
-      run: uv run bandit -r app/ -ll --format json -o bandit-report.json || true
-      continue-on-error: true
-
-    - name: Run pip-audit
-      run: uv run pip-audit --disable-pip || true
-      continue-on-error: true
-
     - name: Run Tests with Coverage
       run: |
         uv run pytest --cov=app --cov-report=xml --cov-report=term-missing
@@ -52,8 +53,6 @@ jobs:
 
   frontend-lint:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
     - uses: actions/checkout@v4
@@ -61,7 +60,7 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: "20"
+        node-version: "22"
         cache: "npm"
         cache-dependency-path: frontend/package-lock.json
 
@@ -72,3 +71,7 @@ jobs:
     - name: Run Biome (lint, format, imports)
       working-directory: frontend
       run: npx biome ci .
+
+    - name: Verify frontend builds
+      working-directory: frontend
+      run: npm run build

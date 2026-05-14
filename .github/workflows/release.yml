@@ -5,11 +5,12 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,5 +19,6 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           body_path: release.md
+          generate_release_notes: true
           files: |
             CHANGELOG.md
