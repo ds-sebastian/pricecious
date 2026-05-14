@@ -99,7 +99,15 @@ async def test_update_item_in_db_uses_provided_session():
             multi_sample=False,
             sample_count=1,
         ),
-        thresholds={"price": 0.5, "stock": 0.5, "outlier_percent": 500.0, "outlier_enabled": False},
+        thresholds={
+            "price": 0.5,
+            "stock": 0.5,
+            "outlier_percent": 500.0,
+            "outlier_enabled": False,
+            "price_min_floor": 0.01,
+            "price_max_ceiling": 100_000.0,
+            "max_consecutive_failures": 20,
+        },
         screenshot_path="path",
     )
 

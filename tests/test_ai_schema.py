@@ -219,3 +219,32 @@ class TestPromptGeneration:
         assert "Convert the following text" in prompt
         assert raw_output in prompt
         assert "JSON" in prompt
+
+    def test_extraction_prompt_with_last_known_price(self):
+        """Test that last_known_price is included as anchoring context."""
+        prompt = get_extraction_prompt(last_known_price=199.99)
+        assert "Previously known price" in prompt
+        assert "199.99" in prompt
+        assert "context only" in prompt
+
+    def test_extraction_prompt_with_url_currency(self):
+        """Test that currency is inferred from URL and used in prompt."""
+        prompt = get_extraction_prompt(url="https://www.amazon.co.uk/dp/B0123")
+        assert "GBP" in prompt
+
+    def test_extraction_prompt_default_currency(self):
+        """Test that default currency is USD when no URL is given."""
+        prompt = get_extraction_prompt()
+        assert "USD" in prompt
+
+    def test_extraction_prompt_all_context(self):
+        """Test prompt with all optional context provided."""
+        prompt = get_extraction_prompt(
+            page_text="Sale price $49.99",
+            last_known_price=59.99,
+            url="https://shop.de/product",
+        )
+        assert "Previously known price" in prompt
+        assert "59.99" in prompt
+        assert "EUR" in prompt
+        assert "$49.99" in prompt

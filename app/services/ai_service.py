@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from statistics import median
 from typing import TypedDict
 
 import json_repair
@@ -24,6 +26,12 @@ litellm.suppress_debug_info = True
 litellm.set_verbose = False
 
 logger = logging.getLogger(__name__)
+
+# Multi-sample consensus constants
+MULTI_SAMPLE_COUNT = 3
+MULTI_SAMPLE_TEMPERATURE = 0.3
+MULTI_SAMPLE_PRICE_TOLERANCE = 0.02  # 2% tolerance for price agreement
+MULTI_SAMPLE_MIN_CONSENSUS = 2  # Minimum samples that must agree
 
 
 class AIConfig(TypedDict):
@@ -169,13 +177,100 @@ class AIService:
             raise
 
     @classmethod
+    async def _multi_sample_analyze(
+        cls,
+        messages: list,
+        config: AIConfig,
+        n: int = MULTI_SAMPLE_COUNT,
+    ) -> tuple[AIExtractionResponse, AIExtractionMetadata] | None:
+        """Run N parallel extractions and return consensus result.
+
+        The function sends ``n`` parallel LLM requests at a slightly higher
+        temperature and then applies a majority-vote strategy on the
+        extracted prices.  A price is accepted if at least 2 samples agree
+        within ``MULTI_SAMPLE_PRICE_TOLERANCE`` (2 %).
+        """
+        multi_config = {**config, "temperature": MULTI_SAMPLE_TEMPERATURE}
+        logger.info(f"Running multi-sample analysis with {n} samples")
+
+        # Fire N parallel calls
+        tasks = [cls.call_llm(messages, multi_config) for _ in range(n)]
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Parse successful responses
+        parsed: list[AIExtractionResponse] = []
+        for r in raw_results:
+            if isinstance(r, Exception):
+                logger.debug(f"Multi-sample call failed: {r}")
+                continue
+            try:
+                parsed.append(cls.parse_response(r))
+            except Exception as e:
+                logger.debug(f"Multi-sample parse failed: {e}")
+
+        if not parsed:
+            logger.warning("All multi-sample calls failed")
+            return None
+
+        # Extract prices and find consensus
+        prices = [p.price for p in parsed if p.price is not None]
+
+        if not prices:
+            # All samples returned None price — use first result
+            best = parsed[0]
+        elif len(prices) == 1:
+            # Only one price extracted — use it
+            best = next(p for p in parsed if p.price is not None)
+        else:
+            # Find the median price and count how many agree within tolerance
+            med = median(prices)
+            agreeing = [p for p in prices if abs(p - med) / med <= MULTI_SAMPLE_PRICE_TOLERANCE] if med > 0 else prices
+            if len(agreeing) >= MULTI_SAMPLE_MIN_CONSENSUS:
+                # Consensus reached — use the sample closest to median
+                best = min(
+                    [p for p in parsed if p.price is not None],
+                    key=lambda p: abs(p.price - med),
+                )
+                # Boost confidence since we have consensus
+                best.price_confidence = min(1.0, best.price_confidence + 0.1)
+                logger.info(f"Multi-sample consensus: {len(agreeing)}/{len(prices)} agree on ~${med:.2f}")
+            else:
+                # No consensus — pick the response with highest confidence
+                best = max(
+                    [p for p in parsed if p.price is not None],
+                    key=lambda p: p.price_confidence,
+                )
+                logger.warning(f"Multi-sample: no consensus (prices: {prices}), using highest confidence")
+
+        meta = AIExtractionMetadata(
+            model_name=config["model"],
+            provider=config["provider"],
+            prompt_version=PROMPT_VERSION,
+            repair_used=False,
+            multi_sample=True,
+            sample_count=len(parsed),
+        )
+
+        return best, meta
+
+    @classmethod
     async def analyze_image(
-        cls, image_path: str, page_text: str = "", custom_prompt: str | None = None
+        cls,
+        image_path: str,
+        page_text: str = "",
+        custom_prompt: str | None = None,
+        last_known_price: float | None = None,
+        url: str | None = None,
     ) -> tuple[AIExtractionResponse, AIExtractionMetadata] | None:
         try:
             config = await cls.get_ai_config()
             base64_image = await encode_image(image_path)
-            prompt = get_extraction_prompt(clean_text(page_text) if page_text else None, custom_prompt)
+            prompt = get_extraction_prompt(
+                clean_text(page_text) if page_text else None,
+                custom_prompt,
+                last_known_price=last_known_price,
+                url=url,
+            )
 
             messages = [
                 {
@@ -209,12 +304,29 @@ class AIService:
             logger.debug(f"Raw AI Response: {response_text}")
 
             try:
-                return cls.parse_response(response_text), make_meta(False)
+                result = cls.parse_response(response_text)
             except Exception as e:
                 logger.info(f"Parsing failed: {e}. Attempting LLM repair...")
                 repair_msg = [{"role": "user", "content": get_repair_prompt(response_text)}]
                 repaired = await cls.call_llm(repair_msg, config, is_repair=True)
                 return cls.parse_response(repaired), make_meta(True)
+
+            # If multi-sample is enabled and single-sample confidence is below threshold,
+            # run multi-sample consensus for higher reliability
+            if (
+                config["enable_multi_sample"]
+                and result.price_confidence < config["multi_sample_threshold"]
+                and result.price is not None
+            ):
+                logger.info(
+                    f"Single-sample confidence ({result.price_confidence:.2f}) below threshold "
+                    f"({config['multi_sample_threshold']:.2f}), running multi-sample..."
+                )
+                multi_result = await cls._multi_sample_analyze(messages, config)
+                if multi_result:
+                    return multi_result
+
+            return result, make_meta(False)
 
         except Exception as e:
             logger.error(f"Analysis failed: {e}")

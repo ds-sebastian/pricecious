@@ -10,10 +10,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.utils.currency import infer_currency_from_url
 from app.utils.text import filter_relevant_text
 
 # Schema version for tracking prompt/schema changes
-PROMPT_VERSION = "v2.0"
+PROMPT_VERSION = "v3.0"
 
 # Default confidence thresholds
 DEFAULT_PRICE_CONFIDENCE_THRESHOLD = 0.5
@@ -137,7 +138,7 @@ EXTRACTION_PROMPT_TEMPLATE = """Extract product price and stock status from the 
 Respond ONLY with valid JSON:
 {{
   "price": <number or null>,
-  "currency": "USD",
+  "currency": "{currency_hint}",
   "in_stock": <true, false, or null>,
   "price_confidence": <0.0 to 1.0>,
   "in_stock_confidence": <0.0 to 1.0>,
@@ -168,32 +169,52 @@ Text to convert:
 {raw_output}"""
 
 
-def get_extraction_prompt(page_text: str | None = None, custom_prompt_template: str | None = None) -> str:
+def get_extraction_prompt(
+    page_text: str | None = None,
+    custom_prompt_template: str | None = None,
+    last_known_price: float | None = None,
+    url: str | None = None,
+) -> str:
     """
     Generate the extraction prompt with optional text context.
 
     Args:
         page_text: Optional webpage text to include as context
         custom_prompt_template: Optional custom prompt template to override default
+        last_known_price: Optional previous price for anchoring context
+        url: Optional product URL for currency inference
 
     Returns:
         Formatted prompt string
     """
+    context_parts = []
+
+    # Add price anchoring context
+    if last_known_price is not None:
+        context_parts.append(
+            f"**Previously known price:** {last_known_price:.2f} "
+            f"(for context only — extract what you actually see, not what you expect)"
+        )
+
+    # Add page text context
     if page_text:
         # Apply smart filtering to extract only relevant snippets
         filtered_text = filter_relevant_text(page_text, max_length=1500)
-        context_section = f"""**Relevant text from page:**
-{filtered_text}"""
-    else:
-        context_section = ""
+        context_parts.append(f"**Relevant text from page:**\n{filtered_text}")
+
+    context_section = "\n\n".join(context_parts)
+
+    # Infer currency from URL
+    currency_hint = infer_currency_from_url(url) if url else "USD"
 
     template = custom_prompt_template if custom_prompt_template else EXTRACTION_PROMPT_TEMPLATE
 
     # Handle case where custom prompt might not include the placeholder
     if custom_prompt_template and "{context_section}" not in custom_prompt_template:
-        return f"{template}\n\n{context_section}"
+        formatted = template.replace("{currency_hint}", currency_hint) if "{currency_hint}" in template else template
+        return f"{formatted}\n\n{context_section}"
 
-    return template.format(context_section=context_section)
+    return template.format(context_section=context_section, currency_hint=currency_hint)
 
 
 def get_repair_prompt(raw_output: str) -> str:

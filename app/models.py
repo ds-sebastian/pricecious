@@ -47,6 +47,8 @@ class Item(Base):
     last_checked: Mapped[datetime | None] = mapped_column(nullable=True)
     is_refreshing: Mapped[bool] = mapped_column(default=False)
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(default=0)
+    error_type: Mapped[str | None] = mapped_column(String, nullable=True)
 
     notification_profile_id: Mapped[int | None] = mapped_column(ForeignKey("notification_profiles.id"), nullable=True)
     notification_profile: Mapped["NotificationProfile | None"] = relationship(back_populates="items")

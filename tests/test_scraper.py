@@ -77,7 +77,8 @@ class TestScraperInputValidation:
             config = ScrapeConfig(scroll_pixels=500, smart_scroll=True)
 
             await ScraperService.initialize()
-            await ScraperService.scrape_item("http://example.com", config=config)
+            with patch.object(ScraperService, "_validate_screenshot", return_value=True):
+                await ScraperService.scrape_item("http://example.com", config=config)
 
             # Verify scroll was called
             mock_page.evaluate.assert_called()
@@ -105,7 +106,8 @@ class TestScraperInputValidation:
             config = ScrapeConfig(timeout=12345)
 
             await ScraperService.initialize()
-            await ScraperService.scrape_item("http://example.com", config=config)
+            with patch.object(ScraperService, "_validate_screenshot", return_value=True):
+                await ScraperService.scrape_item("http://example.com", config=config)
 
             mock_page.goto.assert_called_with("http://example.com", wait_until="domcontentloaded", timeout=12345)
 
@@ -132,10 +134,22 @@ class TestScraperScreenshot:
             mock_context.new_page.return_value = mock_page
 
             await ScraperService.initialize()
-            path, _ = await ScraperService.scrape_item("http://example.com", item_id=123)
 
+            # Mock file operations that the new history retention uses
+            with (
+                patch("app.services.scraper_service.shutil.copy2"),
+                patch("app.services.scraper_service.glob.glob", return_value=[]),
+                patch.object(ScraperService, "_validate_screenshot", return_value=True),
+            ):
+                path, _ = await ScraperService.scrape_item("http://example.com", item_id=123)
+
+            # The returned path should be the "latest" symlink-style path
             assert path == "screenshots/item_123.png"
-            mock_page.screenshot.assert_called_with(path="screenshots/item_123.png")
+            # The actual screenshot call uses a timestamped filename
+            call_args = mock_page.screenshot.call_args
+            actual_path = call_args.kwargs.get("path") or call_args[1].get("path")
+            assert actual_path.startswith("screenshots/item_123_")
+            assert actual_path.endswith(".png")
 
     @pytest.mark.asyncio
     async def test_screenshot_anonymous_uses_hash(self):
@@ -156,7 +170,8 @@ class TestScraperScreenshot:
             mock_context.new_page.return_value = mock_page
 
             await ScraperService.initialize()
-            path, _ = await ScraperService.scrape_item("http://example.com")
+            with patch.object(ScraperService, "_validate_screenshot", return_value=True):
+                path, _ = await ScraperService.scrape_item("http://example.com")
 
             # Pattern: screenshots/scrape_YYYYMMDD_HHMMSS_<10-char-hash>.png
             assert path.startswith("screenshots/scrape_")
@@ -307,3 +322,190 @@ class TestScraperConnectionLogic:
 
                 # Verify connect_over_cdp was called with the RESOLVED url
                 mock_pw_obj.chromium.connect_over_cdp.assert_awaited_with("ws://resolved-url:1234")
+
+
+class TestCookieConsentHandling:
+    """Test cookie/GDPR banner handling in _handle_popups."""
+
+    @pytest.mark.asyncio
+    async def test_cookie_selectors_tried_before_generic(self):
+        """Verify cookie-specific selectors are tried before generic close buttons."""
+        from app.services.scraper_service import COOKIE_CONSENT_SELECTORS, ScraperService
+
+        mock_page = AsyncMock()
+        mock_locator = MagicMock()
+        mock_locator.count = AsyncMock(return_value=1)
+        mock_locator.first = MagicMock()
+        mock_locator.first.click = AsyncMock()
+
+        # Track which selectors are checked
+        checked_selectors = []
+
+        def track_locator(selector):
+            checked_selectors.append(selector)
+            if selector == COOKIE_CONSENT_SELECTORS[0]:
+                return mock_locator
+            empty = MagicMock()
+            empty.count = AsyncMock(return_value=0)
+            return empty
+
+        mock_page.locator = track_locator
+        mock_page.get_by_role = MagicMock(return_value=MagicMock(count=AsyncMock(return_value=0)))
+        mock_page.keyboard = AsyncMock()
+        mock_page.wait_for_timeout = AsyncMock()
+
+        await ScraperService._handle_popups(mock_page)
+
+        # First selector checked should be a cookie selector, not generic
+        assert checked_selectors[0] in COOKIE_CONSENT_SELECTORS
+
+    @pytest.mark.asyncio
+    async def test_accept_all_text_buttons(self):
+        """Verify text-based 'Accept All' buttons are clicked."""
+        mock_page = AsyncMock()
+
+        # No CSS selectors match
+        mock_locator_empty = MagicMock()
+        mock_locator_empty.count = AsyncMock(return_value=0)
+        mock_page.locator = MagicMock(return_value=mock_locator_empty)
+
+        # Text button matches
+        mock_btn = MagicMock()
+        mock_btn.count = AsyncMock(return_value=1)
+        mock_btn.first = MagicMock()
+        mock_btn.first.click = AsyncMock()
+        mock_page.get_by_role = MagicMock(return_value=mock_btn)
+        mock_page.wait_for_timeout = AsyncMock()
+        mock_page.keyboard = AsyncMock()
+
+        await ScraperService._handle_popups(mock_page)
+
+        mock_btn.first.click.assert_awaited()
+
+
+class TestScreenshotValidation:
+    """Test screenshot validation logic."""
+
+    @pytest.mark.asyncio
+    async def test_small_file_rejected(self, tmp_path):
+        """Screenshots below minimum size are rejected."""
+        small_file = tmp_path / "tiny.png"
+        small_file.write_bytes(b"\x89PNG" + b"\x00" * 100)
+
+        mock_page = AsyncMock()
+
+        result = await ScraperService._validate_screenshot(str(small_file), mock_page)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_valid_screenshot_accepted(self, tmp_path):
+        """A real-looking screenshot passes validation."""
+        from PIL import Image as PILImage
+
+        # Create a colorful test image (not solid color)
+        img = PILImage.new("RGB", (200, 200))
+        import random as rng
+
+        rng.seed(42)
+        pixels = img.load()
+        for i in range(200):
+            for j in range(200):
+                pixels[i, j] = (rng.randint(0, 255), rng.randint(0, 255), rng.randint(0, 255))
+        path = tmp_path / "valid.png"
+        img.save(path)
+
+        mock_page = AsyncMock()
+        mock_page.inner_text = AsyncMock(return_value="Add to Cart $99.99 Buy Now Product details and more text " * 10)
+
+        result = await ScraperService._validate_screenshot(str(path), mock_page)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_blocked_page_short_text_rejected(self, tmp_path):
+        """A page with blocked phrases and very short text is rejected."""
+        from PIL import Image as PILImage
+
+        img = PILImage.new("RGB", (200, 200))
+        import random as rng
+
+        rng.seed(42)
+        pixels = img.load()
+        for i in range(200):
+            for j in range(200):
+                pixels[i, j] = (rng.randint(0, 255), rng.randint(0, 255), rng.randint(0, 255))
+        path = tmp_path / "blocked.png"
+        img.save(path)
+
+        mock_page = AsyncMock()
+        mock_page.inner_text = AsyncMock(return_value="Access Denied. Please verify you are a human.")
+
+        result = await ScraperService._validate_screenshot(str(path), mock_page)
+        assert result is False
+
+
+class TestUserAgentRotation:
+    """Test that user agents are rotated."""
+
+    @pytest.mark.asyncio
+    async def test_ua_is_from_pool(self):
+        """Verify the UA comes from our pool, not hardcoded."""
+        from app.services.scraper_service import USER_AGENTS
+
+        with patch("app.services.scraper_service.async_playwright") as mock_pw_cls:
+            mock_pw_obj = AsyncMock()
+            mock_browser = AsyncMock()
+            mock_context = AsyncMock()
+            mock_page = AsyncMock()
+
+            mock_pw_context = MagicMock()
+            mock_pw_context.start = AsyncMock(return_value=mock_pw_obj)
+            mock_pw_cls.return_value = mock_pw_context
+
+            mock_pw_obj.chromium.connect_over_cdp.return_value = mock_browser
+            mock_browser.is_connected = MagicMock(return_value=True)
+            mock_browser.new_context.return_value = mock_context
+            mock_context.new_page.return_value = mock_page
+
+            await ScraperService.initialize()
+            await ScraperService.scrape_item("http://example.com", item_id=1)
+
+            # Check what UA was passed to new_context
+            call_kwargs = mock_browser.new_context.call_args
+            ua = call_kwargs.kwargs.get("user_agent") or call_kwargs[1].get("user_agent")
+            assert ua in USER_AGENTS
+
+
+class TestScrapeRetry:
+    """Test scrape retry on transient failure."""
+
+    @pytest.mark.asyncio
+    async def test_retries_on_failure(self):
+        """Verify scrape retries on exception."""
+        with patch.object(ScraperService, "_scrape_attempt") as mock_attempt:
+            # First call fails, second succeeds
+            mock_attempt.side_effect = [
+                Exception("Transient error"),
+                ("screenshots/item_1.png", "page text"),
+            ]
+
+            with patch("app.services.scraper_service.asyncio.sleep", new_callable=AsyncMock):
+                result = await ScraperService.scrape_item("http://example.com", item_id=1)
+
+            assert result == ("screenshots/item_1.png", "page text")
+            assert mock_attempt.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retries_on_none_result(self):
+        """Verify scrape retries when result is None."""
+        with patch.object(ScraperService, "_scrape_attempt") as mock_attempt:
+            # First returns None, second succeeds
+            mock_attempt.side_effect = [
+                (None, ""),
+                ("screenshots/item_1.png", "text"),
+            ]
+
+            with patch("app.services.scraper_service.asyncio.sleep", new_callable=AsyncMock):
+                result = await ScraperService.scrape_item("http://example.com", item_id=1)
+
+            assert result == ("screenshots/item_1.png", "text")
+            assert mock_attempt.call_count == 2

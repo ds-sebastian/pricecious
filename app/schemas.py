@@ -55,6 +55,8 @@ class ItemResponse(ItemCreate):
     last_checked: datetime | None
     is_refreshing: bool = False
     last_error: str | None = None
+    consecutive_failures: int = 0
+    error_type: str | None = None
     screenshot_url: str | None = None
     next_check: datetime | None = None
     interval: int | None = None

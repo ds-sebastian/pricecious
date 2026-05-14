@@ -1,8 +1,11 @@
 import asyncio
+import glob
 import hashlib
 import json
 import logging
 import os
+import random
+import shutil
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,11 +13,86 @@ from http import HTTPStatus
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
+from PIL import Image
 from playwright.async_api import Browser, Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 logger = logging.getLogger(__name__)
 BROWSERLESS_URL = os.getenv("BROWSERLESS_URL", "ws://browserless:3000")
+
+# Minimum screenshot file size in bytes — anything below this is likely a blank page
+MIN_SCREENSHOT_SIZE = 5_000
+
+# Minimum image variance — a solid-color screenshot scores near zero
+MIN_IMAGE_VARIANCE = 50.0
+
+# Maximum number of historical screenshots to retain per item
+MAX_SCREENSHOT_HISTORY = 5
+
+# Minimum word count to consider a page as real content (not a block page)
+MIN_CONTENT_WORD_COUNT = 100
+
+# Pool of recent, realistic Chrome user-agent strings for rotation
+USER_AGENTS = [
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    ("Mozilla/5.0 (X11; Linux x86_64) " "AppleWebKit/537.36 (KHTML, like Gecko) " "Chrome/124.0.0.0 Safari/537.36"),
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
+    ),
+    ("Mozilla/5.0 (X11; Linux x86_64) " "AppleWebKit/537.36 (KHTML, like Gecko) " "Chrome/125.0.0.0 Safari/537.36"),
+]
+
+# Cookie consent / GDPR selectors — tried before generic popup selectors
+COOKIE_CONSENT_SELECTORS = [
+    "#onetrust-accept-btn-handler",  # OneTrust (very common)
+    "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",  # Cookiebot
+    ".cc-accept",  # CookieConsent lib
+    "[data-testid*='cookie-accept']",
+    "button[id*='cookie' i][class*='accept' i]",
+    "button[id*='consent' i]",
+    "button[class*='cookie' i][class*='accept' i]",
+]
+
+# Generic popup close selectors
+POPUP_CLOSE_SELECTORS = [
+    "button[aria-label='Close']",
+    ".close-button",
+    ".modal-close",
+    "div[role='dialog'] button",
+    "svg[data-name='Close']",
+]
+
+# Phrases that indicate the page was blocked / served a CAPTCHA
+BLOCKED_PAGE_PHRASES = [
+    "access denied",
+    "please verify you are a human",
+    "are you a robot",
+    "captcha",
+    "blocked",
+    "unusual traffic",
+    "enable javascript",
+    "please enable cookies",
+]
+
+# Maximum number of scrape retries for transient failures
+MAX_SCRAPE_RETRIES = 2
+SCRAPE_RETRY_DELAY_SECONDS = 3
 
 
 def _build_browserless_url(base_url: str) -> str:
@@ -85,6 +163,8 @@ class ScrapeConfig:
     scroll_pixels: int = 350
     text_length: int = 0
     timeout: int = 90000
+    jitter: bool = False
+    max_jitter_seconds: int = 30
 
 
 class ScraperService:
@@ -194,9 +274,44 @@ class ScraperService:
         item_id: int | None = None,
         config: ScrapeConfig | None = None,
     ) -> tuple[str | None, str]:
-        """Scrape URL using shared browser."""
+        """Scrape URL using shared browser, with retry on transient failures."""
         config = config or ScrapeConfig()
 
+        # Jitter: random delay to avoid bursty bot-like traffic patterns
+        if config.jitter and config.max_jitter_seconds > 0:
+            delay = random.uniform(0, config.max_jitter_seconds)
+            logger.debug(f"Jitter: sleeping {delay:.1f}s before scraping {url}")
+            await asyncio.sleep(delay)
+
+        last_error: Exception | None = None
+        for attempt in range(1, MAX_SCRAPE_RETRIES + 1):
+            try:
+                result = await ScraperService._scrape_attempt(url, selector, item_id, config)
+                if result[0] is not None:
+                    return result
+                # Screenshot was None (navigation failed, etc.) — retry
+                if attempt < MAX_SCRAPE_RETRIES:
+                    logger.info(f"Scrape attempt {attempt} returned None for {url}, retrying...")
+                    await asyncio.sleep(SCRAPE_RETRY_DELAY_SECONDS)
+                    continue
+                return result
+            except Exception as e:
+                last_error = e
+                if attempt < MAX_SCRAPE_RETRIES:
+                    logger.warning(f"Scrape attempt {attempt} failed for {url}: {e}, retrying...")
+                    await asyncio.sleep(SCRAPE_RETRY_DELAY_SECONDS)
+
+        logger.error(f"All {MAX_SCRAPE_RETRIES} scrape attempts failed for {url}: {last_error}")
+        return None, ""
+
+    @staticmethod
+    async def _scrape_attempt(
+        url: str,
+        selector: str | None,
+        item_id: int | None,
+        config: ScrapeConfig,
+    ) -> tuple[str | None, str]:
+        """Single scrape attempt."""
         if not await ScraperService._ensure_connection():
             return None, ""
 
@@ -220,6 +335,11 @@ class ScraperService:
                 text = await ScraperService._extract_text(page, config.text_length)
                 screenshot = await ScraperService._take_screenshot(page, url, item_id)
 
+                # Validate the screenshot before returning
+                if screenshot and not await ScraperService._validate_screenshot(screenshot, page):
+                    logger.warning(f"Screenshot validation failed for {url}")
+                    return None, ""
+
                 return screenshot, text
 
         except Exception as e:
@@ -232,14 +352,17 @@ class ScraperService:
         """Provide a scoped page instance with proper cleanup."""
         context = await ScraperService._browser.new_context(
             viewport={"width": 1920, "height": 1080},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
+            user_agent=random.choice(USER_AGENTS),
         )
         await context.route("**/*", lambda route: route.continue_())
         page = await context.new_page()
+
+        # Anti-detection: hide webdriver property
+        await page.add_init_script("""Object.defineProperty(navigator, 'webdriver', { get: () => undefined });""")
+
+        # Simulate a search-engine referer to avoid direct-navigation detection
+        await page.set_extra_http_headers({"Referer": "https://www.google.com/"})
+
         try:
             yield page
         finally:
@@ -268,15 +391,28 @@ class ScraperService:
 
     @staticmethod
     async def _handle_popups(page: Page):
-        """Attempt to close common popups."""
-        common_selectors = [
-            "button[aria-label='Close']",
-            ".close-button",
-            ".modal-close",
-            "div[role='dialog'] button",
-            "svg[data-name='Close']",
-        ]
-        for selector in common_selectors:
+        """Attempt to close cookie banners and common popups."""
+        # Phase 1: Cookie consent / GDPR banners (click "Accept")
+        for selector in COOKIE_CONSENT_SELECTORS:
+            with suppress(Exception):
+                if await page.locator(selector).count() > 0:
+                    await page.locator(selector).first.click(timeout=1000)
+                    logger.debug(f"Dismissed cookie banner via: {selector}")
+                    await page.wait_for_timeout(500)
+                    break  # Only need to click one
+
+        # Try text-based "Accept" buttons for cookie banners
+        for text_pattern in ["Accept All", "Accept Cookies", "I Agree", "Agree", "Allow All"]:
+            with suppress(Exception):
+                btn = page.get_by_role("button", name=text_pattern, exact=False)
+                if await btn.count() > 0:
+                    await btn.first.click(timeout=1000)
+                    logger.debug(f"Dismissed cookie banner via text: {text_pattern}")
+                    await page.wait_for_timeout(500)
+                    break
+
+        # Phase 2: Generic popup close buttons
+        for selector in POPUP_CLOSE_SELECTORS:
             with suppress(Exception):
                 if await page.locator(selector).count() > 0:
                     await page.locator(selector).first.click(timeout=1000)
@@ -313,11 +449,82 @@ class ScraperService:
     async def _take_screenshot(page: Page, url: str, item_id: int | None) -> str:
         path = os.getenv("SCREENSHOT_DIR", "screenshots")
         os.makedirs(path, exist_ok=True)
+
         if item_id:
-            filename = f"{path}/item_{item_id}.png"
+            # Save timestamped historical copy
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            historical = f"{path}/item_{item_id}_{ts}.png"
+            latest = f"{path}/item_{item_id}.png"
+
+            await page.screenshot(path=historical)
+
+            # Copy to the "latest" filename for frontend compatibility
+            shutil.copy2(historical, latest)
+
+            # Prune old historical screenshots — keep the most recent N
+            pattern = f"{path}/item_{item_id}_*.png"
+            history_files = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+            for old_file in history_files[MAX_SCREENSHOT_HISTORY:]:
+                with suppress(OSError):
+                    os.remove(old_file)
+
+            return latest
         else:
             url_hash = hashlib.sha1(url.encode()).hexdigest()[:10]
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{path}/scrape_{ts}_{url_hash}.png"
-        await page.screenshot(path=filename)
-        return filename
+            await page.screenshot(path=filename)
+            return filename
+
+    @staticmethod
+    async def _validate_screenshot(screenshot_path: str, page: Page) -> bool:
+        """Validate that a screenshot contains meaningful content.
+
+        Checks:
+        1. File size — very small files indicate blank/error pages.
+        2. Image variance — solid-color images have near-zero variance.
+        3. Page text — scan for known "blocked" phrases.
+
+        Returns ``True`` if the screenshot appears valid.
+        """
+        try:
+            size = os.path.getsize(screenshot_path)
+            if size < MIN_SCREENSHOT_SIZE:
+                logger.warning(f"Screenshot too small ({size} bytes), likely a blank/error page")
+                return False
+        except OSError:
+            return False
+
+        # Check image color variance (detects solid-color pages)
+        try:
+            with Image.open(screenshot_path) as img:
+                # Convert to grayscale and sample — full variance calc is expensive
+                gray = img.convert("L")
+                # Use a smaller sample for performance
+                small = gray.resize((100, 56))
+                pixels = list(small.getdata())
+                mean = sum(pixels) / len(pixels)
+                variance = sum((p - mean) ** 2 for p in pixels) / len(pixels)
+                if variance < MIN_IMAGE_VARIANCE:
+                    logger.warning(f"Screenshot has very low variance ({variance:.1f}), likely blank page")
+                    return False
+        except Exception as e:
+            logger.debug(f"Image variance check failed: {e}")
+            # Don't reject on analysis failure — the image might still be fine
+
+        # Check for known "blocked" page phrases in visible text
+        try:
+            body_text = await page.inner_text("body")
+            body_lower = body_text.lower()
+            for phrase in BLOCKED_PAGE_PHRASES:
+                if phrase in body_lower:
+                    # Only flag if the page text is very short (real product pages mention
+                    # "captcha" or "blocked" in unrelated contexts sometimes)
+                    word_count = len(body_text.split())
+                    if word_count < MIN_CONTENT_WORD_COUNT:
+                        logger.warning(f"Screenshot page looks blocked (phrase: '{phrase}', words: {word_count})")
+                        return False
+        except Exception:
+            pass  # Page text extraction can fail — not critical
+
+        return True
