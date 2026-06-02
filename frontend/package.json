@@ -24,7 +24,7 @@
 		"date-fns": "^4.4.0",
 		"lucide-react": "^1.17.0",
 		"react": "^19.2.7",
-		"react-dom": "^19.2.6",
+		"react-dom": "^19.2.7",
 		"react-router-dom": "^7.16.0",
 		"recharts": "^3.8.1",
 		"sonner": "^2.0.7",
