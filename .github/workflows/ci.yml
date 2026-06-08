@@ -44,7 +44,7 @@ jobs:
         uv run pytest --cov=app --cov-report=xml --cov-report=term-missing
 
     - name: Upload Coverage
-      uses: codecov/codecov-action@v6
+      uses: codecov/codecov-action@v7
       if: always()
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
