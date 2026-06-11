@@ -55,7 +55,8 @@ export default function History() {
 
 	useEffect(() => {
 		fetchItems();
-	}, [fetchItems]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	useEffect(() => {
 		if (selectedItemId) {
@@ -71,6 +72,7 @@ export default function History() {
 			setHistoryData([]);
 			setTotalRecords(0);
 		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
 		selectedItemId,
 		page,
@@ -78,7 +80,6 @@ export default function History() {
 		filterMaxPrice,
 		filterInStock,
 		filterMinConfidence,
-		fetchHistory,
 	]);
 
 	const fetchItems = async () => {
