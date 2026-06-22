@@ -12,7 +12,7 @@
 		"fix": "biome check . --write"
 	},
 	"dependencies": {
-		"@radix-ui/react-dialog": "^1.1.16",
+		"@radix-ui/react-dialog": "^1.1.17",
 		"@radix-ui/react-label": "^2.1.9",
 		"@radix-ui/react-select": "^2.3.0",
 		"@radix-ui/react-slot": "^1.2.5",
