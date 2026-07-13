@@ -13,6 +13,16 @@ def clear_cache():
     AnalyticsService.clear_cache()
 
 
+def test_invalidate_item_keeps_other_cached_items():
+    AnalyticsService._analytics_cache[(1, None, None)] = {"item_id": 1}
+    AnalyticsService._analytics_cache[(2, None, None)] = {"item_id": 2}
+
+    AnalyticsService.invalidate_item(1)
+
+    assert (1, None, None) not in AnalyticsService._analytics_cache
+    assert (2, None, None) in AnalyticsService._analytics_cache
+
+
 @pytest.mark.asyncio
 async def test_get_analytics_data_empty(db):
     # Create item

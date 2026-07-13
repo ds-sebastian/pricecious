@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import database, models
 from app.ai_schema import AIExtractionMetadata, AIExtractionResponse
 from app.services.ai_service import AIService
+from app.services.analytics_service import AnalyticsService
 from app.services.forecasting_service import ForecastingService
 from app.services.item_service import ItemService
 from app.services.notification_service import NotificationService
@@ -50,6 +51,18 @@ class UpdateData:
     metadata: AIExtractionMetadata
     thresholds: dict
     screenshot_path: str
+
+
+@dataclass
+class UpdateResult:
+    old_price: float | None
+    old_stock: bool | None
+    price: float | None
+    in_stock: bool | None
+
+    def __iter__(self):
+        yield self.old_price
+        yield self.old_stock
 
 
 async def _get_thresholds(session: AsyncSession) -> dict[str, float]:
@@ -110,23 +123,22 @@ def _check_price_rejection(
     return None, None
 
 
-async def _update_item_in_db(
-    item_id: int, update_data: UpdateData, session: AsyncSession
-) -> tuple[float | None, bool | None]:
-    """Update item in DB with new data. Returns (old_price, old_stock).
+async def _update_item_in_db(item_id: int, update_data: UpdateData, session: AsyncSession) -> UpdateResult:
+    """Persist an extraction and return only values accepted for notifications.
 
     All mutations are committed in a single transaction at the end.
     """
     result = await session.execute(select(models.Item).where(models.Item.id == item_id))
     item = result.scalars().first()
     if not item:
-        return None, None
+        return UpdateResult(None, None, None, None)
 
     old_price, old_stock = item.current_price, item.in_stock
     price, in_stock = update_data.extraction.price, update_data.extraction.in_stock
     p_conf, s_conf = update_data.extraction.price_confidence, update_data.extraction.in_stock_confidence
 
     rejected = False
+    accepted_price = accepted_stock = None
 
     if price is not None:
         reject_msg, reject_type = _check_price_rejection(price, old_price, update_data.thresholds, item_id)
@@ -137,10 +149,13 @@ async def _update_item_in_db(
             rejected = True
         else:
             _apply_price_update(item, update_data, session)
+            if p_conf >= update_data.thresholds["price"]:
+                accepted_price = price
 
     if not rejected and in_stock is not None and s_conf >= update_data.thresholds["stock"]:
         item.in_stock = in_stock
         item.in_stock_confidence = s_conf
+        accepted_stock = in_stock
 
     old_timestamp = item.last_checked
     item.last_checked = utc_now_naive()
@@ -160,11 +175,12 @@ async def _update_item_in_db(
             item.error_type = ErrorType.LOW_CONFIDENCE
 
     await session.commit()
+    AnalyticsService.invalidate_item(item_id)
     logger.info(
         f"Updated item {item_id}: price={price}, stock={in_stock} "
         f"(last_checked: {old_timestamp} -> {item.last_checked})"
     )
-    return old_price, old_stock
+    return UpdateResult(old_price, old_stock, accepted_price, accepted_stock)
 
 
 def _apply_price_update(item, update_data: UpdateData, session):
@@ -258,52 +274,48 @@ async def process_item_check(item_id: int, semaphore: asyncio.Semaphore | None =
 
 async def _execute_check(item_id: int, is_scheduled: bool = False):
     try:
-        # Use a single session for the entire check process
+        # Release the read transaction before browser and AI work.
         async with database.AsyncSessionLocal() as session:
-            # 1. Fetch Data
             result = await _process_single_item_data(item_id, session)
-            if not result:
-                logger.error(f"Item {item_id} not found")
-                return
-            item_data, config, thresholds = result
-            logger.info(f"Checking item: {item_data['name']} ({item_data['url']})")
+        if not result:
+            logger.error(f"Item {item_id} not found")
+            return
+        item_data, config, thresholds = result
+        logger.info(f"Checking item: {item_data['name']} ({item_data['url']})")
 
-            # 2. Scrape (outside session is fine — no DB calls)
-            scrape_config = ScrapeConfig(
-                smart_scroll=config["smart_scroll"],
-                scroll_pixels=config["smart_scroll_pixels"],
-                text_length=config["text_length"],
-                timeout=config["scraper_timeout"],
-                jitter=is_scheduled,  # Only jitter for scheduled checks, not manual ones
-            )
-            screenshot_path, page_text = await ScraperService.scrape_item(
-                item_data["url"], item_data["selector"], item_id, scrape_config
-            )
-            if not screenshot_path:
-                raise ScrapeError("Failed to capture screenshot")
+        scrape_config = ScrapeConfig(
+            smart_scroll=config["smart_scroll"],
+            scroll_pixels=config["smart_scroll_pixels"],
+            text_length=config["text_length"],
+            timeout=config["scraper_timeout"],
+            jitter=is_scheduled,
+        )
+        screenshot_path, page_text = await ScraperService.scrape_item(
+            item_data["url"], item_data["selector"], item_id, scrape_config
+        )
+        if not screenshot_path:
+            raise ScrapeError("Failed to capture screenshot")
 
-            # 3. Analyze with AI — pass last known price for anchoring + URL for currency
-            ai_result = await AIService.analyze_image(
-                screenshot_path,
-                page_text=page_text,
-                custom_prompt=item_data.get("custom_prompt"),
-                last_known_price=item_data.get("current_price"),
-                url=item_data["url"],
-            )
-            if not ai_result:
-                raise AIError("AI analysis failed")
-            extraction, metadata = ai_result
+        ai_result = await AIService.analyze_image(
+            screenshot_path,
+            page_text=page_text,
+            custom_prompt=item_data.get("custom_prompt"),
+            last_known_price=item_data.get("current_price"),
+            url=item_data["url"],
+        )
+        if not ai_result:
+            raise AIError("AI analysis failed")
+        extraction, metadata = ai_result
 
-            # 4. Update Database (now inside session scope!)
-            update_data = UpdateData(
-                extraction=extraction, metadata=metadata, thresholds=thresholds, screenshot_path=screenshot_path
-            )
-            old_price, old_stock = await _update_item_in_db(item_id, update_data, session)
+        update_data = UpdateData(
+            extraction=extraction, metadata=metadata, thresholds=thresholds, screenshot_path=screenshot_path
+        )
+        async with database.AsyncSessionLocal() as session:
+            persisted = await _update_item_in_db(item_id, update_data, session)
 
-            # 5. Notify
-            await NotificationService.send_item_notifications(
-                item_data, extraction.price, old_price, extraction.in_stock, old_stock
-            )
+        await NotificationService.send_item_notifications(
+            item_data, persisted.price, persisted.old_price, persisted.in_stock, persisted.old_stock
+        )
 
     except ScrapeError as e:
         await _handle_error(item_id, str(e), ErrorType.SCRAPE_FAILED)

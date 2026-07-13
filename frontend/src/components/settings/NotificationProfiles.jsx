@@ -23,7 +23,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { API_URL, testNotificationProfile } from "@/lib/api";
+import {
+	API_URL,
+	testNotificationProfile,
+	testSavedNotificationProfile,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function NotificationProfiles() {
@@ -91,17 +95,20 @@ export function NotificationProfiles() {
 	// - [/] Frontend: Add "Test" button to Notification Profile UI <!-- id: 2 -->
 	// - [ ] Validate changes <!-- id: 3 -->
 	const testProfileMutation = useMutation({
-		mutationFn: testNotificationProfile,
+		mutationFn: ({ appriseUrl, profileId }) =>
+			profileId
+				? testSavedNotificationProfile(profileId)
+				: testNotificationProfile(appriseUrl),
 		onSuccess: () => toast.success("Test notification sent"),
 		onError: () => toast.error("Failed to send test notification"),
 	});
 
-	const handleTest = (url) => {
-		if (!url) {
+	const handleTest = (appriseUrl, profileId = null) => {
+		if (!profileId && !appriseUrl) {
 			toast.error("Please enter an Apprise URL first");
 			return;
 		}
-		testProfileMutation.mutate(url);
+		testProfileMutation.mutate({ appriseUrl, profileId });
 	};
 
 	const resetForm = () => {
@@ -324,7 +331,7 @@ export function NotificationProfiles() {
 													variant="ghost"
 													size="icon"
 													className="h-8 w-8"
-													onClick={() => handleTest(profile.apprise_url)}
+													onClick={() => handleTest(null, profile.id)}
 													title="Send Test Notification"
 													disabled={testProfileMutation.isPending}
 												>

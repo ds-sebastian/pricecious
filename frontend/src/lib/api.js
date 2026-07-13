@@ -24,3 +24,8 @@ export const testNotificationProfile = (appriseUrl) =>
 	axios
 		.post(`${API_URL}/notification-profiles/test`, { apprise_url: appriseUrl })
 		.then((r) => r.data);
+
+export const testSavedNotificationProfile = (profileId) =>
+	axios
+		.post(`${API_URL}/notification-profiles/${profileId}/test`)
+		.then((r) => r.data);

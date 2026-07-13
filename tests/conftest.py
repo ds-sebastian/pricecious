@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 # Set env var before importing app.database
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+os.environ["CORS_ORIGINS"] = "https://trusted.example"
 
 from app.database import Base, get_db
 from app.main import app

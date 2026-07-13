@@ -1,6 +1,7 @@
-"""
-Tests for URL validation and security.
-"""
+"""Tests for URL validation and security."""
+
+import socket
+from unittest.mock import patch
 
 import pytest
 
@@ -119,7 +120,11 @@ class TestURLValidation:
 
     def test_international_domain(self):
         """Test that international domains work."""
-        validate_url("https://例え.jp/product")
+        with patch(
+            "app.url_validation.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+        ):
+            validate_url("https://例え.jp/product")
         # Should not raise
 
 
@@ -152,6 +157,14 @@ class TestSSRFPrevention:
         for url in private_ranges:
             with pytest.raises(URLValidationError):
                 validate_url(url)
+
+    def test_dns_name_resolving_private_is_blocked(self):
+        with patch(
+            "app.url_validation.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 80))],
+        ):
+            with pytest.raises(URLValidationError, match="Private/internal"):
+                validate_url("http://internal.example/")
 
     def test_public_ips_allowed(self):
         """Test that public IPs are allowed."""

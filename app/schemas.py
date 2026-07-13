@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, SecretStr, field_serializer, field_validator
 
 
 def _ensure_utc(v):
@@ -27,6 +27,7 @@ class NotificationProfileUpdate(NotificationProfileCreate):
 
 
 class NotificationProfileResponse(NotificationProfileCreate):
+    apprise_url: SecretStr
     id: int
     model_config = ConfigDict(from_attributes=True)
 
@@ -69,6 +70,17 @@ class SettingsUpdate(BaseModel):
     value: str
 
 
+class SettingsResponse(SettingsUpdate):
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("value")
+    def redact_secret(self, value: str):
+        key = self.key.lower()
+        key_parts = set(key.replace("-", "_").split("_"))
+        secret = "api_key" in key or bool(key_parts & {"password", "secret", "token"})
+        return "**********" if secret else value
+
+
 class PriceHistoryUpdate(BaseModel):
     price: float | None = None
     in_stock: bool | None = None
@@ -106,6 +118,14 @@ class ItemStats(BaseModel):
     price_change_24h: float | None = None
 
 
+class AnalyticsAnnotation(BaseModel):
+    type: str
+    value: float
+    timestamp: datetime
+    label: str
+    _normalize_tz = field_validator("timestamp", mode="before")(_ensure_utc)
+
+
 class AnalyticsResponse(BaseModel):
     item_id: int
     item_name: str
@@ -113,6 +133,7 @@ class AnalyticsResponse(BaseModel):
     stats: ItemStats
     history: list[PriceHistoryResponse]
     forecast: list[PriceForecastResponse] | None = None
+    annotations: list[AnalyticsAnnotation] = []
 
 
 class HistoryFilter(BaseModel):

@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -63,6 +64,8 @@ async def test_forecasting_service():
         mock_result.scalars.return_value.all.return_value = history_data
         mock_session.execute.return_value = mock_result
         mock_model = MockProphet.return_value
+        fit_thread_ids = []
+        mock_model.fit.side_effect = lambda _df: fit_thread_ids.append(threading.get_ident())
         mock_model.make_future_dataframe.return_value = pd.DataFrame(
             {"ds": [datetime(2023, 1, 6), datetime(2023, 1, 7)]}
         )
@@ -99,6 +102,7 @@ async def test_forecasting_service():
 
             mock_model.fit.assert_called()
             mock_model.predict.assert_called()
+            assert fit_thread_ids[0] != threading.get_ident()
 
             # Verify DB operations
             assert mock_session.add_all.called

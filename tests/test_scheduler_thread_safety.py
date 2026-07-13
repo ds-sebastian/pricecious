@@ -3,7 +3,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.ai_schema import AIExtractionMetadata, AIExtractionResponse
-from app.services.scheduler_service import UpdateData, _process_single_item_data, _update_item_in_db, process_item_check
+from app.services.scheduler_service import (
+    UpdateData,
+    UpdateResult,
+    _process_single_item_data,
+    _update_item_in_db,
+    process_item_check,
+)
 
 
 @pytest.mark.asyncio
@@ -38,7 +44,7 @@ async def test_process_item_check_flow():
         mock_process_data.return_value = (mock_item_data, mock_config, mock_thresholds)
         mock_scrape.return_value = ("screenshot.png", "text")
         mock_analyze.return_value = (mock_extraction, mock_metadata)
-        mock_update_db.return_value = (90.0, True)
+        mock_update_db.return_value = UpdateResult(90.0, True, 100.0, True)
 
         # Run the function
         await process_item_check(item_id)
@@ -59,7 +65,7 @@ async def test_process_item_check_flow():
         assert mock_update_db.call_args[0][0] == item_id
         assert isinstance(mock_update_db.call_args[0][2], AsyncMock | MagicMock)
 
-        mock_notify.assert_called_once()
+        mock_notify.assert_awaited_once_with(mock_item_data, 100.0, 90.0, True, True)
 
 
 @pytest.mark.asyncio

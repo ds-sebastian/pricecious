@@ -65,7 +65,7 @@ async def test_outlier_rejection_enabled(mock_session, mock_item, update_data):
     mock_session.execute.return_value.scalars().first.return_value = mock_item
 
     # Run
-    _old_price, _old_stock = await _update_item_in_db(1, update_data, mock_session)
+    result = await _update_item_in_db(1, update_data, mock_session)
 
     # Verify rejection
     # Price increased by 100% (100 -> 200), threshold is 50%
@@ -73,6 +73,8 @@ async def test_outlier_rejection_enabled(mock_session, mock_item, update_data):
     assert mock_item.current_price == 100.0
     assert mock_item.last_error is not None
     assert "Price rejected" in mock_item.last_error
+    assert result.price is None
+    assert result.in_stock is None
 
 
 @pytest.mark.asyncio
@@ -82,11 +84,12 @@ async def test_outlier_rejection_disabled(mock_session, mock_item, update_data):
     update_data.thresholds["outlier_enabled"] = False
 
     # Run
-    _old_price, _old_stock = await _update_item_in_db(1, update_data, mock_session)
+    result = await _update_item_in_db(1, update_data, mock_session)
 
     # Verify update accepted
     assert mock_item.current_price == 200.0
     assert mock_item.last_error is None
+    assert result.price == 200.0
 
 
 @pytest.mark.asyncio
@@ -97,7 +100,7 @@ async def test_low_confidence_sets_last_error(mock_session, mock_item, update_da
     update_data.extraction.price_confidence = 0.3  # Below 0.5 threshold
     update_data.thresholds["outlier_enabled"] = False  # Disable outlier check
 
-    _old_price, _old_stock = await _update_item_in_db(1, update_data, mock_session)
+    result = await _update_item_in_db(1, update_data, mock_session)
 
     # Price should NOT be updated
     assert mock_item.current_price == 100.0
@@ -106,6 +109,20 @@ async def test_low_confidence_sets_last_error(mock_session, mock_item, update_da
     assert "Low confidence" in mock_item.last_error
     assert "120.00" in mock_item.last_error
     assert "0.30" in mock_item.last_error
+    assert result.price is None
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_stock_is_not_accepted(mock_session, mock_item, update_data):
+    mock_session.execute.return_value.scalars().first.return_value = mock_item
+    update_data.extraction.price = None
+    update_data.extraction.in_stock = False
+    update_data.extraction.in_stock_confidence = 0.2
+
+    result = await _update_item_in_db(1, update_data, mock_session)
+
+    assert mock_item.in_stock is True
+    assert result.in_stock is None
 
 
 @pytest.mark.asyncio

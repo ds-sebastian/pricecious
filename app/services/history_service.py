@@ -65,7 +65,7 @@ class HistoryService:
         await db.refresh(record)
 
         # Invalidate analytics cache
-        AnalyticsService.clear_cache()
+        AnalyticsService.invalidate_item(record.item_id)
 
         # Sync latest data to item table
         await HistoryService._sync_item_latest_data(db, record.item_id)
@@ -82,7 +82,7 @@ class HistoryService:
         await db.delete(record)
         await db.commit()
 
-        AnalyticsService.clear_cache()
+        AnalyticsService.invalidate_item(item_id)
 
         # Sync latest data to item table
         await HistoryService._sync_item_latest_data(db, item_id)

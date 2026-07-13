@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app import database, models, schemas
 from app.services.settings_service import SettingsService
-from app.url_validation import URLValidationError, validate_url
+from app.url_validation import URLValidationError, validate_url_async
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class ItemService:
     async def create_item(db: AsyncSession, item: schemas.ItemCreate) -> models.Item:
         logger.info(f"Creating item: {item.name} - {item.url}")
         try:
-            validate_url(item.url)
+            await validate_url_async(item.url)
         except URLValidationError as e:
             raise HTTPException(status_code=400, detail=f"Invalid URL: {e}") from e
 
@@ -69,7 +69,7 @@ class ItemService:
             raise HTTPException(status_code=404, detail="Item not found")
 
         try:
-            validate_url(item_update.url)
+            await validate_url_async(item_update.url)
         except URLValidationError as e:
             raise HTTPException(status_code=400, detail=f"Invalid URL: {e}") from e
 

@@ -43,7 +43,7 @@
         image: ghcr.io/ds-sebastian/pricecious:latest
         container_name: pricecious-app
         ports:
-          - "8000:8000"
+          - "127.0.0.1:8000:8000"
         environment:
           - DATABASE_URL=postgresql://user:password@db:5432/pricewatch
           - BROWSERLESS_URL=ws://browserless:3000
@@ -66,8 +66,8 @@
 
       browserless:
         image: browserless/chrome:latest
-        ports:
-          - "3000:3000"
+        expose:
+          - "3000"
         environment:
           - MAX_CONCURRENT_SESSIONS=10
 
@@ -84,6 +84,50 @@
 
 3.  **Access the Dashboard:**
     Open your browser and navigate to `http://localhost:8000`.
+
+### Network Boundary (No Application Login)
+
+Pricecious has no user authentication. Anyone who can reach it can change settings and trigger AI-backed checks, so keep
+it on a trusted LAN/VPN and never publish port 8000 directly to the unrestricted Internet.
+
+When a reverse proxy shares the Docker network, replace the app's `ports` entry with `expose` so only the proxy can reach
+it:
+
+```yaml
+services:
+  app:
+    expose:
+      - "8000"
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
+```
+
+Restrict the proxy to your actual LAN or VPN subnet. For example, an Nginx deployment could use:
+
+```nginx
+location / {
+    allow 192.168.1.0/24; # Replace with your LAN subnet
+    allow 100.64.0.0/10;  # Tailscale address range; remove if unused
+    deny all;
+    proxy_pass http://pricecious-app:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+For direct LAN access, change the app mapping to `8000:8000` and restrict it at the host firewall, for example:
+
+```bash
+sudo ufw allow from 192.168.1.0/24 to any port 8000 proto tcp
+```
+
+These ranges are examples only; narrow them to the networks you control. Browser cross-origin checks are additional
+drive-by protection, not a substitute for the firewall or proxy allowlist.
 
 ## User Guide
 
@@ -121,7 +165,12 @@ The following environment variables can be configured in your `docker-compose.ym
 | `SCREENSHOT_DIR` | Directory for storing scraper screenshots. | `screenshots` | `/app/data/screenshots` |
 | `LOG_LEVEL` | Application logging level | `INFO` | `DEBUG` |
 | `SQL_ECHO` | Log all SQL queries to console | `false` | `true` |
-| `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `*` | `http://localhost:3000,https://myapp.com` |
+| `CORS_ORIGINS` | Additional trusted browser origins (comma-separated). Same-origin requests need no entry. | *(none)* | `https://pricecious.example.com` |
+
+The scraper rejects requests unless DNS resolves every destination to globally routable addresses, including redirects,
+subresources, and WebSockets. Also place the Browserless runtime behind an egress firewall or filtering proxy that denies
+private, loopback, link-local, metadata-service, and reserved address ranges; application checks do not replace that
+network boundary.
 
 > [!TIP]
 > LiteLLM environment variables should work too to prepopulate AI model default settings

@@ -39,6 +39,8 @@ class NotificationService:
             raise HTTPException(status_code=404, detail="Profile not found")
 
         for key, value in profile_data.model_dump().items():
+            if key == "apprise_url" and value == "**********":
+                continue
             setattr(profile, key, value)
 
         await db.commit()
@@ -102,3 +104,11 @@ class NotificationService:
             "Test Notification",
             "This is a test notification from Pricecious.",
         )
+
+    @staticmethod
+    async def test_saved_notification(db: AsyncSession, profile_id: int):
+        result = await db.execute(select(models.NotificationProfile).where(models.NotificationProfile.id == profile_id))
+        profile = result.scalars().first()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        await NotificationService.test_notification(profile.apprise_url)

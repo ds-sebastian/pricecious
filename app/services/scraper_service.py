@@ -17,6 +17,8 @@ from PIL import Image
 from playwright.async_api import Browser, Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from app.url_validation import URLValidationError, validate_url_async
+
 logger = logging.getLogger(__name__)
 BROWSERLESS_URL = os.getenv("BROWSERLESS_URL", "ws://browserless:3000")
 
@@ -277,6 +279,12 @@ class ScraperService:
         """Scrape URL using shared browser, with retry on transient failures."""
         config = config or ScrapeConfig()
 
+        try:
+            await validate_url_async(url)
+        except URLValidationError as exc:
+            logger.warning(f"Blocked unsafe scrape URL {url}: {exc}")
+            return None, ""
+
         # Jitter: random delay to avoid bursty bot-like traffic patterns
         if config.jitter and config.max_jitter_seconds > 0:
             delay = random.uniform(0, config.max_jitter_seconds)
@@ -353,8 +361,27 @@ class ScraperService:
         context = await ScraperService._browser.new_context(
             viewport={"width": 1920, "height": 1080},
             user_agent=random.choice(USER_AGENTS),
+            service_workers="block",
         )
-        await context.route("**/*", lambda route: route.continue_())
+
+        async def guard_request(route):
+            try:
+                await validate_url_async(route.request.url)
+                await route.continue_()
+            except URLValidationError as exc:
+                logger.warning(f"Blocked unsafe browser request {route.request.url}: {exc}")
+                await route.abort("blockedbyclient")
+
+        async def guard_websocket(websocket):
+            try:
+                await validate_url_async(websocket.url.replace("wss://", "https://", 1).replace("ws://", "http://", 1))
+                websocket.connect_to_server()
+            except URLValidationError as exc:
+                logger.warning(f"Blocked unsafe WebSocket {websocket.url}: {exc}")
+                await websocket.close(code=1008, reason="Unsafe destination")
+
+        await context.route("**/*", guard_request)
+        await context.route_web_socket("**/*", guard_websocket)
         page = await context.new_page()
 
         # Anti-detection: hide webdriver property

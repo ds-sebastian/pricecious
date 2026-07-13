@@ -67,6 +67,12 @@ class AnalyticsService:
         AnalyticsService._analytics_cache.clear()
 
     @staticmethod
+    def invalidate_item(item_id: int):
+        for key in list(AnalyticsService._analytics_cache):
+            if key[0] == item_id:
+                del AnalyticsService._analytics_cache[key]
+
+    @staticmethod
     async def _calculate_stats(db: AsyncSession, item: models.Item, filters: list) -> dict | None:
         """Calculate basic price statistics."""
         stmt = select(

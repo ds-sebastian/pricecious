@@ -35,3 +35,9 @@ async def update_notification_profile(
 async def test_notification_profile(request: schemas.NotificationTestRequest):
     await NotificationService.test_notification(request.apprise_url)
     return {"ok": True}
+
+
+@router.post("/{profile_id}/test")
+async def test_saved_notification_profile(profile_id: int, db: AsyncSession = Depends(database.get_db)):
+    await NotificationService.test_saved_notification(db, profile_id)
+    return {"ok": True}

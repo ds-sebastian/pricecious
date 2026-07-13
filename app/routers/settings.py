@@ -7,11 +7,11 @@ from app.services.settings_service import SettingsService
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
-@router.get("")
+@router.get("", response_model=list[schemas.SettingsResponse])
 async def get_settings(db: AsyncSession = Depends(database.get_db)):
     return await SettingsService.get_settings(db)
 
 
-@router.post("", response_model=schemas.SettingsUpdate)
+@router.post("", response_model=schemas.SettingsResponse)
 async def update_setting(setting: schemas.SettingsUpdate, db: AsyncSession = Depends(database.get_db)):
     return await SettingsService.update_setting(db, setting)

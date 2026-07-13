@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -23,6 +23,21 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def _cors_origins() -> set[str]:
+    origins = {origin.strip().rstrip("/") for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()}
+    if "*" in origins:
+        logger.warning("Ignoring wildcard CORS_ORIGINS; list trusted origins explicitly")
+        origins.remove("*")
+    return origins
+
+
+def _request_origin(request: Request) -> str:
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",", 1)[0].strip()
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc))
+    return f"{scheme}://{host.split(',', 1)[0].strip()}".rstrip("/")
 
 
 @asynccontextmanager
@@ -66,13 +81,26 @@ app = FastAPI(title="Pricecious API", version="0.1.0", lifespan=lifespan)
 # Rate Limiting & CORS
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if cors_origins := _cors_origins():
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(cors_origins),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+@app.middleware("http")
+async def reject_cross_origin_mutations(request: Request, call_next):
+    """Block drive-by browser writes while allowing trusted non-browser clients."""
+    is_api = request.url.path == "/api" or request.url.path.startswith("/api/")
+    if is_api and request.method not in SAFE_METHODS:
+        origin = request.headers.get("origin", "").rstrip("/")
+        allowed = _cors_origins() | {_request_origin(request)}
+        if (origin and origin not in allowed) or (not origin and request.headers.get("sec-fetch-site") == "cross-site"):
+            return JSONResponse(status_code=403, content={"detail": "Cross-origin API mutations are not allowed"})
+    return await call_next(request)
 
 
 @app.middleware("http")
