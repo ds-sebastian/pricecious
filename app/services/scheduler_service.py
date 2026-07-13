@@ -159,7 +159,6 @@ async def _update_item_in_db(item_id: int, update_data: UpdateData, session: Asy
 
     old_timestamp = item.last_checked
     item.last_checked = utc_now_naive()
-    item.is_refreshing = False
     item.consecutive_failures = 0
 
     if not rejected:
@@ -228,6 +227,7 @@ async def _handle_error(item_id: int, error_msg: str, error_type: str = ErrorTyp
         result = await session.execute(select(models.Item).where(models.Item.id == item_id))
         if item := result.scalars().first():
             item.is_refreshing = False
+            item.refresh_started_at = None
             item.last_error = str(error_msg)
             item.error_type = error_type
             item.last_checked = utc_now_naive()
@@ -268,8 +268,19 @@ async def _process_single_item_data(item_id: int, session: AsyncSession):
 
 async def process_item_check(item_id: int, semaphore: asyncio.Semaphore | None = None, is_scheduled: bool = False):
     """Process a single item check with concurrency limit."""
-    async with semaphore if semaphore else nullcontext():
-        await _execute_check(item_id, is_scheduled=is_scheduled)
+    try:
+        async with semaphore if semaphore else nullcontext():
+            await _execute_check(item_id, is_scheduled=is_scheduled)
+    except asyncio.CancelledError:
+        # AsyncIOScheduler cancels active and semaphore-waiting jobs during shutdown.
+        # Shield the cleanup so the durable claim does not strand the item.
+        await asyncio.shield(_release_refresh_claim(item_id))
+        raise
+
+
+async def _release_refresh_claim(item_id: int) -> None:
+    async with database.AsyncSessionLocal() as session:
+        await ItemService.release_refresh_claim(session, item_id)
 
 
 async def _execute_check(item_id: int, is_scheduled: bool = False):
@@ -316,6 +327,7 @@ async def _execute_check(item_id: int, is_scheduled: bool = False):
         await NotificationService.send_item_notifications(
             item_data, persisted.price, persisted.old_price, persisted.in_stock, persisted.old_stock
         )
+        await _release_refresh_claim(item_id)
 
     except ScrapeError as e:
         await _handle_error(item_id, str(e), ErrorType.SCRAPE_FAILED)

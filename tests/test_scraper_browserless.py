@@ -1,8 +1,10 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.scraper_service import ScraperService, _build_browserless_url
+from app.services.scraper_service import ScraperService, _build_browserless_url, _safe_url_for_log
+from app.url_validation import URLValidationError
 
 
 class TestBuildBrowserlessUrl:
@@ -61,6 +63,13 @@ class TestBuildBrowserlessUrl:
         assert "launch=" in result
         assert "defaultViewport" in result
 
+    def test_log_url_redacts_token_and_credentials(self):
+        result = _safe_url_for_log("wss://user:password@browserless:3000/chromium?token=secret&launch=private")
+
+        assert result == "wss://browserless:3000/chromium"
+        assert "secret" not in result
+        assert "password" not in result
+
     def test_invalid_viewport_ignored(self):
         """Non-integer BROWSERLESS_VIEWPORT_WIDTH/HEIGHT are ignored with a warning."""
         with patch.dict("os.environ", {"BROWSERLESS_VIEWPORT_WIDTH": "not-a-number"}):
@@ -110,6 +119,27 @@ class TestScraperBrowserless:
     """Test Browserless-specific URL resolution logic."""
 
     @pytest.mark.asyncio
+    async def test_connection_error_does_not_expose_token(self):
+        playwright = AsyncMock()
+        playwright.chromium.connect_over_cdp.side_effect = Exception("connection refused; token=secret")
+        starter = MagicMock()
+        starter.start = AsyncMock(return_value=playwright)
+        ScraperService._browser = None
+        ScraperService._playwright = None
+        ScraperService._lock = asyncio.Lock()
+
+        with (
+            patch("app.services.scraper_service.async_playwright", return_value=starter),
+            patch("app.services.scraper_service.BROWSERLESS_URL", "ws://browserless:3000/chromium"),
+            patch.dict("os.environ", {"BROWSERLESS_TOKEN": "secret"}),
+            pytest.raises(RuntimeError) as exc_info,
+        ):
+            await ScraperService.initialize()
+
+        assert "secret" not in str(exc_info.value)
+        assert "connection was refused" in str(exc_info.value)
+
+    @pytest.mark.asyncio
     async def test_resolve_ws_url_skips_discovery_for_chromium(self):
         """Test that /chromium URLs skip the discovery process."""
         with patch("app.services.scraper_service.httpx.AsyncClient") as mock_client:
@@ -152,3 +182,33 @@ class TestScraperBrowserless:
 
             assert resolved == "ws://host/devtools/123"
             mock_client.get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_request_guard_retries_and_logs_once_per_host(self, caplog):
+        context = AsyncMock()
+        context.new_page.return_value = AsyncMock()
+        browser = AsyncMock()
+        browser.new_context.return_value = context
+        ScraperService._browser = browser
+        ScraperService._dns_semaphore = asyncio.Semaphore(8)
+        route = AsyncMock()
+        route.request.url = "https://tracking.example/event?secret=one"
+        error = URLValidationError("Hostname could not be resolved: tracking.example")
+
+        with (
+            patch(
+                "app.services.scraper_service.validate_url_async", new_callable=AsyncMock, side_effect=error
+            ) as validate,
+            caplog.at_level("WARNING", logger="app.services.scraper_service"),
+        ):
+            async with ScraperService._scoped_context():
+                guard = context.route.call_args.args[1]
+                await guard(route)
+                route.request.url = "https://tracking.example/other?secret=two"
+                await guard(route)
+
+        warnings = [record.message for record in caplog.records if "Blocked unsafe browser" in record.message]
+        assert validate.await_count == 4
+        assert len(warnings) == 1
+        assert warnings[0].startswith("Blocked unsafe browser request to https://tracking.example")
+        assert "secret" not in warnings[0]

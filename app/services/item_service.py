@@ -3,18 +3,34 @@ import os
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import database, models, schemas
 from app.services.settings_service import SettingsService
 from app.url_validation import URLValidationError, validate_url_async
+from app.utils.datetime_utils import utc_now_naive
 
 logger = logging.getLogger(__name__)
+REFRESH_CLAIM_TIMEOUT = timedelta(hours=1)
 
 
 class ItemService:
+    @staticmethod
+    def _refresh_is_claimable(now: datetime):
+        stale_before = now - REFRESH_CLAIM_TIMEOUT
+        return or_(
+            models.Item.is_refreshing.is_(False),
+            and_(
+                models.Item.is_refreshing.is_(True),
+                or_(
+                    models.Item.refresh_started_at.is_(None),
+                    models.Item.refresh_started_at < stale_before,
+                ),
+            ),
+        )
+
     @staticmethod
     async def get_items(db: AsyncSession) -> list[dict]:
         """Fetch all items with computed next_check times."""
@@ -103,6 +119,40 @@ class ItemService:
         return await db.get(models.Item, item_id)
 
     @staticmethod
+    async def claim_items_for_refresh(
+        db: AsyncSession,
+        item_ids: list[int] | None = None,
+        *,
+        active_only: bool = True,
+        clear_error: bool = False,
+    ) -> list[int]:
+        """Atomically mark idle or stale items as refreshing and return the claimed IDs."""
+        now = utc_now_naive()
+        stmt = update(models.Item).where(ItemService._refresh_is_claimable(now))
+        if active_only:
+            stmt = stmt.where(models.Item.is_active.is_(True))
+        if item_ids is not None:
+            stmt = stmt.where(models.Item.id.in_(item_ids))
+
+        values = {"is_refreshing": True, "refresh_started_at": now}
+        if clear_error:
+            values["last_error"] = None
+        result = await db.execute(stmt.values(**values).returning(models.Item.id))
+        claimed = list(result.scalars())
+        await db.commit()
+        return claimed
+
+    @staticmethod
+    async def release_refresh_claim(db: AsyncSession, item_id: int) -> None:
+        """Release a refresh claim after cancellation or completed post-processing."""
+        await db.execute(
+            update(models.Item)
+            .where(models.Item.id == item_id)
+            .values(is_refreshing=False, refresh_started_at=None)
+        )
+        await db.commit()
+
+    @staticmethod
     async def get_item_data_for_checking(db: AsyncSession, item_id: int) -> tuple[dict | None, dict | None]:
         result = await db.execute(
             select(models.Item).options(selectinload(models.Item.notification_profile)).where(models.Item.id == item_id)
@@ -148,7 +198,7 @@ class ItemService:
     @staticmethod
     async def get_due_items() -> list[tuple[int, int, int]]:
         """
-        Get items due for refresh.
+        Atomically claim items due for refresh.
         Returns list of (item_id, interval, overdue_minutes).
         """
         async with database.AsyncSessionLocal() as db:
@@ -163,7 +213,8 @@ class ItemService:
                 )
                 .outerjoin(models.Item.notification_profile)
                 .where(models.Item.is_active == True)  # noqa: E712
-                .where(models.Item.is_refreshing == False)  # noqa: E712
+                .where(ItemService._refresh_is_claimable(utc_now_naive()))
+                .with_for_update(of=models.Item, skip_locked=True)
             )
 
             rows = (await db.execute(stmt)).all()
@@ -185,4 +236,9 @@ class ItemService:
                 if time_since >= interval:
                     due_items.append((row.id, interval, int(time_since)))
 
-            return due_items
+            if not due_items:
+                return []
+
+            claimed = await ItemService.claim_items_for_refresh(db, [item_id for item_id, _, _ in due_items])
+            claimed_ids = set(claimed)
+            return [item for item in due_items if item[0] in claimed_ids]

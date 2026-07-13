@@ -46,6 +46,7 @@ class Item(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     last_checked: Mapped[datetime | None] = mapped_column(nullable=True)
     is_refreshing: Mapped[bool] = mapped_column(default=False)
+    refresh_started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(default=0)
     error_type: Mapped[str | None] = mapped_column(String, nullable=True)

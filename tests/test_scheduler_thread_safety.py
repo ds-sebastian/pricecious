@@ -39,6 +39,7 @@ async def test_process_item_check_flow():
         ) as mock_notify,
         patch("app.services.scheduler_service._process_single_item_data", new_callable=AsyncMock) as mock_process_data,
         patch("app.services.scheduler_service._update_item_in_db", new_callable=AsyncMock) as mock_update_db,
+        patch("app.services.scheduler_service._release_refresh_claim", new_callable=AsyncMock) as mock_release,
     ):
         # Setup mocks
         mock_process_data.return_value = (mock_item_data, mock_config, mock_thresholds)
@@ -66,6 +67,7 @@ async def test_process_item_check_flow():
         assert isinstance(mock_update_db.call_args[0][2], AsyncMock | MagicMock)
 
         mock_notify.assert_awaited_once_with(mock_item_data, 100.0, 90.0, True, True)
+        mock_release.assert_awaited_once_with(item_id)
 
 
 @pytest.mark.asyncio

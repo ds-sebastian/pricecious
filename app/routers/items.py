@@ -40,9 +40,9 @@ async def check_item(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    item.is_refreshing = True
-    item.last_error = None
-    await db.commit()
+    claimed = await ItemService.claim_items_for_refresh(db, [item_id], active_only=False, clear_error=True)
+    if not claimed:
+        return {"message": "Check already in progress"}
 
     background_tasks.add_task(process_item_check, item_id)
     return {"message": "Check triggered"}

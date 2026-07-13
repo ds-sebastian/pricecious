@@ -224,3 +224,20 @@ async def test_check_item_trigger(client):
     response = await client.post(f"/api/items/{item_id}/check")
     assert response.status_code == 200
     assert response.json() == {"message": "Check triggered"}
+
+
+@pytest.mark.asyncio
+async def test_check_item_does_not_enqueue_twice(client):
+    response = await client.post(
+        "/api/items",
+        json={"url": "https://example.com/check-once", "name": "Check Once", "target_price": 100.0},
+    )
+    item_id = response.json()["id"]
+
+    with patch("app.routers.items.process_item_check") as mock_process:
+        first = await client.post(f"/api/items/{item_id}/check")
+        second = await client.post(f"/api/items/{item_id}/check")
+
+    assert first.json() == {"message": "Check triggered"}
+    assert second.json() == {"message": "Check already in progress"}
+    mock_process.assert_called_once_with(item_id)

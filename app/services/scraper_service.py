@@ -95,6 +95,46 @@ BLOCKED_PAGE_PHRASES = [
 # Maximum number of scrape retries for transient failures
 MAX_SCRAPE_RETRIES = 2
 SCRAPE_RETRY_DELAY_SECONDS = 3
+DNS_VALIDATION_RETRIES = 2
+DNS_RETRY_DELAY_SECONDS = 0.1
+MAX_CONCURRENT_DNS_VALIDATIONS = 8
+
+
+def _safe_url_for_log(url: str) -> str:
+    """Strip credentials, query parameters, and fragments from a URL before logging."""
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+        host = f"[{hostname}]" if ":" in hostname else hostname
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        return urlunparse(parsed._replace(netloc=host, query="", fragment=""))
+    except (TypeError, ValueError):
+        return "<invalid URL>"
+
+
+def _safe_origin_for_log(url: str) -> str:
+    """Return only a destination origin, suitable for deduplicated request logs."""
+    safe_url = _safe_url_for_log(url)
+    if safe_url == "<invalid URL>":
+        return safe_url
+    return urlunparse(urlparse(safe_url)._replace(path="", params=""))
+
+
+def _safe_connection_failure(exc: Exception) -> str:
+    """Classify a connection error without copying potentially secret-bearing text."""
+    message = str(exc).lower()
+    if "500 internal server error" in message:
+        return "server returned HTTP 500"
+    if "401" in message or "403" in message or "unauthorized" in message or "authentication" in message:
+        return "authentication was rejected"
+    if "timed out" in message or "timeout" in message:
+        return "connection timed out"
+    if "connection refused" in message or "econnrefused" in message:
+        return "connection was refused"
+    if "name or service not known" in message or "could not resolve" in message or "dns" in message:
+        return "DNS resolution failed"
+    return type(exc).__name__
 
 
 def _build_browserless_url(base_url: str) -> str:
@@ -173,6 +213,7 @@ class ScraperService:
     _playwright = None
     _browser: Browser | None = None
     _lock = asyncio.Lock()  # Keep lock to prevent race conditions during init
+    _dns_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DNS_VALIDATIONS)
 
     @classmethod
     async def initialize(cls):
@@ -184,7 +225,7 @@ class ScraperService:
 
                 # Resolve the correct WebSocket URL (handles generic Chrome vs Browserless)
                 ws_url = await cls._resolve_ws_url(_build_browserless_url(BROWSERLESS_URL))
-                logger.info(f"Connecting to Chrome at: {ws_url}")
+                logger.info(f"Connecting to Chrome at: {_safe_url_for_log(ws_url)}")
 
                 try:
                     cls._browser = await cls._playwright.chromium.connect_over_cdp(ws_url)
@@ -195,7 +236,10 @@ class ScraperService:
                             "This usually indicates invalid 'launch' arguments. "
                             "Check if 'headless: \"new\"' is supported or try removing 'launch' args."
                         )
-                    raise
+                    reason = _safe_connection_failure(e)
+                    raise RuntimeError(
+                        f"Failed to connect to Chrome at {_safe_url_for_log(ws_url)}: {reason}"
+                    ) from None
 
     @staticmethod
     async def _resolve_ws_url(base_url: str) -> str:
@@ -282,7 +326,7 @@ class ScraperService:
         try:
             await validate_url_async(url)
         except URLValidationError as exc:
-            logger.warning(f"Blocked unsafe scrape URL {url}: {exc}")
+            logger.warning(f"Blocked unsafe scrape URL {_safe_url_for_log(url)}: {exc}")
             return None, ""
 
         # Jitter: random delay to avoid bursty bot-like traffic patterns
@@ -363,21 +407,43 @@ class ScraperService:
             user_agent=random.choice(USER_AGENTS),
             service_workers="block",
         )
+        blocked_hosts: set[str] = set()
+
+        async def validate_destination(url: str) -> None:
+            async with ScraperService._dns_semaphore:
+                for attempt in range(DNS_VALIDATION_RETRIES):
+                    try:
+                        await validate_url_async(url)
+                        return
+                    except URLValidationError as exc:
+                        is_resolution_failure = str(exc).startswith("Hostname could not be resolved:")
+                        if not is_resolution_failure or attempt == DNS_VALIDATION_RETRIES - 1:
+                            raise
+                        await asyncio.sleep(DNS_RETRY_DELAY_SECONDS)
+
+        def log_blocked(kind: str, url: str, exc: URLValidationError) -> None:
+            destination = _safe_origin_for_log(url)
+            if destination not in blocked_hosts:
+                blocked_hosts.add(destination)
+                logger.warning(f"Blocked unsafe browser {kind} to {destination}: {exc}")
+            else:
+                logger.debug(f"Blocked repeated browser {kind} to {destination}: {exc}")
 
         async def guard_request(route):
             try:
-                await validate_url_async(route.request.url)
+                await validate_destination(route.request.url)
                 await route.continue_()
             except URLValidationError as exc:
-                logger.warning(f"Blocked unsafe browser request {route.request.url}: {exc}")
+                log_blocked("request", route.request.url, exc)
                 await route.abort("blockedbyclient")
 
         async def guard_websocket(websocket):
             try:
-                await validate_url_async(websocket.url.replace("wss://", "https://", 1).replace("ws://", "http://", 1))
+                safe_url = websocket.url.replace("wss://", "https://", 1).replace("ws://", "http://", 1)
+                await validate_destination(safe_url)
                 websocket.connect_to_server()
             except URLValidationError as exc:
-                logger.warning(f"Blocked unsafe WebSocket {websocket.url}: {exc}")
+                log_blocked("WebSocket", websocket.url, exc)
                 await websocket.close(code=1008, reason="Unsafe destination")
 
         await context.route("**/*", guard_request)

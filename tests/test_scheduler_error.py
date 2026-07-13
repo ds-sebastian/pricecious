@@ -58,6 +58,7 @@ async def test_process_item_check_updates_last_checked_on_error(db):
 
     # Assertions
     assert item.is_refreshing is False
+    assert item.refresh_started_at is None
     assert item.last_error == "Scraper failed"
     assert item.last_checked is not None
     if initial_last_checked:
