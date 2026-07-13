@@ -146,9 +146,7 @@ class ItemService:
     async def release_refresh_claim(db: AsyncSession, item_id: int) -> None:
         """Release a refresh claim after cancellation or completed post-processing."""
         await db.execute(
-            update(models.Item)
-            .where(models.Item.id == item_id)
-            .values(is_refreshing=False, refresh_started_at=None)
+            update(models.Item).where(models.Item.id == item_id).values(is_refreshing=False, refresh_started_at=None)
         )
         await db.commit()
 

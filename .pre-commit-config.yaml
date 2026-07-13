@@ -13,14 +13,21 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.7.44
+  # Use the Ruff version locked by uv so local formatting matches CI.
+  - repo: local
     hooks:
-      # Run the linter
-      - id: ruff
-        args: [--fix]
-      # Run the formatter
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --locked --extra dev ruff check --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
       - id: ruff-format
+        name: ruff format
+        entry: uv run --locked --extra dev ruff format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
 
   - repo: https://github.com/pycqa/bandit
     rev: '1.7.10'

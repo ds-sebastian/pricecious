@@ -244,8 +244,7 @@ async def _handle_error(item_id: int, error_msg: str, error_type: str = ErrorTyp
                 item.is_active = False
                 item.error_type = ErrorType.AUTO_DEACTIVATED
                 item.last_error = (
-                    f"Auto-deactivated after {item.consecutive_failures} consecutive failures. "
-                    f"Last error: {error_msg}"
+                    f"Auto-deactivated after {item.consecutive_failures} consecutive failures. Last error: {error_msg}"
                 )
                 logger.warning(
                     f"Item {item_id} auto-deactivated after {item.consecutive_failures} consecutive failures"
