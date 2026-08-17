@@ -1315,11 +1315,11 @@ wheels = [
 
 [[package]]
 name = "json-repair"
-version = "0.62.0"
+version = "0.63.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/82/f0/99922cd499612b1eb70f177d34f7f34a489bb0255c946992ca70415a7288/json_repair-0.62.0.tar.gz", hash = "sha256:578bdfe4b3e177ad5a93a0f4e31ec71c953b2a282c72403ddd0c77058fae0d83", size = 51990, upload-time = "2026-08-05T09:13:04.731Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f7/1b/c23bee35d532ea9c2038f31245fd2b50e6a8308d38a8b965bf0f9c6d49ba/json_repair-0.63.2.tar.gz", hash = "sha256:8385ca04afbf411eebd9f0ba064155d1afe37442aaad52f693825c65cc314586", size = 52426, upload-time = "2026-08-14T07:39:27.637Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/45/924a75372c1a264068158eb5b557932d15a4e42cbbb9e14a73ca076d3c01/json_repair-0.62.0-py3-none-any.whl", hash = "sha256:1ea917bb2eae205a2c012ab2aa1c0bc6ea9ac708836d203577fac46fcd84f443", size = 50572, upload-time = "2026-08-05T09:13:03.318Z" },
+    { url = "https://files.pythonhosted.org/packages/66/fe/edc09f67290861ab6b97dfd530189ae07092a708e90abe5a0e55f863f35c/json_repair-0.63.2-py3-none-any.whl", hash = "sha256:7354c2dd433bf15dedf98d2932ae9cd1ea197d7edc77e6c0538f08e34616580e", size = 50916, upload-time = "2026-08-14T07:39:26.339Z" },
 ]
 
 [[package]]
@@ -2324,7 +2324,7 @@ requires-dist = [
     { name = "granian" },
     { name = "httpx" },
     { name = "httpx", marker = "extra == 'dev'" },
-    { name = "json-repair", specifier = ">=0.62.0" },
+    { name = "json-repair", specifier = ">=0.63.2" },
     { name = "litellm" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "pandas" },
