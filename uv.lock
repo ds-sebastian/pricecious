@@ -3,10 +3,10 @@ revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform == 'emscripten'",
-    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
@@ -1213,15 +1213,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e7/72/c600ae4f68c28fc19f9c31b9403053e5dbb8cace2e6842c7b7c3e4d42fe9/importlib_metadata-8.9.0.tar.gz", hash = "sha256:58850626cef4bd2df100378b0f2aea9724a7b92f10770d547725b047078f99ee", size = 56140, upload-time = "2026-03-20T16:56:26.362Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7d/f9/97f2ca8bb3ec6e4b1d64f983ebe98b9a192faddff67fac3d6303a537e670/importlib_metadata-8.9.0-py3-none-any.whl", hash = "sha256:e0f761b6ea91ced3b0844c14c9d955224d538105921f8e6754c00f6ca79fba7f", size = 27220, upload-time = "2026-03-20T16:56:25.07Z" },
-]
-
-[[package]]
-name = "importlib-resources"
-version = "7.1.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e4/06/b56dfa750b44e86157093bc8fca0ab81dccbf5260510de4eaf1cb69b5b99/importlib_resources-7.1.0.tar.gz", hash = "sha256:0722d4c6212489c530f2a145a34c0a7a3b4721bc96a15fada5930e2a0b760708", size = 44985, upload-time = "2026-04-12T16:36:09.232Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/db/55a262f3606bebcae07cc14095338471ad7c0bbcaa37707e6f0ee49725b7/importlib_resources-7.1.0-py3-none-any.whl", hash = "sha256:1bd7b48b4088eddb2cd16382150bb515af0bd2c70128194392725f82ad2c96a1", size = 37232, upload-time = "2026-04-12T16:36:08.219Z" },
 ]
 
 [[package]]
@@ -2470,24 +2461,23 @@ wheels = [
 
 [[package]]
 name = "prophet"
-version = "1.3.0"
+version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cmdstanpy" },
     { name = "holidays" },
-    { name = "importlib-resources" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/52/37/523fa4a9213106e5015d708db9dd95c3116ff0e75d05dde78b8e7a44385c/prophet-1.3.0.tar.gz", hash = "sha256:7ec252e898199a1965ca10db3ca625a4ec75e4e6f738d2b4108fe603666a9ef0", size = 66509, upload-time = "2026-01-27T22:47:07.209Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1d/a0/ef83a800996ef03c1302984475c4b884d606b8d9926e58a0a8f56e60b0ae/prophet-1.4.0.tar.gz", hash = "sha256:cf54064e9ad1be56cf4c6fb70f95c7b0fccc095fdb90a53b72407262d423a70d", size = 72533, upload-time = "2026-08-15T04:04:50.808Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ef/a1/aa921c7908f6ac2329dfc34340452cb0a156c76f2487ecd076ce6b5060c1/prophet-1.3.0-py3-none-macosx_10_11_x86_64.whl", hash = "sha256:fe70571cbd051a8e1f6c5ff3a53215a6287820b7f2991df056406eefb4a615a7", size = 12743908, upload-time = "2026-01-27T22:46:53.915Z" },
-    { url = "https://files.pythonhosted.org/packages/36/8f/f5eca76310e5860d886518a695aaf559f25711cae4e04a08e6bb876bcea9/prophet-1.3.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:1f51922a0db9bae8af3e46e33b094487f1be0c96a373b47ec3ad041020adacd0", size = 12121075, upload-time = "2026-01-27T22:46:57.198Z" },
-    { url = "https://files.pythonhosted.org/packages/ec/a5/9734b9a219616fa07fb0a5e302c7d51512e4e77b94bb13c58cf874d3dd2d/prophet-1.3.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:b65f189002a406413c58a28af40b6f2b240bba1ebf1158d204c46ebc570cd3c0", size = 12118450, upload-time = "2026-01-27T22:46:59.811Z" },
-    { url = "https://files.pythonhosted.org/packages/88/4e/88e27dd270128586a6ff9a8b2a5dbb1d302559549fed286eff5c9aeef20e/prophet-1.3.0-py3-none-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:ed25f79e554d928b123cbf4f5a8a4e33bb003c7e26dcc2c8352e900f11f6b770", size = 11879366, upload-time = "2026-01-27T22:47:02.854Z" },
-    { url = "https://files.pythonhosted.org/packages/d9/9c/af59d9f30e9e72f2b36bd578a47a84c8fbf7f72c2d9771ef40ef16fb36eb/prophet-1.3.0-py3-none-win_amd64.whl", hash = "sha256:6790f9f06cc9e76d2f21c501f5889cf37f75917fba6859e196889dfde4bfec3b", size = 12109233, upload-time = "2026-01-27T22:47:05.284Z" },
+    { url = "https://files.pythonhosted.org/packages/86/00/cd7c9d11aca9019833ca8f381e960e8e5eaa7213659a56b935fd7ee41423/prophet-1.4.0-py3-none-macosx_10_11_x86_64.whl", hash = "sha256:6169da7b9a15da7d117de7c144d9b2349caab3a97d0e9125e523fbfb0a867998", size = 12750149, upload-time = "2026-08-15T04:04:39.335Z" },
+    { url = "https://files.pythonhosted.org/packages/53/b8/af6e917c3659820d6d27587b486c8ee32bafeb1f5aa285df686dffbf4265/prophet-1.4.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:d2112b92a243c9d3854f1e126413cf66b5b147f0e3f5a1617b0c51027c5f2880", size = 12127325, upload-time = "2026-08-15T04:04:41.78Z" },
+    { url = "https://files.pythonhosted.org/packages/43/c9/50b11710e698283eb9000459899d15f06806df2fa39b9dfff2d04462837e/prophet-1.4.0-py3-none-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c3dbcbf822ce47ac72148f850ce6fe6cc52c4cc1103978b4396bfd1930359a55", size = 11884682, upload-time = "2026-08-15T04:04:43.877Z" },
+    { url = "https://files.pythonhosted.org/packages/01/54/df08c37c5187bd20c5e86f269bb59d7c3a55217cdcb61afa71f431cc243f/prophet-1.4.0-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:9b00d75209232958160363930b0675e9607ad52bf81e604e2776b73bfdd74bfe", size = 11886663, upload-time = "2026-08-15T04:04:46.166Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/61/8ddc4a46925ffc76efbc6b7bfc4b7045b2b1558ab5e0ab43fdf25dbcba0f/prophet-1.4.0-py3-none-win_amd64.whl", hash = "sha256:b97d817b61dcc455e46360fa197374dfc28d0cb6158b3b19fd3ca4a0b2131dd4", size = 12115447, upload-time = "2026-08-15T04:04:48.638Z" },
 ]
 
 [[package]]
