@@ -8,7 +8,7 @@ htmlcov/
 node_modules/
 frontend/dist/
 static/
-screenshots/
+/screenshots/
 *.db
 .env
 docker-compose.yml
