@@ -172,19 +172,28 @@ function SettingsForm({ saved }) {
 								{...number("ai_temperature", { min: 0, max: 2, step: 0.1 })}
 							/>
 						</Field>
-						<Field label="Max output tokens">
+						<Field
+							label="Max output tokens"
+							hint="For the answer; thinking gets extra room on top."
+						>
 							<Input {...number("ai_max_tokens", { min: 16 })} />
 						</Field>
 						<Field label="Timeout (seconds)">
 							<Input {...number("ai_timeout", { min: 1 })} />
 						</Field>
-						{provider === "openai" && (
+						<div className="sm:col-span-2">
+							<Switch
+								label="Thinking (if available)"
+								hint="Lets thinking models reason before answering. Rarely needed to read a price, and it costs time and output tokens. Off uses the least each model allows."
+								{...toggle("ai_thinking")}
+							/>
+						</div>
+						{form.ai_thinking && (
 							<Field
-								label="Reasoning effort"
-								hint="For reasoning models such as GPT-5."
+								label="Reasoning level (if available)"
+								hint="How much a thinking model may reason."
 							>
 								<Select {...value("ai_reasoning_effort")}>
-									<option value="minimal">Minimal</option>
 									<option value="low">Low</option>
 									<option value="medium">Medium</option>
 									<option value="high">High</option>

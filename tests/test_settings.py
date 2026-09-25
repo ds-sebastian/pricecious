@@ -23,6 +23,26 @@ async def test_invalid_stored_values_fall_back_to_defaults(db):
     assert loaded.smart_scroll_enabled is True
 
 
+@pytest.mark.parametrize(
+    ("stored", "thinking", "effort"),
+    [
+        ({}, False, "low"),
+        ({"ai_provider": "openai"}, False, "low"),  # the old default level is now just the default
+        ({"ai_provider": "openai", "ai_reasoning_effort": "medium"}, True, "medium"),  # a chosen level keeps thinking
+        ({"ai_provider": "openai", "ai_reasoning_effort": "minimal"}, False, "low"),
+        ({"ai_provider": "ollama", "ai_reasoning_effort": "high"}, False, "high"),  # never applied to Ollama
+        ({"ai_provider": "openai", "ai_reasoning_effort": "high", "ai_thinking": "false"}, False, "high"),
+    ],
+)
+async def test_thinking_carries_over_openai_reasoning_effort(db, stored, thinking, effort):
+    db.add_all(Setting(key=key, value=value) for key, value in stored.items())
+    await db.commit()
+
+    loaded = await settings.load(db)
+
+    assert (loaded.ai_thinking, loaded.ai_reasoning_effort) == (thinking, effort)
+
+
 async def test_save_stores_only_changes_as_strings(db):
     await settings.save(db, {"price_outlier_threshold_enabled": True, "ai_model": "llava"})
 

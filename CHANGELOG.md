@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **README screenshots** of the current UI in light and dark.
 
 ### Changed
+- **Thinking:** "Reasoning effort" (OpenAI only) became **Thinking (if available)** for every provider, off by
+  default, with a **Reasoning level** (low by default) used when it's on. Off uses the least thinking each model
+  allows; on adds a thinking allowance on top of Max output tokens so the answer still fits. OpenAI users who had
+  chosen a reasoning level keep thinking on at that level.
 - **Popups:** signup and cookie popups are closed with their own close or "no thanks" buttons (never a sign-up
   button), and any overlay still covering the page is hidden before the screenshot. The AI is also told to read the
   product behind anything left over.
@@ -58,8 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Failed test notifications were reported as sent.
 - Check failures now say why (bot check, load error, AI error) instead of a generic message.
 - European prices such as `1.234,56` are parsed correctly.
-- Thinking models in Ollama (Qwen 3 and similar) could spend the whole token budget reasoning and return nothing,
-  failing with "returned an empty response". Thinking is now turned off for Ollama, and a reply that runs out of
+- Thinking models (Qwen 3 in Ollama, Gemini 2.5 and others) could spend the whole token budget reasoning and return
+  nothing, failing with "returned an empty response". Thinking is now off by default, and a reply that runs out of
   tokens before answering says so instead of being retried.
 - Pages showing "unable to display the requested page" are reported as blocked instead of being sent to the AI.
 - Correcting a low-confidence reading by hand left it ignored by deals and new-low alerts; corrected readings now

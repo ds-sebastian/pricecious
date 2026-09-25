@@ -10,6 +10,11 @@ from urllib.parse import urlparse
 
 import json_repair
 import litellm
+from litellm.constants import (
+    DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET,
+    DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET,
+    DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET,
+)
 from PIL import Image
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
@@ -251,6 +256,35 @@ def _encode_image(png: bytes) -> str:
     return base64.b64encode(buffer.getvalue()).decode()
 
 
+THINKING_BUDGETS = {
+    "low": DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET,
+    "medium": DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET,
+    "high": DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET,
+}
+
+
+def _thinking_params(provider: str, model: str, settings: AppSettings) -> dict:
+    """Map the Thinking settings onto each provider. Thinking otherwise spends the output budget before answering."""
+    if settings.ai_thinking:
+        # Thinking counts against the output limit, so give it LiteLLM's budget for the level on top of the answer's.
+        params = {"max_tokens": settings.ai_max_tokens + THINKING_BUDGETS[settings.ai_reasoning_effort]}
+        if provider == "ollama":
+            return params | {"think": True}  # models that can't think ignore it
+        params["reasoning_effort"] = settings.ai_reasoning_effort  # dropped for models that can't reason
+        return params | {"temperature": 1} if provider == "anthropic" else params  # Anthropic requires 1 to think
+    if provider == "ollama":
+        return {"think": False}
+    if provider == "openai":
+        # The lowest effort the model accepts; models LiteLLM doesn't know keep their default.
+        info = litellm.model_cost.get(model, {})
+        for level in ("none", "minimal"):
+            if info.get(f"supports_{level}_reasoning_effort"):
+                return {"reasoning_effort": level}
+    if provider == "gemini":
+        return {"reasoning_effort": "minimal"}  # the least each Gemini model allows
+    return {}  # Anthropic doesn't think unless asked; OpenRouter models keep their default
+
+
 async def _call_model(messages: list[dict], settings: AppSettings, json_mode: bool = True) -> str:
     provider = settings.ai_provider
     model = settings.ai_model
@@ -270,12 +304,7 @@ async def _call_model(messages: list[dict], settings: AppSettings, json_mode: bo
         kwargs["api_key"] = settings.ai_api_key
     if api_base := settings.ai_api_base or (OLLAMA_DEFAULT_BASE if provider == "ollama" else ""):
         kwargs["api_base"] = api_base
-    if provider == "openai":
-        kwargs["reasoning_effort"] = settings.ai_reasoning_effort
-    if provider == "ollama":
-        # Thinking models (Qwen 3, DeepSeek-R1, ...) otherwise reason at length before answering and can use up the
-        # whole token budget first. Reading a price doesn't need it; models that can't think ignore the flag.
-        kwargs["think"] = False
+    kwargs |= _thinking_params(provider, model, settings)
     if json_mode:
         if provider == "ollama":
             kwargs["format"] = "json"
@@ -288,14 +317,14 @@ async def _call_model(messages: list[dict], settings: AppSettings, json_mode: bo
     choice = response.choices[0]
     content = choice.message.content or ""
     usage = getattr(response, "usage", None)
-    out_of_tokens = choice.finish_reason == "length" or (
-        usage is not None and (usage.completion_tokens or 0) >= settings.ai_max_tokens
-    )
+    limit = kwargs["max_tokens"]
+    out_of_tokens = choice.finish_reason == "length" or (usage is not None and (usage.completion_tokens or 0) >= limit)
     if not content.strip() and out_of_tokens:
         # Retrying can't help: the same budget runs out again (usually spent on thinking).
+        advice = "turn Thinking off" if settings.ai_thinking else "pick a model that doesn't think first"
         raise ExtractionError(
-            f"{settings.ai_model} used all {settings.ai_max_tokens} tokens without answering, probably thinking. "
-            "Raise Max tokens or pick a model that doesn't think first."
+            f"{settings.ai_model} used all {limit} tokens without answering, probably thinking. "
+            f"Raise Max output tokens or {advice}."
         )
     return content
 

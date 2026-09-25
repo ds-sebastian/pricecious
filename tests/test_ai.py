@@ -120,7 +120,7 @@ async def test_a_reply_that_ran_out_of_tokens_is_not_retried(monkeypatch, png, r
     completion = AsyncMock(return_value=response)
     monkeypatch.setattr(ai.litellm, "acompletion", completion)
 
-    with pytest.raises(ExtractionError, match="used all 1000 tokens without answering"):
+    with pytest.raises(ExtractionError, match=r"used all 1000 tokens without answering.*doesn't think first"):
         await ai.extract(png, AppSettings(), url="https://example.com")
     assert completion.await_count == 1
 
@@ -139,10 +139,31 @@ async def test_openai_uses_structured_output_and_no_ollama_base(monkeypatch, png
 
     kwargs = completion.await_args.kwargs
     assert kwargs["response_format"] is Extraction
-    assert kwargs["reasoning_effort"] == "low"
+    assert kwargs["reasoning_effort"] == "minimal"  # thinking is off: the least gpt-5-mini allows
     assert kwargs["api_key"] == "k"
     assert "api_base" not in kwargs
     assert "think" not in kwargs
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "thinking", "expected"),
+    [
+        ("ollama", "qwen3:4b", False, {"think": False}),
+        ("ollama", "qwen3:4b", True, {"think": True, "max_tokens": 3048}),
+        ("openai", "gpt-5-mini", False, {"reasoning_effort": "minimal"}),
+        ("openai", "gpt-5.1", False, {"reasoning_effort": "none"}),
+        ("openai", "gpt-4o", False, {}),
+        ("openai", "gpt-5-mini", True, {"reasoning_effort": "medium", "max_tokens": 3048}),
+        ("gemini", "gemini-2.5-flash", False, {"reasoning_effort": "minimal"}),
+        ("anthropic", "claude-sonnet-4-5", False, {}),
+        ("anthropic", "claude-sonnet-4-5", True, {"reasoning_effort": "medium", "max_tokens": 3048, "temperature": 1}),
+        ("openrouter", "qwen/qwen3-vl", False, {}),
+    ],
+)
+def test_thinking_settings_map_to_each_provider(provider, model, thinking, expected):
+    """Off uses the least thinking each model allows; on adds the level's budget on top of the answer's tokens."""
+    settings = AppSettings(ai_provider=provider, ai_thinking=thinking, ai_reasoning_effort="medium")
+    assert ai._thinking_params(provider, model, settings) == expected
 
 
 def test_litellm_does_not_log_every_call():
