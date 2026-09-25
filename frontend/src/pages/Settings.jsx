@@ -229,6 +229,12 @@ function SettingsForm({ saved }) {
 				</div>
 				<div className="grid gap-4 border-t border-border p-4">
 					<Switch
+						label="Skip the AI when a page hasn't changed"
+						hint="Checks still visit the page, but only ask the AI when its prices or stock wording change, and at least once a day."
+						{...toggle("skip_unchanged_pages")}
+					/>
+					<AISavings />
+					<Switch
 						label="Reject sudden price jumps"
 						hint="Protects against misreads, like a price picked up from another product."
 						{...toggle("price_outlier_threshold_enabled")}
@@ -306,6 +312,20 @@ function SettingsForm({ saved }) {
 				</div>
 			)}
 		</form>
+	);
+}
+
+function AISavings() {
+	const { data: items = [] } = useItems();
+	const calls = items.reduce((sum, item) => sum + item.ai_calls, 0);
+	const skips = items.reduce((sum, item) => sum + item.ai_skips, 0);
+	if (!skips) return null;
+	return (
+		<p className="-mt-2 text-xs text-muted">
+			So far {skips.toLocaleString()} of {(calls + skips).toLocaleString()}{" "}
+			checks ({Math.round((skips / (calls + skips)) * 100)}%) didn't need the
+			AI.
+		</p>
 	);
 }
 

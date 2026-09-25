@@ -47,6 +47,12 @@ class Item(Base):
     error_type: Mapped[str | None]
     consecutive_failures: Mapped[int] = mapped_column(default=0, server_default="0")
 
+    # Change detection: the AI is skipped while the page's prices and stock text match the last AI check.
+    page_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    ai_checked_at: Mapped[datetime | None]
+    ai_calls: Mapped[int] = mapped_column(default=0, server_default="0")
+    ai_skips: Mapped[int] = mapped_column(default=0, server_default="0")
+
     notification_profile_id: Mapped[int | None] = mapped_column(ForeignKey("notification_profiles.id"))
     notification_profile: Mapped[NotificationProfile | None] = relationship(lazy="joined")
 

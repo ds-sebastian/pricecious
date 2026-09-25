@@ -1,9 +1,12 @@
 """Price checks: claiming items, capture, extraction, persistence, alerts, and the scheduler loop."""
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import random
+import re
 import time
 from collections.abc import Coroutine, Iterable
 from datetime import datetime, timedelta
@@ -27,9 +30,25 @@ CLAIM_TIMEOUT = timedelta(hours=1)
 CHECK_ALL_SKIPS_RECENT = timedelta(minutes=5)
 MAX_JITTER_SECONDS = 30
 HEARTBEAT_SECONDS = 60
+# Even an unchanged page gets a real AI check this often, as a safety net.
+AI_RECHECK = timedelta(hours=24)
 # A big jump reported with middling confidence is applied but flagged for review.
 UNCERTAIN_CHANGE_PERCENT = 20
 UNCERTAIN_CONFIDENCE = 0.7
+
+PRICE_TEXT = re.compile(r"[$€£¥₹₩]\s?\d[\d.,]*|\d[\d.,]*\s?(?:[$€£¥₹₩]|\b(?:USD|EUR|GBP|CAD|AUD)\b)")
+STOCK_PHRASES = (
+    "add to cart",
+    "add to basket",
+    "add to bag",
+    "buy now",
+    "in stock",
+    "out of stock",
+    "sold out",
+    "unavailable",
+    "notify me",
+    "pre-order",
+)
 
 _slots = asyncio.Semaphore(MAX_CONCURRENT_CHECKS)
 _tasks: set[asyncio.Task] = set()
@@ -101,9 +120,9 @@ def spawn(coro: Coroutine) -> asyncio.Task:
     return task
 
 
-def enqueue(item_ids: Iterable[int], *, jitter: bool = False) -> None:
+def enqueue(item_ids: Iterable[int], *, jitter: bool = False, force_ai: bool = False) -> None:
     for item_id in item_ids:
-        spawn(check_item(item_id, jitter=jitter))
+        spawn(check_item(item_id, jitter=jitter, force_ai=force_ai))
 
 
 async def shutdown() -> None:
@@ -112,13 +131,16 @@ async def shutdown() -> None:
     await asyncio.gather(*_tasks, return_exceptions=True)
 
 
-async def check_item(item_id: int, *, jitter: bool = False) -> None:
-    """Run a check for an already-claimed item. The claim is released however it ends."""
+async def check_item(item_id: int, *, jitter: bool = False, force_ai: bool = False) -> None:
+    """Run a check for an already-claimed item. The claim is released however it ends.
+
+    force_ai asks the model even if the page looks unchanged, as someone clicking "Check now" expects.
+    """
     try:
         if jitter:  # spread scheduled checks out instead of hitting sites in bursts
             await asyncio.sleep(random.uniform(0, MAX_JITTER_SECONDS))
         async with _slots:
-            await _check(item_id)
+            await _check(item_id, force_ai)
     except asyncio.CancelledError:
         await asyncio.shield(_release(item_id))
         raise
@@ -127,7 +149,7 @@ async def check_item(item_id: int, *, jitter: bool = False) -> None:
         await _release(item_id)
 
 
-async def _check(item_id: int) -> None:
+async def _check(item_id: int, force_ai: bool = False) -> None:
     async with database.SessionLocal() as db:
         item = await db.get(Item, item_id)
         settings = await app_settings.load(db)
@@ -149,6 +171,11 @@ async def _check(item_id: int) -> None:
         return
     await _save_screenshot(item_id, capture.screenshot)
 
+    fingerprint = page_fingerprint(capture)
+    if not force_ai and can_skip_ai(item, capture, fingerprint, settings):
+        await _record_skip(item_id)
+        return
+
     try:
         extraction = await ai.extract(
             capture.screenshot,
@@ -159,7 +186,7 @@ async def _check(item_id: int) -> None:
             last_price=item.current_price,
         )
     except Exception as exc:
-        await _record_failure(item_id, f"AI extraction failed: {describe(exc)}", "ai_failed", settings)
+        await _record_failure(item_id, f"AI extraction failed: {describe(exc)}", "ai_failed", settings, ai_call=True)
         return
 
     async with database.SessionLocal() as db:
@@ -173,11 +200,34 @@ async def _check(item_id: int) -> None:
             db.add(history)
         if not item.name:
             item.name = scraper.product_name(capture.title)
+        item.page_fingerprint, item.ai_checked_at = fingerprint, utcnow()
+        item.ai_calls += 1
         item.is_refreshing, item.refresh_started_at = False, None
         await db.commit()
 
     for title, body in notify.alerts(item, old_price, old_stock, previous_low):
         await notify.send(item.notification_profile.apprise_url, title, body)
+
+
+def page_fingerprint(capture: scraper.Capture) -> str:
+    """Hash of the prices and stock wording on the page: what a check cares about, ignoring everything else."""
+    prices = sorted({re.sub(r"\s", "", match) for match in PRICE_TEXT.findall(capture.selector_text or capture.text)})
+    lowered = capture.text.lower()
+    stock = [phrase for phrase in STOCK_PHRASES if phrase in lowered]
+    return hashlib.sha256(json.dumps([prices, stock]).encode()).hexdigest()
+
+
+def can_skip_ai(item: Item, capture: scraper.Capture, fingerprint: str, settings: AppSettings) -> bool:
+    """True only when the page provably still shows what the last AI check found."""
+    if not settings.skip_unchanged_pages or item.page_fingerprint != fingerprint:
+        return False
+    if item.ai_checked_at is None or utcnow() - item.ai_checked_at >= AI_RECHECK:
+        return False
+    # Only repeat clean results, and only when the known price is visibly on the page (not drawn in an image).
+    if item.last_error or item.current_price is None:
+        return False
+    shown = (ai.parse_price(match) for match in PRICE_TEXT.findall(capture.selector_text or capture.text))
+    return any(price is not None and abs(price - item.current_price) < 0.005 for price in shown)
 
 
 def apply_extraction(item: Item, extraction: ai.Extraction, settings: AppSettings) -> PriceHistory | None:
@@ -242,7 +292,26 @@ def _price_problem(price: float, old_price: float | None, settings: AppSettings)
     return None
 
 
-async def _record_failure(item_id: int, message: str, error_type: str, settings: AppSettings) -> None:
+async def _record_skip(item_id: int) -> None:
+    logger.info(f"Item {item_id}: page unchanged, skipped the AI")
+    async with database.SessionLocal() as db:
+        await db.execute(
+            update(Item)
+            .where(Item.id == item_id)
+            .values(
+                last_checked=utcnow(),
+                consecutive_failures=0,
+                ai_skips=Item.ai_skips + 1,
+                is_refreshing=False,
+                refresh_started_at=None,
+            )
+        )
+        await db.commit()
+
+
+async def _record_failure(
+    item_id: int, message: str, error_type: str, settings: AppSettings, *, ai_call: bool = False
+) -> None:
     logger.warning(f"Check failed for item {item_id}: {message}")
     async with database.SessionLocal() as db:
         item = await db.get(Item, item_id)
@@ -250,6 +319,7 @@ async def _record_failure(item_id: int, message: str, error_type: str, settings:
             return
         item.last_checked = utcnow()
         item.consecutive_failures += 1
+        item.ai_calls += int(ai_call)
         item.last_error, item.error_type = message, error_type
         if item.consecutive_failures >= settings.max_consecutive_failures:
             item.is_active = False

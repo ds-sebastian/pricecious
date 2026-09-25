@@ -84,6 +84,10 @@ export function scheduleTitle(item) {
 		parts.push(
 			`Next check ${relativeTime(item.next_check)} (every ${item.interval} min)`,
 		);
+	if (item.ai_skips)
+		parts.push(
+			`${item.ai_skips} of ${item.ai_calls + item.ai_skips} checks didn't need the AI`,
+		);
 	return parts.join("\n") || undefined;
 }
 

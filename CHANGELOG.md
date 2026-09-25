@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Change detection:** checks skip the AI while a page's prices and stock wording match the last AI check (at least
+  one real AI check a day; "Check now" always uses it). On by default; Settings shows how many checks it saved.
 - **Currencies:** each item keeps its currency, detected from the page on the first check (or the site's domain) and
   editable. Prices, charts and notifications use it instead of always showing `$`.
 - **Test AI settings:** run the settings form, saved or not, on one of your items and see the model's answer.

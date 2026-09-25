@@ -98,6 +98,7 @@ async def update_item(item_id: int, data: ItemIn, db: DB) -> ItemOut:
             item.last_error = item.error_type = None
     for key, value in data.model_dump().items():
         setattr(item, key, value)
+    item.page_fingerprint = None  # edits (prompt, selector, price) deserve a fresh AI check
     await db.commit()
     item = await _get(db, Item, item_id)
     return (await _items_out(db, [item]))[0]
@@ -129,7 +130,7 @@ async def check_all_items(db: DB) -> dict:
 async def check_item(item_id: int, db: DB) -> dict:
     await _get(db, Item, item_id)
     claimed = await checks.claim(db, [item_id], active_only=False)
-    checks.enqueue(claimed)
+    checks.enqueue(claimed, force_ai=True)
     return {"queued": bool(claimed)}
 
 

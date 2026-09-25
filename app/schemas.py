@@ -73,6 +73,8 @@ class ItemOut(BaseModel):
     next_check: UTCDateTime | None
     screenshot_url: str | None
     deal: Literal["lowest_seen", "lowest_90d"] | None
+    ai_calls: int
+    ai_skips: int
 
 
 class HistoryOut(BaseModel):

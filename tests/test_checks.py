@@ -330,3 +330,112 @@ async def test_new_low_is_announced(db, claimed_item, png, monkeypatch):
     await checks.check_item(claimed_item.id)
 
     assert [call.args[1] for call in send.await_args_list] == ["Lowest price yet: Widget"]
+
+
+# Change detection
+
+PAGE = "Acme Grinder $149.00 Add to cart Reviews: great grinder, 4.8 stars"
+
+
+@pytest.fixture
+async def tracked(db, png, monkeypatch):
+    """An item with one clean AI check behind it, and mocks for the next one."""
+    item = Item(url="https://example.com", name="Grinder")
+    db.add(item)
+    await db.commit()
+    page = {"text": PAGE, "selector_text": ""}
+    monkeypatch.setattr(
+        checks.scraper,
+        "capture",
+        AsyncMock(side_effect=lambda *a, **k: Capture(png, page["text"], "", page["selector_text"])),
+    )
+    extract = AsyncMock(return_value=extraction(price=149.0))
+    monkeypatch.setattr(checks.ai, "extract", extract)
+    monkeypatch.setattr(checks.notify, "send", AsyncMock())
+
+    async def check(**kwargs):
+        await checks.claim(db, [item.id])
+        await checks.check_item(item.id, **kwargs)
+        await db.refresh(item)
+
+    await check()
+    assert extract.await_count == 1
+    return item, page, extract, check
+
+
+async def test_unchanged_page_skips_the_ai(db, tracked):
+    item, page, extract, check = tracked
+    page["text"] = PAGE.replace("great grinder, 4.8 stars", "love it, 4.9 stars")  # noise only
+
+    await check()
+
+    assert extract.await_count == 1
+    assert (item.ai_calls, item.ai_skips) == (1, 1)
+    assert item.current_price == 149.0
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda page: page.update(text=PAGE.replace("$149.00", "$129.00")),  # the price moved
+        lambda page: page.update(text=PAGE.replace("Add to cart", "Sold out")),  # stock wording changed
+        lambda page: page.update(text="Acme Grinder Add to cart"),  # price not in the text (e.g. an image)
+    ],
+)
+async def test_relevant_changes_go_to_the_ai(tracked, change):
+    _, page, extract, check = tracked
+    change(page)
+    await check()
+    assert extract.await_count == 2
+
+
+async def test_manual_checks_always_use_the_ai(tracked):
+    _, _, extract, check = tracked
+    await check(force_ai=True)
+    assert extract.await_count == 2
+
+
+async def test_ai_runs_at_least_daily_and_after_warnings(db, tracked):
+    _, _, extract, check = tracked
+    await db.execute(Item.__table__.update().values(ai_checked_at=utcnow() - checks.AI_RECHECK))
+    await db.commit()
+    await check()
+    assert extract.await_count == 2
+
+    await db.execute(Item.__table__.update().values(last_error="Large price change; please verify"))
+    await db.commit()
+    await check()
+    assert extract.await_count == 3
+
+
+async def test_skipping_can_be_turned_off(db, tracked):
+    _, _, extract, check = tracked
+    await checks.app_settings.save(db, {"skip_unchanged_pages": False})
+    await check()
+    assert extract.await_count == 2
+
+
+async def test_selector_scopes_the_fingerprint(db, png, monkeypatch):
+    item = Item(url="https://example.com", name="Grinder", selector=".price")
+    db.add(item)
+    await db.commit()
+    texts = iter([PAGE + " Related: $19.99", PAGE + " Related: $24.99"])
+    monkeypatch.setattr(
+        checks.scraper, "capture", AsyncMock(side_effect=lambda *a, **k: Capture(png, next(texts), "", "$149.00"))
+    )
+    extract = AsyncMock(return_value=extraction(price=149.0))
+    monkeypatch.setattr(checks.ai, "extract", extract)
+
+    for _ in range(2):
+        await checks.claim(db, [item.id])
+        await checks.check_item(item.id)
+
+    assert extract.await_count == 1  # other products' prices changed, the tracked one didn't
+
+
+async def test_editing_an_item_forces_a_fresh_ai_check(client, db, tracked):
+    item, _, extract, check = tracked
+    response = await client.put(f"/api/items/{item.id}", json={"url": item.url, "custom_prompt": "Use the 2 kg bag"})
+    assert response.status_code == 200
+    await check()
+    assert extract.await_count == 2

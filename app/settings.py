@@ -31,6 +31,7 @@ class AppSettings(BaseModel):
     price_min_floor: float = Field(0.01, ge=0)
     price_max_ceiling: float = Field(100_000, gt=0)
     max_consecutive_failures: int = Field(20, ge=1)
+    skip_unchanged_pages: bool = True
 
     smart_scroll_enabled: bool = False
     smart_scroll_pixels: int = Field(350, ge=0)

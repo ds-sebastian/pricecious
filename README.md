@@ -151,6 +151,14 @@ answer and raw reply. It's the quickest way to check a new model, key or base UR
 - Raise **Minimum price confidence**. Readings below it are recorded but don't change the price.
 - Turn on **Reject sudden price jumps** to ignore misreads such as a price picked up from another product.
 
+### Keeping AI costs down
+
+Every check visits the page, but the AI is only asked when the page's prices or stock wording ("add to cart", "sold
+out", ...) differ from the last AI check, and at least once a day. Price changes on unrelated parts of the page just
+mean the AI is asked, so nothing is missed; with a CSS selector set, only that element's price counts. "Check now"
+always asks the AI. Settings shows how many checks didn't need it. The biggest lever is still the check interval:
+calls per day are roughly items × 24 ÷ hours between checks.
+
 Checks run on the item's own interval, else its notification profile's, else the global default. An item that fails
 repeatedly (20 times by default) is paused until you turn its scheduled checks back on.
 

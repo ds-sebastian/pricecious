@@ -81,6 +81,7 @@ class Capture:
     screenshot: bytes
     text: str
     title: str = ""
+    selector_text: str = ""  # text of the item's CSS selector match, when it has one
 
 
 class ScrapeError(Exception):
@@ -232,10 +233,13 @@ async def _capture_once(url: str, selector: str | None, scroll_pixels: int, time
             await page.evaluate("px => window.scrollBy(0, px)", scroll_pixels)
             await page.wait_for_timeout(1000)
 
-        text = title = ""
+        text = title = selector_text = ""
         with suppress(PlaywrightError):
             text = " ".join((await page.inner_text("body")).split())
             title = await page.title()
+        if selector:
+            with suppress(PlaywrightError):
+                selector_text = " ".join((await page.locator(selector).first.inner_text(timeout=1000)).split())
         screenshot = await page.screenshot()
     except PlaywrightError as exc:  # usually a lost browser connection; start() reconnects next time
         raise ScrapeError(f"Browser error: {_first_line(exc)}") from None
@@ -244,7 +248,7 @@ async def _capture_once(url: str, selector: str | None, scroll_pixels: int, time
             with suppress(Exception):
                 await context.close()
 
-    capture = Capture(screenshot, text, title)
+    capture = Capture(screenshot, text, title, selector_text)
     if problem := await asyncio.to_thread(content_problem, screenshot, text):
         raise ScrapeError(problem, capture)
     return capture
