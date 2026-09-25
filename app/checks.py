@@ -6,7 +6,7 @@ import os
 import random
 import time
 from collections.abc import Coroutine, Iterable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import or_, select, update
@@ -24,6 +24,7 @@ SCREENSHOT_DIR = Path(os.getenv("SCREENSHOT_DIR", "screenshots"))
 MAX_CONCURRENT_CHECKS = 5
 MIN_INTERVAL_MINUTES = 5
 CLAIM_TIMEOUT = timedelta(hours=1)
+CHECK_ALL_SKIPS_RECENT = timedelta(minutes=5)
 MAX_JITTER_SECONDS = 30
 HEARTBEAT_SECONDS = 60
 # A big jump reported with middling confidence is applied but flagged for review.
@@ -44,7 +45,13 @@ def interval_minutes(item: Item, default: int) -> int:
     return max(item.check_interval_minutes or profile_interval or default, MIN_INTERVAL_MINUTES)
 
 
-async def claim(db: AsyncSession, item_ids: Iterable[int] | None = None, *, active_only: bool = True) -> list[int]:
+async def claim(
+    db: AsyncSession,
+    item_ids: Iterable[int] | None = None,
+    *,
+    active_only: bool = True,
+    checked_before: datetime | None = None,
+) -> list[int]:
     """Atomically mark idle (or stale) items as refreshing and return the IDs claimed."""
     now = utcnow()
     query = update(Item).where(
@@ -58,6 +65,8 @@ async def claim(db: AsyncSession, item_ids: Iterable[int] | None = None, *, acti
         query = query.where(Item.is_active.is_(True))
     if item_ids is not None:
         query = query.where(Item.id.in_(list(item_ids)))
+    if checked_before is not None:
+        query = query.where(or_(Item.last_checked.is_(None), Item.last_checked < checked_before))
     result = await db.execute(query.values(is_refreshing=True, refresh_started_at=now).returning(Item.id))
     claimed = list(result.scalars())
     await db.commit()

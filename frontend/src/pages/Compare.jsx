@@ -18,13 +18,20 @@ const RANGES = [
 
 export default function Compare() {
 	const { data: items = [], isLoading } = useItems();
-	const tags = [
-		...new Set(items.flatMap((item) => splitTags(item.tags))),
-	].sort();
+	const counts = new Map();
+	for (const tag of items.flatMap((item) => splitTags(item.tags))) {
+		counts.set(tag, (counts.get(tag) ?? 0) + 1);
+	}
+	const tags = [...counts.keys()].sort();
+	// Open on the tag that compares the most items.
+	const busiest = tags.reduce(
+		(best, t) => (counts.get(t) > counts.get(best) ? t : best),
+		tags[0],
+	);
 	const [selectedTag, setTag] = useState(null);
 	const [days, setDays] = useState(30);
 	const [hideOutliers, setHideOutliers] = useState(false);
-	const tag = tags.includes(selectedTag) ? selectedTag : tags[0];
+	const tag = tags.includes(selectedTag) ? selectedTag : busiest;
 	const tagged = items.filter((item) => splitTags(item.tags).includes(tag));
 
 	const results = useQueries({

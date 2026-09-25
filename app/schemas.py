@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     AfterValidator,
@@ -76,6 +76,18 @@ class HistoryOut(BaseModel):
     price_confidence: float | None
     in_stock: bool | None
     in_stock_confidence: float | None
+
+
+class HistoryQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page: int = Field(1, ge=1)
+    size: int = Field(50, ge=1, le=200)
+    min_price: float | None = Field(None, ge=0)
+    max_price: float | None = Field(None, ge=0)
+    stock: Literal["in", "out", "unknown"] | None = None
+    min_confidence: float | None = Field(None, ge=0, le=1)
+    confidence_below: float | None = Field(None, gt=0, le=1)
 
 
 class HistoryPage(BaseModel):

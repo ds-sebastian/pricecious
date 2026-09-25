@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from operator import attrgetter
 from statistics import fmean, pstdev
 
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from app.database import utcnow
 from app.models import Item, PriceForecast, PriceHistory
 
 CHART_POINTS = 150
+by_price = attrgetter("price")
 
 
 async def item_analytics(db: AsyncSession, item: Item, days: int | None, sigma: float | None) -> dict:
@@ -60,7 +62,8 @@ def _change_since(rows: list, since: datetime) -> float | None:
 
 
 def _downsample(rows: list) -> list[dict]:
-    """Average prices into at most CHART_POINTS time buckets."""
+    """Thin the history to about CHART_POINTS buckets, keeping each bucket's first, last, lowest and highest
+    reading. Unlike averaging, this never plots a price that wasn't seen, and it keeps spikes and dips visible."""
     if not rows:
         return []
     start = rows[0].timestamp
@@ -68,24 +71,18 @@ def _downsample(rows: list) -> list[dict]:
     buckets: dict[int, list] = {}
     for row in rows:
         buckets.setdefault(int((row.timestamp - start).total_seconds() // step), []).append(row)
-    points = []
+    kept: list = []
     for bucket in buckets.values():
-        stock = {row.in_stock for row in bucket} - {None}
-        points.append(
-            {
-                "timestamp": bucket[0].timestamp,
-                "price": fmean(row.price for row in bucket),
-                "in_stock": (True in stock) if stock else None,
-            }
-        )
-    return points
+        extremes = {bucket[0], min(bucket, key=by_price), max(bucket, key=by_price), bucket[-1]}
+        kept.extend(sorted(extremes, key=attrgetter("timestamp")))
+    return [{"timestamp": row.timestamp, "price": row.price, "in_stock": row.in_stock} for row in kept]
 
 
 def _annotations(rows: list) -> list[dict]:
     if not rows:
         return []
-    lowest = min(rows, key=lambda row: row.price)
-    highest = max(rows, key=lambda row: row.price)
+    lowest = min(rows, key=by_price)
+    highest = max(rows, key=by_price)
     notes = [{"type": "min", "timestamp": lowest.timestamp, "price": lowest.price}]
     if highest.price != lowest.price:
         notes.append({"type": "max", "timestamp": highest.timestamp, "price": highest.price})

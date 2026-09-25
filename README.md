@@ -16,6 +16,11 @@ asks a vision model (Ollama, OpenAI, Anthropic, Gemini or OpenRouter) for the pr
 history, charts it, forecasts it with Prophet, and notifies you through [Apprise](https://github.com/caronc/apprise)
 when prices drop, hit your target, or items come back in stock.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/items-dark.png">
+  <img alt="Items page with product cards showing prices, stock status and targets" src="docs/screenshots/items-light.png">
+</picture>
+
 ## Quick start
 
 You need Docker, and either an API key for a hosted model or a local Ollama with a vision model (e.g. `gemma3:4b`).
@@ -113,10 +118,23 @@ drive-by protection, not a substitute for the firewall or proxy allowlist.
 - **Items**: add a product page and a name; the first check starts right away. Each card shows the latest price,
   stock status, and what went wrong if a check failed. Click the screenshot to see what the browser saw.
 - **Item page**: price history with lowest/highest markers, out-of-stock periods shaded, an optional forecast, and
-  every reading. Fix or delete bad readings there; the current price follows the newest reading.
+  every reading. Filter readings by price, stock or confidence to find bad ones, then fix or delete them; the current
+  price follows the newest reading.
 - **Compare**: items that share a tag (e.g. `gpu`) on one chart.
+- **Check all** checks every item that wasn't checked in the last 5 minutes, so repeated clicks don't run up your AI
+  bill. The check button on a single item always runs.
 - **Settings**: AI model, confidence thresholds, price sanity limits, browser behaviour, schedules and notification
   profiles.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/item-dark.png">
+  <img alt="Item page with a price history chart, forecast and price statistics" src="docs/screenshots/item-light.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/compare-dark.png">
+  <img alt="Compare page charting several items that share a tag" src="docs/screenshots/compare-light.png">
+</picture>
 
 ### When the AI gets it wrong
 

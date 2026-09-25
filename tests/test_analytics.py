@@ -59,14 +59,18 @@ async def test_outliers_are_filtered_from_chart_but_not_stats(db, item):
     assert max(p["price"] for p in data["history"]) == 100.0
 
 
-async def test_history_is_downsampled(db, item):
-    add_history(db, item, *[(h / 4, 100.0 + h % 7, None) for h in range(2000)])
+async def test_history_is_downsampled_to_real_readings(db, item):
+    prices = [100.0 + h % 7 for h in range(2000)]
+    prices[1234] = 500.0  # a one-off spike must survive thinning
+    add_history(db, item, *[(h / 4, prices[h], None) for h in range(2000)])
     await db.commit()
 
     history = (await item_analytics(db, item, days=None, sigma=None))["history"]
 
-    assert CHART_POINTS <= len(history) <= CHART_POINTS + 1
+    assert len(history) <= 4 * (CHART_POINTS + 1)
     assert history == sorted(history, key=lambda p: p["timestamp"])
+    assert {p["price"] for p in history} <= set(prices)  # nothing averaged into a price never seen
+    assert max(p["price"] for p in history) == 500.0
 
 
 async def test_annotations_mark_extremes_and_stock_changes(db, item):

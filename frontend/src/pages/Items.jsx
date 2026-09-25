@@ -25,10 +25,14 @@ export default function Items() {
 	const [viewing, setViewing] = useState(null);
 
 	const checkAll = useAction(() => api.post("/items/check-all"), {
-		success: ({ queued }) =>
-			queued
-				? `Checking ${queued} item${queued === 1 ? "" : "s"}`
-				: "All items are already being checked",
+		success: ({ queued, recently_checked: recent }) => {
+			if (!queued)
+				return "Every item was checked in the last 5 minutes or is being checked now";
+			const message = `Checking ${queued} item${queued === 1 ? "" : "s"}`;
+			return recent
+				? `${message}; skipped ${recent} checked in the last 5 minutes`
+				: message;
+		},
 		invalidate: [["items"]],
 	});
 	const remove = useAction((id) => api.delete(`/items/${id}`), {
@@ -108,7 +112,11 @@ export default function Items() {
 								onChange={(event) => setQuery(event.target.value)}
 							/>
 						</div>
-						<Button busy={checkAll.isPending} onClick={() => checkAll.mutate()}>
+						<Button
+							busy={checkAll.isPending}
+							onClick={() => checkAll.mutate()}
+							title="Checks every item not checked in the last 5 minutes"
+						>
 							{!checkAll.isPending && <RefreshCw className="size-4" />}
 							Check all
 						</Button>

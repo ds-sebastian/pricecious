@@ -18,11 +18,17 @@ export const formatPrice = (value) =>
 export const formatPercent = (value) =>
 	`${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 
-export const formatDateTime = (date) =>
-	new Date(date).toLocaleString(undefined, {
-		dateStyle: "medium",
-		timeStyle: "short",
+export function formatDateTime(date) {
+	const value = new Date(date);
+	return value.toLocaleString(undefined, {
+		year:
+			value.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
+		month: "short",
+		day: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
 	});
+}
 
 export function relativeTime(date) {
 	const seconds = (new Date(date) - Date.now()) / 1000;

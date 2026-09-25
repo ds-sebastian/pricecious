@@ -10,11 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import analytics, checks, forecast, notify
 from app import settings as app_settings
-from app.database import Base, get_db
+from app.database import Base, get_db, utcnow
 from app.models import Item, NotificationProfile, PriceForecast, PriceHistory
 from app.schemas import (
     Analytics,
     HistoryPage,
+    HistoryQuery,
     HistoryUpdate,
     ItemIn,
     ItemOut,
@@ -104,9 +105,14 @@ async def delete_item(item_id: int, db: DB) -> None:
 
 @router.post("/items/check-all")
 async def check_all_items(db: DB) -> dict:
-    claimed = await checks.claim(db)
+    """Check every active item except those checked in the last few minutes, so repeated clicks cost nothing."""
+    cutoff = utcnow() - checks.CHECK_ALL_SKIPS_RECENT
+    claimed = await checks.claim(db, checked_before=cutoff)
     checks.enqueue(claimed)
-    return {"queued": len(claimed)}
+    recent = await db.scalar(
+        select(func.count()).select_from(Item).where(Item.is_active.is_(True), Item.last_checked >= cutoff)
+    )
+    return {"queued": len(claimed), "recently_checked": recent}
 
 
 @router.post("/items/{item_id}/check")
@@ -132,19 +138,31 @@ async def item_analytics(
 
 
 @router.get("/items/{item_id}/history")
-async def item_history(
-    item_id: int,
-    db: DB,
-    page: Annotated[int, Query(ge=1)] = 1,
-    size: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> HistoryPage:
+async def item_history(item_id: int, query: Annotated[HistoryQuery, Query()], db: DB) -> HistoryPage:
     await _get(db, Item, item_id)
-    where = PriceHistory.item_id == item_id
-    total = await db.scalar(select(func.count()).select_from(PriceHistory).where(where))
+    conditions = [PriceHistory.item_id == item_id]
+    if query.min_price is not None:
+        conditions.append(PriceHistory.price >= query.min_price)
+    if query.max_price is not None:
+        conditions.append(PriceHistory.price <= query.max_price)
+    if query.stock:
+        stock = {"in": True, "out": False, "unknown": None}[query.stock]
+        conditions.append(PriceHistory.in_stock.is_(stock))
+    # Readings without a confidence (entered by hand or very old) match neither confidence filter.
+    if query.min_confidence is not None:
+        conditions.append(PriceHistory.price_confidence >= query.min_confidence)
+    if query.confidence_below is not None:
+        conditions.append(PriceHistory.price_confidence < query.confidence_below)
+
+    total = await db.scalar(select(func.count()).select_from(PriceHistory).where(*conditions))
     records = await db.scalars(
-        select(PriceHistory).where(where).order_by(PriceHistory.timestamp.desc()).offset((page - 1) * size).limit(size)
+        select(PriceHistory)
+        .where(*conditions)
+        .order_by(PriceHistory.timestamp.desc())
+        .offset((query.page - 1) * query.size)
+        .limit(query.size)
     )
-    return HistoryPage.model_validate({"items": records.all(), "total": total, "page": page, "size": size})
+    return HistoryPage(items=records.all(), total=total, page=query.page, size=query.size)
 
 
 @router.put("/history/{record_id}")

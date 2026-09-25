@@ -114,8 +114,27 @@ async def test_check_all_skips_running_and_paused_items(client, enqueued):
 
     response = await client.post("/api/items/check-all")
 
-    assert response.json() == {"queued": 1}
+    assert response.json() == {"queued": 1, "recently_checked": 0}
     assert enqueued == [running["id"], idle["id"]]
+
+
+async def test_check_all_skips_recently_checked_items(client, db, enqueued):
+    fresh = await create_item(client, name="Fresh")
+    stale = await create_item(client, name="Stale")
+    new = await create_item(client, name="New")
+    now = utcnow()
+    await db.execute(Item.__table__.update().where(Item.id == fresh["id"]).values(last_checked=now))
+    await db.execute(
+        Item.__table__.update().where(Item.id == stale["id"]).values(last_checked=now - timedelta(minutes=10))
+    )
+    await db.commit()
+
+    first = (await client.post("/api/items/check-all")).json()
+    assert first == {"queued": 2, "recently_checked": 1}
+    assert sorted(enqueued) == sorted([stale["id"], new["id"]])
+
+    # A single item can still be checked on demand.
+    assert (await client.post(f"/api/items/{fresh['id']}/check")).json() == {"queued": True}
 
 
 # History
@@ -131,6 +150,40 @@ async def test_history_is_paginated_newest_first(client, db):
 
     assert page["total"] == 5
     assert [record["price"] for record in page["items"]] == [3, 4]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("", [10, 20, 30, 40]),
+        ("min_price=15&max_price=35", [20, 30]),
+        ("stock=in", [10]),
+        ("stock=out", [20]),
+        ("stock=unknown", [30, 40]),
+        ("min_confidence=0.8", [10, 30]),
+        ("confidence_below=0.5", [20]),
+    ],
+)
+async def test_history_filters(client, db, query, expected):
+    item = await create_item(client)
+    now = utcnow()
+    readings = [(10, True, 0.9), (20, False, 0.3), (30, None, 0.8), (40, None, None)]
+    db.add_all(
+        PriceHistory(item_id=item["id"], price=p, in_stock=s, price_confidence=c, timestamp=now - timedelta(hours=p))
+        for p, s, c in readings
+    )
+    await db.commit()
+
+    page = (await client.get(f"/api/items/{item['id']}/history?{query}")).json()
+
+    assert sorted(record["price"] for record in page["items"]) == expected
+    assert page["total"] == len(expected)
+
+
+async def test_invalid_history_filters_are_rejected(client):
+    item = await create_item(client)
+    for query in ("stock=maybe", "min_confidence=2", "min_price=-1", "sort=asc"):
+        assert (await client.get(f"/api/items/{item['id']}/history?{query}")).status_code == 422
 
 
 async def test_editing_or_deleting_history_updates_current_price(client, db):

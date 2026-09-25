@@ -96,7 +96,7 @@ export function ItemCard({ item, onEdit, onDelete, onViewScreenshot }) {
 						src={item.screenshot_url}
 						alt=""
 						loading="lazy"
-						className="size-full object-cover object-top"
+						className="size-full object-cover object-left-top"
 					/>
 				) : (
 					<span className="text-xs text-muted">No screenshot yet</span>
