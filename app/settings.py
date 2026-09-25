@@ -22,7 +22,10 @@ class AppSettings(BaseModel):
     ai_temperature: float = Field(0.1, ge=0, le=2)
     ai_max_tokens: int = Field(1000, ge=16)
     ai_timeout: int = Field(30, ge=1)
-    ai_reasoning_effort: Literal["minimal", "low", "medium", "high"] = "low"
+    # Whether a thinking model may reason before answering, and how much. Reading a price rarely needs it, and
+    # thinking uses up output tokens (and time) before the answer starts.
+    ai_thinking: bool = False
+    ai_reasoning_effort: Literal["low", "medium", "high"] = "low"
 
     confidence_threshold_price: float = Field(0.5, ge=0, le=1)
     confidence_threshold_stock: float = Field(0.5, ge=0, le=1)
@@ -46,6 +49,9 @@ class AppSettings(BaseModel):
 def _parse(raw: dict[str, Any]) -> AppSettings:
     """Validate stored values, falling back to defaults for any that are invalid."""
     data = {k: v for k, v in raw.items() if k in AppSettings.model_fields}
+    # Reasoning effort used to apply to OpenAI only, and always; keep thinking on for OpenAI users who chose a level.
+    if "ai_thinking" not in raw and raw.get("ai_provider") == "openai":
+        data["ai_thinking"] = raw.get("ai_reasoning_effort") in {"low", "medium", "high"}
     while True:
         try:
             return AppSettings.model_validate(data)

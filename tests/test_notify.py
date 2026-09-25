@@ -74,3 +74,14 @@ def test_messages_use_the_item_currency_and_fall_back_to_the_host():
         "Target price reached: www.shop.example",
         "Now 5.00 CHF (target 6.00 CHF)",
     )
+
+
+def test_alerts_mention_ranges_and_promotions():
+    sale = item(current_price=1799.0, price_high=2048.0, promotion="Limited Time Offer", target_price=1800.0)
+    assert alerts(sale, old_price=1999.0, old_stock=None) == [
+        ("Price drop: Widget", "Down 10.0% to $1,799.00 for the cheapest option (was $1,999.00) (Limited Time Offer)"),
+        (
+            "Target price reached: Widget",
+            "Now $1,799.00 for the cheapest option (target $1,800.00) (Limited Time Offer)",
+        ),
+    ]

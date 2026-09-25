@@ -2,6 +2,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import update
 
 from app import checks
 from app.database import utcnow
@@ -213,19 +214,107 @@ async def test_editing_or_deleting_history_updates_current_price(client, db):
     item = await create_item(client)
     now = utcnow()
     older = PriceHistory(item_id=item["id"], price=50, in_stock=True, timestamp=now - timedelta(hours=2))
-    latest = PriceHistory(item_id=item["id"], price=5000, in_stock=True, timestamp=now)
+    latest = PriceHistory(item_id=item["id"], price=5000, in_stock=True, timestamp=now, promotion="Flash sale")
     db.add_all([older, latest])
     await db.commit()
 
     await client.put(f"/api/history/{latest.id}", json={"price": 55, "in_stock": False})
     current = (await client.get("/api/items")).json()[0]
-    assert (current["current_price"], current["in_stock"]) == (55, False)
+    assert (current["current_price"], current["in_stock"], current["promotion"]) == (55, False, "Flash sale")
+    edited = (await client.get(f"/api/items/{item['id']}/history")).json()["items"][0]
+    assert edited["price_confidence"] is None  # a price entered by hand is trusted
 
     await client.delete(f"/api/history/{latest.id}")
-    assert (await client.get("/api/items")).json()[0]["current_price"] == 50
+    current = (await client.get("/api/items")).json()[0]
+    assert (current["current_price"], current["promotion"]) == (50, None)
 
     await client.delete(f"/api/history/{older.id}")
     assert (await client.get("/api/items")).json()[0]["current_price"] is None
+
+
+async def _add_readings(db, item_id, readings):
+    now = utcnow()
+    db.add_all(
+        PriceHistory(item_id=item_id, price=p, in_stock=s, price_confidence=c, timestamp=now - timedelta(hours=p))
+        for p, s, c in readings
+    )
+    await db.commit()
+
+
+async def _prices(client, item_id):
+    return sorted(r["price"] for r in (await client.get(f"/api/items/{item_id}/history")).json()["items"])
+
+
+async def test_bulk_delete_by_filters_only_touches_matching_readings(client, db):
+    item, other = await create_item(client), await create_item(client, url="https://other.example/p")
+    await _add_readings(db, item["id"], [(10, True, 0.9), (20, True, 0.2), (30, True, 0.3), (9999, True, 0.95)])
+    await _add_readings(db, other["id"], [(20, True, 0.2)])
+
+    low = {"action": "delete", "filters": {"confidence_below": 0.5}}
+    assert (await client.post(f"/api/items/{item['id']}/history/bulk", json=low)).json() == {"count": 2}
+    outrageous = {"action": "delete", "filters": {"min_price": 1000}}
+    assert (await client.post(f"/api/items/{item['id']}/history/bulk", json=outrageous)).json() == {"count": 1}
+
+    assert await _prices(client, item["id"]) == [10]
+    assert await _prices(client, other["id"]) == [20]
+    current = {i["id"]: i["current_price"] for i in (await client.get("/api/items")).json()}
+    assert current == {item["id"]: 10, other["id"]: None}  # the other item is untouched
+
+
+async def test_bulk_delete_by_ids_ignores_other_items(client, db):
+    item, other = await create_item(client), await create_item(client, url="https://other.example/p")
+    await _add_readings(db, item["id"], [(10, True, 0.9), (20, True, 0.9)])
+    await _add_readings(db, other["id"], [(30, True, 0.9)])
+    ids = [r["id"] for r in (await client.get(f"/api/items/{item['id']}/history")).json()["items"]]
+    other_ids = [r["id"] for r in (await client.get(f"/api/items/{other['id']}/history")).json()["items"]]
+
+    body = {"action": "delete", "ids": [ids[0], *other_ids]}
+    assert (await client.post(f"/api/items/{item['id']}/history/bulk", json=body)).json() == {"count": 1}
+    assert await _prices(client, other["id"]) == [30]
+
+
+async def test_bulk_update_backfills_a_confirmed_price(client, db):
+    item = await create_item(client)
+    await _add_readings(db, item["id"], [(10, True, 0.9), (12, None, 0.2), (13, True, 0.3)])
+    await db.execute(update(PriceHistory).values(price_high=15, regular_price=11.5))
+    await db.commit()
+
+    body = {"action": "update", "filters": {"confidence_below": 0.5}, "price": 11}
+    assert (await client.post(f"/api/items/{item['id']}/history/bulk", json=body)).json() == {"count": 2}
+
+    readings = (await client.get(f"/api/items/{item['id']}/history")).json()["items"]
+    fixed = [r for r in readings if r["price"] == 11]
+    assert len(fixed) == 2
+    # Corrected by hand, so trusted like a manual entry; the range top still fits, the "was" price is kept.
+    assert all(r["price_confidence"] is None and r["price_high"] == 15 and r["regular_price"] == 11.5 for r in fixed)
+    assert {r["in_stock"] for r in fixed} == {None, True}  # stock untouched
+
+    body = {"action": "update", "ids": [fixed[0]["id"]], "price": 12, "in_stock": False}
+    await client.post(f"/api/items/{item['id']}/history/bulk", json=body)
+    record = next(r for r in (await client.get(f"/api/items/{item['id']}/history")).json()["items"] if r["price"] == 12)
+    assert (record["regular_price"], record["in_stock"], record["in_stock_confidence"]) == (None, False, None)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"action": "delete"},
+        {"action": "delete", "ids": [1], "filters": {}},
+        {"action": "delete", "ids": []},
+        {"action": "update", "ids": [1]},
+        {"action": "update", "ids": [1], "price": -1},
+        {"action": "delete", "filters": {"sort": "asc"}},
+        {"action": "purge", "ids": [1]},
+    ],
+)
+async def test_invalid_bulk_requests_are_rejected(client, body):
+    item = await create_item(client)
+    assert (await client.post(f"/api/items/{item['id']}/history/bulk", json=body)).status_code == 422
+
+
+async def test_bulk_on_missing_item_is_404(client):
+    response = await client.post("/api/items/999/history/bulk", json={"action": "delete", "filters": {}})
+    assert response.status_code == 404
 
 
 async def test_analytics_endpoint(client, db):

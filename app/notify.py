@@ -58,7 +58,10 @@ def alerts(
     messages = []
     dropped = price is not None and old_price is not None and price < old_price
     drop = (old_price - price) / old_price * 100 if dropped and old_price else 0.0
-    change = f"Down {drop:.1f}% to {money(price, currency)} (was {money(old_price, currency)})" if dropped else ""
+    # With a range the tracked price is the cheapest option; say so, and name any store promotion.
+    now = f"{money(price, currency)}{' for the cheapest option' if item.price_high else ''}" if price else ""
+    promo = f" ({item.promotion})" if item.promotion else ""
+    change = f"Down {drop:.1f}% to {now} (was {money(old_price, currency)}){promo}" if dropped else ""
 
     if profile.notify_on_new_low and dropped and previous_low is not None and price < previous_low:
         # Covers the ordinary price-drop alert too, so only one message is sent.
@@ -72,9 +75,7 @@ def alerts(
         and price <= target
         and (old_price is None or old_price > target)
     ):
-        messages.append(
-            (f"Target price reached: {name}", f"Now {money(price, currency)} (target {money(target, currency)})")
-        )
+        messages.append((f"Target price reached: {name}", f"Now {now} (target {money(target, currency)}){promo}"))
     if profile.notify_on_stock_change and None not in (old_stock, in_stock) and old_stock != in_stock:
         messages.append((f"Stock change: {name}", "Back in stock" if in_stock else "Out of stock"))
     return messages

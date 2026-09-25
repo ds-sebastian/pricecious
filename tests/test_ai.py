@@ -93,8 +93,9 @@ def test_relevant_text_falls_back_to_start_of_page():
     assert ai.relevant_text("nothing useful here", limit=7) == "nothing"
 
 
-def _response(content):
-    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+def _response(content, finish_reason="stop", completion_tokens=10):
+    choice = SimpleNamespace(message=SimpleNamespace(content=content), finish_reason=finish_reason)
+    return SimpleNamespace(choices=[choice], usage=SimpleNamespace(completion_tokens=completion_tokens))
 
 
 async def test_extract_retries_without_json_mode_when_response_is_empty(monkeypatch, png):
@@ -108,6 +109,20 @@ async def test_extract_retries_without_json_mode_when_response_is_empty(monkeypa
     assert first["format"] == "json" and "format" not in second
     assert first["model"] == "ollama/gemma3:4b"
     assert first["api_base"] == ai.OLLAMA_DEFAULT_BASE
+    assert first["think"] is False and "reasoning_effort" not in first  # thinking models answer straight away
+
+
+@pytest.mark.parametrize(
+    "response",
+    [_response("", completion_tokens=1000), _response(None, finish_reason="length", completion_tokens=None)],
+)
+async def test_a_reply_that_ran_out_of_tokens_is_not_retried(monkeypatch, png, response):
+    completion = AsyncMock(return_value=response)
+    monkeypatch.setattr(ai.litellm, "acompletion", completion)
+
+    with pytest.raises(ExtractionError, match=r"used all 1000 tokens without answering.*doesn't think first"):
+        await ai.extract(png, AppSettings(), url="https://example.com")
+    assert completion.await_count == 1
 
 
 async def test_extract_fails_when_model_stays_silent(monkeypatch, png):
@@ -124,6 +139,66 @@ async def test_openai_uses_structured_output_and_no_ollama_base(monkeypatch, png
 
     kwargs = completion.await_args.kwargs
     assert kwargs["response_format"] is Extraction
-    assert kwargs["reasoning_effort"] == "low"
+    assert kwargs["reasoning_effort"] == "minimal"  # thinking is off: the least gpt-5-mini allows
     assert kwargs["api_key"] == "k"
     assert "api_base" not in kwargs
+    assert "think" not in kwargs
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "thinking", "expected"),
+    [
+        ("ollama", "qwen3:4b", False, {"think": False}),
+        ("ollama", "qwen3:4b", True, {"think": True, "max_tokens": 3048}),
+        ("openai", "gpt-5-mini", False, {"reasoning_effort": "minimal"}),
+        ("openai", "gpt-5.1", False, {"reasoning_effort": "none"}),
+        ("openai", "gpt-4o", False, {}),
+        ("openai", "gpt-5-mini", True, {"reasoning_effort": "medium", "max_tokens": 3048}),
+        ("gemini", "gemini-2.5-flash", False, {"reasoning_effort": "minimal"}),
+        ("anthropic", "claude-sonnet-4-5", False, {}),
+        ("anthropic", "claude-sonnet-4-5", True, {"reasoning_effort": "medium", "max_tokens": 3048, "temperature": 1}),
+        ("openrouter", "qwen/qwen3-vl", False, {}),
+    ],
+)
+def test_thinking_settings_map_to_each_provider(provider, model, thinking, expected):
+    """Off uses the least thinking each model allows; on adds the level's budget on top of the answer's tokens."""
+    settings = AppSettings(ai_provider=provider, ai_thinking=thinking, ai_reasoning_effort="medium")
+    assert ai._thinking_params(provider, model, settings) == expected
+
+
+def test_litellm_does_not_log_every_call():
+    import logging
+
+    assert logging.getLogger("LiteLLM").getEffectiveLevel() >= logging.WARNING
+
+
+@pytest.mark.parametrize(
+    ("price", "low", "high"),
+    [
+        ("$1,799 - $2,048", 1799.0, 2048.0),
+        ("$1,799–$2,048", 1799.0, 2048.0),  # noqa: RUF001 - an en dash, as stores write ranges
+        ("1.234,56 € to 1.499,00 €", 1234.56, 1499.0),
+        ([2048, 1799], 1799.0, 2048.0),
+        ("$129.99", 129.99, None),
+        ("$1,799 - Limited Time", 1799.0, None),
+    ],
+)
+def test_price_ranges_become_low_and_high(price, low, high):
+    extraction = Extraction.model_validate({"price": price})
+    assert (extraction.price, extraction.price_high) == (low, high)
+
+
+def test_regular_price_and_promotion_are_sanity_checked():
+    sale = Extraction.model_validate(
+        {"price": "$1,799", "regular_price": "$1,899", "promotion": "  Limited   Time Offer "}
+    )
+    assert (sale.regular_price, sale.promotion) == (1899.0, "Limited Time Offer")
+
+    not_a_sale = Extraction.model_validate({"price": 50, "regular_price": 45, "price_high": 40, "promotion": "null"})
+    assert (not_a_sale.regular_price, not_a_sale.price_high, not_a_sale.promotion) == (None, None, None)
+
+
+def test_prompt_covers_popups_ranges_and_promotions():
+    prompt = build_prompt("https://example.com")
+    for phrase in ("Ignore popups", "price_high", "regular_price", "promotion"):
+        assert phrase in prompt

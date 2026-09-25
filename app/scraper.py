@@ -17,7 +17,7 @@ from playwright.async_api import Browser, BrowserContext, Page, Playwright, asyn
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from app.urls import UnsafeURLError, redact, validate_url_async
+from app.urls import UnresolvableHostError, UnsafeURLError, redact, validate_url_async
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +39,37 @@ COOKIE_ACCEPT_SELECTORS = [
     "button[class*='cookie' i][class*='accept' i]",
 ]
 COOKIE_ACCEPT_LABELS = ["Accept All", "Accept Cookies", "I Agree", "Agree", "Allow All"]
-POPUP_CLOSE_SELECTORS = [
-    "button[aria-label='Close']",
-    ".close-button",
-    ".modal-close",
-    "div[role='dialog'] button",
-    "svg[data-name='Close']",
-]
+# Popups: first click their own dismiss controls, then hide whatever still covers the page.
+MODAL_CONTAINERS = "[role=dialog], [aria-modal=true], [class*=modal i], [class*=popup i], [id*=modal i], [id*=popup i]"
+DISMISS_NAME = re.compile(
+    r"^\s*(?:close\b.*|dismiss\b.*|[x\u00d7\u2715]|no,? thanks?\b.*|no thank you\b.*|not now|maybe later"
+    r"|continue (?:shopping|to (?:the )?site)|skip)\s*$",
+    re.IGNORECASE,
+)
+# Hides fixed layers that cover a quarter of the viewport, sit above the page and hold little of its text
+# (so a site whose whole app lives in a fixed container is left alone), then re-enables scrolling.
+HIDE_OVERLAYS = """() => {
+    const viewport = innerWidth * innerHeight;
+    const pageText = document.body.innerText.length || 1;
+    let hidden = 0;
+    for (const el of document.querySelectorAll("body *")) {
+        const style = getComputedStyle(el);
+        if (style.position !== "fixed" || !(parseInt(style.zIndex) >= 10)) continue;
+        const r = el.getBoundingClientRect();
+        const width = Math.min(r.right, innerWidth) - Math.max(r.left, 0);
+        const height = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0);
+        if (width <= 0 || height <= 0 || (width * height) / viewport < 0.25) continue;
+        if (el.innerText.length / pageText > 0.3) continue;
+        el.style.setProperty("display", "none", "important");
+        hidden++;
+    }
+    if (hidden) {
+        for (const el of [document.documentElement, document.body]) {
+            el.style.setProperty("overflow", "auto", "important");
+        }
+    }
+    return hidden;
+}"""
 PRICE_LOCATOR = "text=/(\\$|€|£)\\s*[0-9,]+\\.?[0-9]{0,2}/i"
 BLOCKED_PAGE_PHRASES = [
     "access denied",
@@ -56,6 +80,7 @@ BLOCKED_PAGE_PHRASES = [
     "unusual traffic",
     "enable javascript",
     "please enable cookies",
+    "unable to display the requested page",
 ]
 
 MIN_SCREENSHOT_BYTES = 5_000
@@ -233,6 +258,7 @@ async def _capture_once(url: str, selector: str | None, scroll_pixels: int, time
             await page.evaluate("px => window.scrollBy(0, px)", scroll_pixels)
             await page.wait_for_timeout(1000)
 
+        await _clear_overlays(page)  # again: many signup popups appear a few seconds after loading
         text = title = selector_text = ""
         with suppress(PlaywrightError):
             text = " ".join((await page.inner_text("body")).split())
@@ -278,7 +304,7 @@ def content_problem(screenshot: bytes, text: str) -> str | None:
     if len(text.split()) < MIN_CONTENT_WORDS:
         for phrase in BLOCKED_PAGE_PHRASES:
             if phrase in lowered:
-                return f"Page looks blocked by a bot check ('{phrase}')"
+                return f"The site blocked the page ('{phrase}')"
     return None
 
 
@@ -292,10 +318,14 @@ async def _guard_network(context: BrowserContext) -> None:
                 try:
                     await validate_url_async(url)
                     return True
-                except UnsafeURLError as exc:
-                    if "could not be resolved" in str(exc) and attempt + 1 < DNS_ATTEMPTS:
+                except UnresolvableHostError as exc:
+                    if attempt + 1 < DNS_ATTEMPTS:
                         await asyncio.sleep(0.1)
                         continue
+                    # Often a tracker stopped by a DNS blocklist; the browser couldn't load it either.
+                    logger.debug(f"Skipped browser request to {_origin(url)}: {exc}")
+                    return False
+                except UnsafeURLError as exc:
                     origin = _origin(url)
                     level = logging.DEBUG if origin in reported else logging.WARNING
                     reported.add(origin)
@@ -324,29 +354,47 @@ def _origin(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-async def _click_first(page: Page, selectors: list[str], *, stop_after_first: bool) -> None:
-    for selector in selectors:
+async def _dismiss_popups(page: Page) -> None:
+    await _accept_cookies(page)
+    await _clear_overlays(page)
+
+
+async def _accept_cookies(page: Page) -> None:
+    for selector in COOKIE_ACCEPT_SELECTORS:
         with suppress(PlaywrightError):
             locator = page.locator(selector)
             if await locator.count():
                 await locator.first.click(timeout=1000)
-                if stop_after_first:
-                    await page.wait_for_timeout(500)
-                    return
-
-
-async def _dismiss_popups(page: Page) -> None:
-    await _click_first(page, COOKIE_ACCEPT_SELECTORS, stop_after_first=True)
+                await page.wait_for_timeout(500)
+                return
     for label in COOKIE_ACCEPT_LABELS:
         with suppress(PlaywrightError):
             button = page.get_by_role("button", name=label, exact=False)
             if await button.count():
                 await button.first.click(timeout=1000)
                 await page.wait_for_timeout(500)
-                break
-    await _click_first(page, POPUP_CLOSE_SELECTORS, stop_after_first=False)
+                return
+
+
+async def _clear_overlays(page: Page) -> None:
+    """Close signup and promo popups so the product is visible."""
+    modals = page.locator(MODAL_CONTAINERS)
+    for role in ("button", "link"):
+        controls = modals.get_by_role(role, name=DISMISS_NAME)
+        with suppress(PlaywrightError):
+            for index in range(min(await controls.count(), 3)):
+                control = controls.nth(index)
+                with suppress(PlaywrightError):
+                    href = await control.get_attribute("href") if role == "link" else None
+                    if href and not href.startswith(("#", "javascript:")):
+                        continue  # a real link would leave the product page
+                    if await control.is_visible():
+                        await control.click(timeout=1000)
     with suppress(PlaywrightError):
         await page.keyboard.press("Escape")
+    with suppress(PlaywrightError):
+        if hidden := await page.evaluate(HIDE_OVERLAYS):
+            logger.debug(f"Hid {hidden} overlay(s) covering the page")
 
 
 async def _scroll_to_price(page: Page, selector: str | None) -> None:

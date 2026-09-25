@@ -37,7 +37,8 @@ UNCERTAIN_CHANGE_PERCENT = 20
 UNCERTAIN_CONFIDENCE = 0.7
 
 PRICE_TEXT = re.compile(r"[$€£¥₹₩]\s?\d[\d.,]*|\d[\d.,]*\s?(?:[$€£¥₹₩]|\b(?:USD|EUR|GBP|CAD|AUD)\b)")
-STOCK_PHRASES = (
+# Wording whose appearance or disappearance means the AI should look again.
+PAGE_PHRASES = (
     "add to cart",
     "add to basket",
     "add to bag",
@@ -48,6 +49,10 @@ STOCK_PHRASES = (
     "unavailable",
     "notify me",
     "pre-order",
+    "limited time",
+    "% off",
+    "clearance",
+    "sale ends",
 )
 
 _slots = asyncio.Semaphore(MAX_CONCURRENT_CHECKS)
@@ -210,11 +215,11 @@ async def _check(item_id: int, force_ai: bool = False) -> None:
 
 
 def page_fingerprint(capture: scraper.Capture) -> str:
-    """Hash of the prices and stock wording on the page: what a check cares about, ignoring everything else."""
+    """Hash of the prices and stock/sale wording on the page: what a check cares about, ignoring the rest."""
     prices = sorted({re.sub(r"\s", "", match) for match in PRICE_TEXT.findall(capture.selector_text or capture.text)})
     lowered = capture.text.lower()
-    stock = [phrase for phrase in STOCK_PHRASES if phrase in lowered]
-    return hashlib.sha256(json.dumps([prices, stock]).encode()).hexdigest()
+    phrases = [phrase for phrase in PAGE_PHRASES if phrase in lowered]
+    return hashlib.sha256(json.dumps([prices, phrases]).encode()).hexdigest()
 
 
 def can_skip_ai(item: Item, capture: scraper.Capture, fingerprint: str, settings: AppSettings) -> bool:
@@ -266,12 +271,18 @@ def apply_extraction(item: Item, extraction: ai.Extraction, settings: AppSetting
             item.last_error = f"Large price change with only {price_confidence:.0%} confidence; please verify"
             item.error_type = "low_confidence"
         item.current_price, item.current_price_confidence = price, price_confidence
+        item.price_high = extraction.price_high
+        item.regular_price = extraction.regular_price
+        item.promotion = extraction.promotion
 
     return PriceHistory(
         item_id=item.id,
         timestamp=now,
         price=price,
         price_confidence=price_confidence,
+        price_high=extraction.price_high,
+        regular_price=extraction.regular_price,
+        promotion=extraction.promotion,
         in_stock=extraction.in_stock,
         in_stock_confidence=extraction.in_stock_confidence,
         ai_model=settings.ai_model,

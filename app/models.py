@@ -34,8 +34,11 @@ class Item(Base):
     tags: Mapped[str | None]
     description: Mapped[str | None]
 
-    current_price: Mapped[float | None]
+    current_price: Mapped[float | None]  # the low end when the page shows a range
     current_price_confidence: Mapped[float | None]
+    price_high: Mapped[float | None]
+    regular_price: Mapped[float | None]  # the crossed-out "was" price
+    promotion: Mapped[str | None]  # the store's sale label, e.g. "Limited Time Offer"
     in_stock: Mapped[bool | None]
     in_stock_confidence: Mapped[float | None]
 
@@ -66,6 +69,9 @@ class PriceHistory(Base):
     timestamp: Mapped[datetime] = mapped_column(default=utcnow)
     price: Mapped[float]
     price_confidence: Mapped[float | None]
+    price_high: Mapped[float | None]
+    regular_price: Mapped[float | None]
+    promotion: Mapped[str | None]
     in_stock: Mapped[bool | None]
     in_stock_confidence: Mapped[float | None]
     ai_model: Mapped[str | None]

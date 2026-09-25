@@ -10,6 +10,10 @@ class UnsafeURLError(ValueError):
     pass
 
 
+class UnresolvableHostError(UnsafeURLError):
+    """DNS has no answer for the host, so the request would fail anyway."""
+
+
 def validate_url(url: str, allow_private: bool = False) -> None:
     """Allow only credential-free HTTP(S) URLs whose host resolves exclusively to public IPs."""
     if not url or not isinstance(url, str):
@@ -32,7 +36,7 @@ def validate_url(url: str, allow_private: bool = False) -> None:
     try:
         infos = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
-        raise UnsafeURLError(f"Hostname could not be resolved: {parsed.hostname}") from exc
+        raise UnresolvableHostError(f"Hostname could not be resolved: {parsed.hostname}") from exc
     addresses = {info[4][0] for info in infos}
     if not addresses or not all(ipaddress.ip_address(a).is_global for a in addresses):
         raise UnsafeURLError(f"Private/internal addresses are not allowed: {parsed.hostname}")

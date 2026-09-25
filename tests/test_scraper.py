@@ -9,7 +9,7 @@ from PIL import Image
 
 from app import scraper
 from app.scraper import Capture, ScrapeError, browserless_url, content_problem
-from app.urls import UnsafeURLError
+from app.urls import UnresolvableHostError, UnsafeURLError
 
 BROWSERLESS_ENV = [
     "BROWSERLESS_TOKEN",
@@ -122,7 +122,9 @@ def test_content_checks(png):
     assert content_problem(b"tiny", "") == "Page looks blank"
     blank = image_bytes(Image.new("RGB", (4000, 3000), "white"))
     assert content_problem(blank + b"\0" * 10_000, "") == "Page looks blank"
-    assert "bot check" in content_problem(png, "Please complete the captcha to continue")
+    assert "blocked" in content_problem(png, "Please complete the captcha to continue")
+    restricted = "Sorry, due to website restrictions we are unable to display the requested page."
+    assert content_problem(png, restricted) == "The site blocked the page ('unable to display the requested page')"
     # Long real pages mentioning a phrase are fine.
     assert content_problem(png, "captcha " + "word " * 200) is None
 
@@ -148,24 +150,45 @@ async def test_capture_gives_up_after_last_attempt(monkeypatch):
         await scraper.capture("https://example.com")
 
 
-async def test_network_guard_blocks_private_requests_and_logs_each_origin_once(monkeypatch, caplog):
+async def guard(monkeypatch, error):
     context = AsyncMock()
     await scraper._guard_network(context)
-    guard_request = context.route.await_args.args[1]
-    validate = AsyncMock(side_effect=UnsafeURLError("Hostname could not be resolved: tracking.example"))
+    validate = AsyncMock(side_effect=error)
     monkeypatch.setattr(scraper, "validate_url_async", validate)
     monkeypatch.setattr(scraper.asyncio, "sleep", AsyncMock())
+    return context.route.await_args.args[1], validate
+
+
+async def request(guard_request, url):
+    route = AsyncMock()
+    route.request.url = url
+    await guard_request(route)
+    return route
+
+
+async def test_network_guard_quietly_skips_hosts_that_do_not_resolve(monkeypatch, caplog):
+    guard_request, validate = await guard(
+        monkeypatch, UnresolvableHostError("Hostname could not be resolved: t.example")
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.scraper"):
+        route = await request(guard_request, "https://t.example/event?secret=1")
+
+    route.abort.assert_awaited_once_with("blockedbyclient")
+    assert validate.await_count == 2  # one DNS retry
+    assert caplog.records == []  # usually a tracker on a DNS blocklist; not worth a warning
+
+
+async def test_network_guard_warns_once_per_private_origin(monkeypatch, caplog):
+    guard_request, _ = await guard(monkeypatch, UnsafeURLError("Private/internal addresses are not allowed: nas.lan"))
 
     with caplog.at_level(logging.WARNING, logger="app.scraper"):
         for secret in ("one", "two"):
-            route = AsyncMock()
-            route.request.url = f"https://tracking.example/event?secret={secret}"
-            await guard_request(route)
+            route = await request(guard_request, f"http://nas.lan/admin?secret={secret}")
             route.abort.assert_awaited_once_with("blockedbyclient")
 
-    assert validate.await_count == 4  # one DNS retry per request
     assert [r.message for r in caplog.records] == [
-        "Blocked browser request to https://tracking.example: Hostname could not be resolved: tracking.example"
+        "Blocked browser request to http://nas.lan: Private/internal addresses are not allowed: nas.lan"
     ]
 
 

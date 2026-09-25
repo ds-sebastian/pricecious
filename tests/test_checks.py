@@ -439,3 +439,23 @@ async def test_editing_an_item_forces_a_fresh_ai_check(client, db, tracked):
     assert response.status_code == 200
     await check()
     assert extract.await_count == 2
+
+
+def test_ranges_and_sales_are_recorded():
+    item = make_item(current_price=1899.0)
+    sale = Extraction(
+        price=1799.0, price_high=2048.0, regular_price=1899.0, promotion="Limited Time Offer", price_confidence=0.9
+    )
+
+    history = checks.apply_extraction(item, sale, AppSettings())
+
+    assert (item.current_price, item.price_high, item.regular_price, item.promotion) == (
+        1799.0,
+        2048.0,
+        1899.0,
+        "Limited Time Offer",
+    )
+    assert (history.price_high, history.regular_price, history.promotion) == (2048.0, 1899.0, "Limited Time Offer")
+
+    checks.apply_extraction(item, extraction(price=1899.0), AppSettings())  # the sale ended
+    assert (item.price_high, item.regular_price, item.promotion) == (None, None, None)

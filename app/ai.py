@@ -4,17 +4,25 @@ import asyncio
 import base64
 import io
 import logging
+import os
 import re
 from urllib.parse import urlparse
 
 import json_repair
 import litellm
+from litellm.constants import (
+    DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET,
+    DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET,
+    DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET,
+)
 from PIL import Image
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
 from app.settings import AppSettings
 
 litellm.suppress_debug_info = True
+if not os.getenv("LITELLM_LOG"):  # LiteLLM logs every call at INFO, twice; keep it quiet unless asked
+    logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_SIZE = 1024
@@ -23,9 +31,17 @@ OLLAMA_DEFAULT_BASE = "http://ollama:11434"
 
 PROMPT = """Extract the product's price and stock status from the screenshot.
 
+Ignore popups, cookie banners and signup offers that cover part of the page; read the product details behind them.
+
 PRICE
-- Use the main current price of the product. Ignore crossed-out prices and prices of other products.
-- Return a plain number without currency symbols, or null if no price is visible.
+- Use the main current price of this product. Ignore prices of other products.
+- If a price range is shown (e.g. options not yet chosen), use the lowest as price and the highest as price_high.
+- If a crossed-out, "was" or original price is shown, put its lowest value in regular_price.
+- Return plain numbers without currency symbols, or null.
+
+PROMOTION
+- The name of a sale or promotion on this product right now, as shown ("Limited Time Offer", "20% off", "Clearance").
+- Ignore site-wide banners such as free shipping, signup discounts or financing offers. Otherwise null.
 
 STOCK
 - true: "Add to Cart", "Buy Now", "In Stock", "Available"
@@ -35,7 +51,8 @@ STOCK
 CONFIDENCE (0.0 to 1.0): 0.9+ very certain, 0.5-0.8 moderately certain, below 0.5 unsure.
 
 Respond ONLY with JSON:
-{{"price": <number or null>, "currency": "{currency}", "in_stock": <true, false, or null>, \
+{{"price": <number or null>, "price_high": <number or null>, "regular_price": <number or null>, \
+"promotion": <text or null>, "currency": "{currency}", "in_stock": <true, false, or null>, \
 "price_confidence": <0.0-1.0>, "in_stock_confidence": <0.0-1.0>}}"""
 
 _RELEVANT_TEXT = re.compile(
@@ -86,7 +103,10 @@ class ExtractionError(Exception):
 
 
 class Extraction(BaseModel):
-    price: float | None = None
+    price: float | None = None  # the lowest current price when a range is shown
+    price_high: float | None = None
+    regular_price: float | None = None  # crossed-out "was" price
+    promotion: str | None = None
     currency: str | None = None
     in_stock: bool | None = None
     price_confidence: float = 0.0
@@ -103,10 +123,39 @@ class Extraction(BaseModel):
         code = value.strip().upper() if isinstance(value, str) else ""
         return code if re.fullmatch(r"[A-Z]{3}", code) else None
 
-    @field_validator("price", mode="before")
+    @model_validator(mode="before")
+    @classmethod
+    def _split_range(cls, data):
+        """Accept a range as the price, e.g. "$1,799 - $2,048" or [1799, 2048]."""
+        if isinstance(data, dict):
+            price = data.get("price")
+            low, high = parse_range(price) if isinstance(price, str) else (None, None)
+            if isinstance(price, list):
+                numbers = sorted(n for n in (parse_price(str(p)) for p in price) if n is not None)
+                low, high = (numbers[0], numbers[-1]) if numbers else (None, None)
+            if high is not None:
+                data = data | {"price": low, "price_high": data.get("price_high") or high}
+        return data
+
+    @field_validator("price", "price_high", "regular_price", mode="before")
     @classmethod
     def _price(cls, value):
         return parse_price(value) if isinstance(value, str) else value
+
+    @field_validator("promotion", mode="before")
+    @classmethod
+    def _promotion(cls, value):
+        text = " ".join(value.split())[:60] if isinstance(value, str) else ""
+        return text if text.lower() not in {"", "null", "none", "n/a"} else None
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        """Drop a range top below the price, and a "was" price that isn't a discount."""
+        if self.price is None or (self.price_high is not None and self.price_high <= self.price):
+            self.price_high = None
+        if self.price is None or (self.regular_price is not None and self.regular_price <= self.price):
+            self.regular_price = None
+        return self
 
     @field_validator("in_stock", mode="before")
     @classmethod
@@ -119,6 +168,17 @@ class Extraction(BaseModel):
         if value in {"false", "no", "out of stock", "unavailable", "0"}:
             return False
         return None
+
+
+def parse_range(text: str) -> tuple[float | None, float | None]:
+    """'$1,799 - $2,048' -> (1799.0, 2048.0); a single price -> (price, None)."""
+    parts = re.split(
+        r"\s*(?:-|\u2013|\u2014|\bto\b)\s*(?=\D{0,3}\d)", text.strip(), maxsplit=1
+    )  # hyphen, en or em dash, or 'to'
+    numbers = [parse_price(part) for part in parts]
+    if len(numbers) == 2 and None not in numbers:
+        return min(numbers), max(numbers)
+    return parse_price(text), None
 
 
 def parse_price(text: str) -> float | None:
@@ -196,6 +256,35 @@ def _encode_image(png: bytes) -> str:
     return base64.b64encode(buffer.getvalue()).decode()
 
 
+THINKING_BUDGETS = {
+    "low": DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET,
+    "medium": DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET,
+    "high": DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET,
+}
+
+
+def _thinking_params(provider: str, model: str, settings: AppSettings) -> dict:
+    """Map the Thinking settings onto each provider. Thinking otherwise spends the output budget before answering."""
+    if settings.ai_thinking:
+        # Thinking counts against the output limit, so give it LiteLLM's budget for the level on top of the answer's.
+        params = {"max_tokens": settings.ai_max_tokens + THINKING_BUDGETS[settings.ai_reasoning_effort]}
+        if provider == "ollama":
+            return params | {"think": True}  # models that can't think ignore it
+        params["reasoning_effort"] = settings.ai_reasoning_effort  # dropped for models that can't reason
+        return params | {"temperature": 1} if provider == "anthropic" else params  # Anthropic requires 1 to think
+    if provider == "ollama":
+        return {"think": False}
+    if provider == "openai":
+        # The lowest effort the model accepts; models LiteLLM doesn't know keep their default.
+        info = litellm.model_cost.get(model, {})
+        for level in ("none", "minimal"):
+            if info.get(f"supports_{level}_reasoning_effort"):
+                return {"reasoning_effort": level}
+    if provider == "gemini":
+        return {"reasoning_effort": "minimal"}  # the least each Gemini model allows
+    return {}  # Anthropic doesn't think unless asked; OpenRouter models keep their default
+
+
 async def _call_model(messages: list[dict], settings: AppSettings, json_mode: bool = True) -> str:
     provider = settings.ai_provider
     model = settings.ai_model
@@ -215,8 +304,7 @@ async def _call_model(messages: list[dict], settings: AppSettings, json_mode: bo
         kwargs["api_key"] = settings.ai_api_key
     if api_base := settings.ai_api_base or (OLLAMA_DEFAULT_BASE if provider == "ollama" else ""):
         kwargs["api_base"] = api_base
-    if provider == "openai":
-        kwargs["reasoning_effort"] = settings.ai_reasoning_effort
+    kwargs |= _thinking_params(provider, model, settings)
     if json_mode:
         if provider == "ollama":
             kwargs["format"] = "json"
@@ -226,7 +314,19 @@ async def _call_model(messages: list[dict], settings: AppSettings, json_mode: bo
             kwargs["response_format"] = {"type": "json_object"}
 
     response = await litellm.acompletion(**kwargs)
-    return response.choices[0].message.content or ""
+    choice = response.choices[0]
+    content = choice.message.content or ""
+    usage = getattr(response, "usage", None)
+    limit = kwargs["max_tokens"]
+    out_of_tokens = choice.finish_reason == "length" or (usage is not None and (usage.completion_tokens or 0) >= limit)
+    if not content.strip() and out_of_tokens:
+        # Retrying can't help: the same budget runs out again (usually spent on thinking).
+        advice = "turn Thinking off" if settings.ai_thinking else "pick a model that doesn't think first"
+        raise ExtractionError(
+            f"{settings.ai_model} used all {limit} tokens without answering, probably thinking. "
+            f"Raise Max output tokens or {advice}."
+        )
+    return content
 
 
 async def ask(
