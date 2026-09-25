@@ -155,7 +155,8 @@ async def _check(item_id: int) -> None:
 
     async with database.SessionLocal() as db:
         item = await db.get(Item, item_id)
-        if item is None:
+        if item is None:  # deleted while it was being checked
+            screenshot_file(item_id).unlink(missing_ok=True)
             return
         old_price, old_stock = item.current_price, item.in_stock
         if history := apply_extraction(item, extraction, settings):
@@ -183,7 +184,8 @@ def apply_extraction(item: Item, extraction: ai.Extraction, settings: AppSetting
         item.in_stock, item.in_stock_confidence = extraction.in_stock, extraction.in_stock_confidence
 
     if price is None:
-        item.last_error, item.error_type = "No price found on the page", "no_price"
+        if extraction.in_stock is not False:  # sold-out pages often hide the price
+            item.last_error, item.error_type = "No price found on the page", "no_price"
         return None
 
     if price_confidence < settings.confidence_threshold_price:

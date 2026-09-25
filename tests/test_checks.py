@@ -81,13 +81,18 @@ def test_prices_outside_sanity_bounds_are_rejected(price):
     assert item.error_type == "price_out_of_bounds"
 
 
-def test_missing_price_still_updates_stock_and_warns():
+def test_missing_price_warns():
     item = make_item()
-    history = checks.apply_extraction(item, extraction(price=None, in_stock=False), AppSettings())
+    history = checks.apply_extraction(item, extraction(price=None, in_stock=True), AppSettings())
 
     assert history is None
-    assert item.in_stock is False
     assert item.error_type == "no_price"
+
+
+def test_sold_out_page_without_price_is_not_a_warning():
+    item = make_item()
+    checks.apply_extraction(item, extraction(price=None, in_stock=False), AppSettings())
+    assert item.last_error is None
 
 
 def test_low_confidence_stock_is_ignored():

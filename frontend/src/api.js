@@ -51,9 +51,11 @@ export function useProfiles() {
 }
 
 export function useSettings() {
+	// Only the Settings page changes these; refetching would make an open form look out of date.
 	return useQuery({
 		queryKey: ["settings"],
 		queryFn: () => api.get("/settings"),
+		staleTime: Number.POSITIVE_INFINITY,
 	});
 }
 

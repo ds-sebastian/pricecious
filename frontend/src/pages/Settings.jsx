@@ -75,6 +75,7 @@ function SettingsForm({ saved }) {
 
 	const save = useAction(() => api.put("/settings", changes), {
 		success: "Settings saved",
+		invalidate: [["items"]], // the default interval changes their next check
 		onSuccess: (result) => {
 			queryClient.setQueryData(["settings"], result);
 			setForm(toForm(result));

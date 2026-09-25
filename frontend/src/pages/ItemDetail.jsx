@@ -125,7 +125,7 @@ export default function ItemDetail() {
 						<ItemStatus item={item} className="mt-2" />
 					</div>
 					<div className="flex items-center gap-3">
-						<div className="text-right">
+						<div className="sm:text-right">
 							<div className="text-3xl font-semibold tabular-nums">
 								{formatPrice(item.current_price)}
 							</div>
@@ -338,6 +338,7 @@ function HistoryTable({ itemId }) {
 
 	if (!data?.total) return null;
 	const pages = Math.ceil(data.total / PAGE_SIZE);
+	if (page > pages) setPage(pages); // the last page was emptied by a delete
 
 	return (
 		<Card title={`Readings (${data.total})`}>

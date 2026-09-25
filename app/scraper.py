@@ -154,10 +154,10 @@ def _connection_failure(exc: Exception) -> str:
     return type(exc).__name__
 
 
-async def start() -> None:
+async def start() -> Browser:
     async with _conn.lock:
         if _conn.browser and _conn.browser.is_connected():
-            return
+            return _conn.browser
         await _close()
         ws_url = await _resolve_ws_url(browserless_url(BROWSERLESS_URL))
         logger.info(f"Connecting to browser at {redact(ws_url)}")
@@ -167,6 +167,7 @@ async def start() -> None:
         except Exception as exc:
             await _close()
             raise ScrapeError(f"Could not connect to browser at {redact(ws_url)}: {_connection_failure(exc)}") from None
+        return _conn.browser
 
 
 async def stop() -> None:
@@ -203,19 +204,14 @@ async def capture(
 
 
 async def _capture_once(url: str, selector: str | None, scroll_pixels: int, timeout_ms: int) -> Capture:
-    await start()
-    assert _conn.browser
+    browser = await start()
+    context = None
     try:
-        context = await _conn.browser.new_context(
+        context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
             user_agent=random.choice(USER_AGENTS),
             service_workers="block",
         )
-    except PlaywrightError as exc:
-        await stop()  # the connection is unusable; reconnect on the next attempt
-        raise ScrapeError(f"Browser error: {exc.message}") from None
-
-    try:
         await _guard_network(context)
         page = await context.new_page()
         await page.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
@@ -223,8 +219,7 @@ async def _capture_once(url: str, selector: str | None, scroll_pixels: int, time
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
         except PlaywrightError as exc:
-            reason = exc.message.splitlines()[0].removeprefix("Page.goto: ")
-            raise ScrapeError(f"Page failed to load: {reason}") from None
+            raise ScrapeError(f"Page failed to load: {_first_line(exc)}") from None
         with suppress(PlaywrightTimeoutError):
             await page.wait_for_load_state("networkidle", timeout=5000)
         await page.wait_for_timeout(2000)
@@ -238,17 +233,21 @@ async def _capture_once(url: str, selector: str | None, scroll_pixels: int, time
         text = ""
         with suppress(PlaywrightError):
             text = " ".join((await page.inner_text("body")).split())
-        try:
-            screenshot = await page.screenshot()
-        except PlaywrightError as exc:
-            raise ScrapeError(f"Screenshot failed: {exc.message}") from None
+        screenshot = await page.screenshot()
+    except PlaywrightError as exc:  # usually a lost browser connection; start() reconnects next time
+        raise ScrapeError(f"Browser error: {_first_line(exc)}") from None
     finally:
-        with suppress(Exception):
-            await context.close()
+        if context:
+            with suppress(Exception):
+                await context.close()
 
-    if problem := content_problem(screenshot, text):
+    if problem := await asyncio.to_thread(content_problem, screenshot, text):
         raise ScrapeError(problem, Capture(screenshot, text))
     return Capture(screenshot, text)
+
+
+def _first_line(exc: PlaywrightError) -> str:
+    return exc.message.splitlines()[0].removeprefix("Page.goto: ")
 
 
 def content_problem(screenshot: bytes, text: str) -> str | None:

@@ -47,11 +47,12 @@ def _item_out(item: Item, default_interval: int) -> ItemOut:
     )
 
 
-async def _validate_item(db: AsyncSession, data: ItemIn) -> None:
-    try:
-        await validate_url_async(data.url)
-    except UnsafeURLError as exc:
-        raise HTTPException(422, str(exc)) from None
+async def _validate_item(db: AsyncSession, data: ItemIn, current_url: str | None = None) -> None:
+    if data.url != current_url:
+        try:
+            await validate_url_async(data.url)
+        except UnsafeURLError as exc:
+            raise HTTPException(422, str(exc)) from None
     if data.notification_profile_id is not None:
         await _get(db, NotificationProfile, data.notification_profile_id)
 
@@ -79,7 +80,7 @@ async def create_item(data: ItemIn, db: DB) -> ItemOut:
 @router.put("/items/{item_id}")
 async def update_item(item_id: int, data: ItemIn, db: DB) -> ItemOut:
     item = await _get(db, Item, item_id)
-    await _validate_item(db, data)
+    await _validate_item(db, data, current_url=item.url)
     if data.is_active and not item.is_active:  # resuming a paused item gives it a fresh start
         item.consecutive_failures = 0
         if item.error_type == "auto_deactivated":

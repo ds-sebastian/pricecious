@@ -154,12 +154,12 @@ export function Dialog({ open, onClose, title, size = "md", children }) {
 			onClose={onClose}
 			onMouseDown={(event) => event.target === ref.current && onClose()}
 			className={clsx(
-				"m-auto max-h-[90dvh] w-[calc(100%-2rem)] overflow-y-auto rounded-lg border border-border bg-surface p-0 text-fg shadow-xl",
+				"m-auto w-[calc(100%-2rem)] rounded-lg border border-border bg-surface p-0 text-fg shadow-xl",
 				DIALOG_SIZES[size],
 			)}
 		>
 			{open && (
-				<div className="p-5">
+				<div className="max-h-[85dvh] overflow-y-auto p-5">
 					<div className="mb-4 flex items-start justify-between gap-4">
 						<h2 className="text-lg font-semibold">{title}</h2>
 						<Button variant="ghost" icon aria-label="Close" onClick={onClose}>
