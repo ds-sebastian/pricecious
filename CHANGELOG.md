@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-25
+
 ### Added
 - **Change detection:** checks skip the AI while a page's prices and stock wording match the last AI check (at least
   one real AI check a day; "Check now" always uses it). On by default; Settings shows how many checks it saved.

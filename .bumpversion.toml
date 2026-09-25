@@ -1,5 +1,5 @@
 [tool.bumpversion]
-current_version = "0.2.5"
+current_version = "0.3.0"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 search = "{current_version}"
@@ -19,3 +19,9 @@ commit_args = ""
 filename = "pyproject.toml"
 search = 'version = "{current_version}"'
 replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+# CI and Docker install with `uv sync --locked`, so the lockfile's own entry must follow the version.
+filename = "uv.lock"
+search = "name = \"pricecious\"\nversion = \"{current_version}\""
+replace = "name = \"pricecious\"\nversion = \"{new_version}\""
