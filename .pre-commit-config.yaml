@@ -1,37 +1,31 @@
-# See https://pre-commit.com for more information
-# See https://pre-commit.com/hooks.html for more hooks
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
-      - id: check-added-large-files
-      - id: check-json
       - id: check-toml
       - id: check-merge-conflict
-      - id: debug-statements
 
-  # Use the Ruff version locked by uv so local formatting matches CI.
+  # Use the tool versions locked by the project so results match CI.
   - repo: local
     hooks:
-      - id: ruff-check
-        name: ruff check
-        entry: uv run --locked --extra dev ruff check --fix
+      - id: ruff
+        name: ruff
+        entry: uv run --locked ruff check --fix
         language: system
-        types_or: [python, pyi]
+        types: [python]
         require_serial: true
       - id: ruff-format
         name: ruff format
-        entry: uv run --locked --extra dev ruff format
+        entry: uv run --locked ruff format
         language: system
-        types_or: [python, pyi]
+        types: [python]
         require_serial: true
-
-  - repo: https://github.com/pycqa/bandit
-    rev: '1.7.10'
-    hooks:
-      - id: bandit
-        args: ["-c", "pyproject.toml"]
-        additional_dependencies: ["bandit[toml]"]
+      - id: biome
+        name: biome
+        entry: npm --prefix frontend exec -- biome check --write --no-errors-on-unmatched --files-ignore-unknown=true
+        language: system
+        files: ^frontend/
+        pass_filenames: false

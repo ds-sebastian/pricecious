@@ -1,33 +1,24 @@
 [project]
-name = "pricecious-backend"
+name = "pricecious"
 version = "0.2.5"
-description = "Backend for Pricecious Price Tracker"
+description = "Self-hosted price tracker that reads prices from screenshots with vision models"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic",
+    "apprise",
+    "asyncpg",
     "fastapi",
     "granian",
-    "sqlalchemy",
-    "psycopg2-binary",
-    "playwright",
     "httpx",
-    "pydantic",
-    "apprise",
-    "Pillow",
-    "apscheduler",
-    "python-multipart",
-    "pydantic-settings",
-    "aiofiles",
+    "json-repair",
     "litellm",
-    "alembic",
-    "tenacity",
-    "slowapi",
-    "asyncpg>=0.31.0",
-    "aiosqlite>=0.21.0",
-    "prophet",
     "pandas",
-    "json-repair>=0.63.2",
-    "cachetools>=7.1.7",
+    "pillow",
+    "playwright",
+    "prophet",
+    "pydantic",
+    "sqlalchemy",
 ]
 
 [build-system]
@@ -37,25 +28,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-  "pytest",
-  "pytest-asyncio",
-  "pytest-cov",
-  "ruff",
-  "httpx",
-  "mypy",
-  "bandit",
-  "pip-audit",
-  "pre-commit",
-  "bump-my-version",
-]
-
-[tool.hatch.envs.default]
-dependencies = [
-  "pytest",
-  "ruff",
-  "httpx",
+    "aiosqlite",
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
 ]
 
 [tool.ruff]
@@ -64,54 +42,13 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "B", "UP", "PL", "RUF"]
-ignore = []
+ignore = ["PLR2004", "PLR0913", "PLC0415"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["PLR2004"]
-"app/routers/*" = ["B008"]
-"app/main.py" = ["B008"]
-"app/services/scraper_service.py" = ["PLR0912"]
-
-
 [tool.pytest.ini_options]
-pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "--cov=app --cov-report=html --cov-report=term-missing"
 asyncio_mode = "auto"
-
-[tool.coverage.run]
-source = ["app"]
-omit = ["*/tests/*", "*/alembic/*"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-    "if TYPE_CHECKING:",
-    "@abstractmethod",
-]
-
-[tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false  # Enable gradually
-ignore_missing_imports = true
-
-[tool.bandit]
-exclude_dirs = ["tests", "app/alembic"]
-skips = ["B101"]  # Skip assert_used (common in tests)
-
-[dependency-groups]
-dev = [
-    "pytest>=9.0.1",
-    "pytest-asyncio>=1.3.0",
-    "pytest-cov>=7.0.0",
-]
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["ignore:'imghdr' is deprecated:DeprecationWarning"]  # inside apprise

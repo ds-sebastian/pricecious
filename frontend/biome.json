@@ -1,30 +1,6 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
-	"vcs": {
-		"enabled": true,
-		"clientKind": "git",
-		"useIgnoreFile": false
-	},
+	"$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
 	"files": {
-		"ignoreUnknown": false,
-		"includes": ["**", "!node_modules", "!dist", "!**/*.css"]
-	},
-	"formatter": {
-		"enabled": true,
-		"indentStyle": "tab"
-	},
-	"linter": {
-		"enabled": true,
-		"rules": {
-			"preset": "recommended",
-			"correctness": {
-				"useExhaustiveDependencies": "warn"
-			}
-		}
-	},
-	"javascript": {
-		"formatter": {
-			"quoteStyle": "double"
-		}
+		"includes": ["**", "!dist", "!**/*.css"]
 	}
 }

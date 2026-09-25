@@ -1,0 +1,236 @@
+import { useState } from "react";
+import { api, useAction, useProfiles } from "@/api";
+import {
+	Button,
+	Dialog,
+	Field,
+	Input,
+	Select,
+	Switch,
+	Textarea,
+} from "@/components/ui";
+
+const TEXT_FIELDS = [
+	"url",
+	"name",
+	"tags",
+	"selector",
+	"custom_prompt",
+	"description",
+];
+const NUMBER_FIELDS = [
+	"target_price",
+	"current_price",
+	"check_interval_minutes",
+	"notification_profile_id",
+];
+
+function toForm(item = {}) {
+	const form = { is_active: item.is_active ?? true };
+	for (const key of [...TEXT_FIELDS, ...NUMBER_FIELDS]) {
+		form[key] = item[key] == null ? "" : String(item[key]);
+	}
+	form.in_stock = item.in_stock == null ? "" : String(item.in_stock);
+	return form;
+}
+
+function toPayload(form) {
+	const payload = {
+		...form,
+		in_stock: form.in_stock === "" ? null : form.in_stock === "true",
+	};
+	for (const key of NUMBER_FIELDS) {
+		payload[key] = form[key] === "" ? null : Number(form[key]);
+	}
+	return payload;
+}
+
+export function ItemFormDialog({ item, open, onClose }) {
+	return (
+		<Dialog
+			open={open}
+			onClose={onClose}
+			title={item ? "Edit item" : "Add item"}
+			size="lg"
+		>
+			<ItemForm item={item} onDone={onClose} />
+		</Dialog>
+	);
+}
+
+function ItemForm({ item, onDone }) {
+	const [form, setForm] = useState(() => toForm(item));
+	const { data: profiles = [] } = useProfiles();
+	const set = (key) => (event) =>
+		setForm({ ...form, [key]: event.target.value });
+
+	const save = useAction(
+		async (payload) => {
+			if (item) return api.put(`/items/${item.id}`, payload);
+			const created = await api.post("/items", payload);
+			await api.post(`/items/${created.id}/check`).catch(() => {}); // the scheduler picks it up otherwise
+			return created;
+		},
+		{
+			success: item ? "Item saved" : "Item added, checking it now",
+			invalidate: [["items"], ["analytics"], ["history"]],
+			onSuccess: onDone,
+		},
+	);
+
+	const profile = profiles.find(
+		(p) => String(p.id) === form.notification_profile_id,
+	);
+
+	return (
+		<form
+			className="grid gap-4"
+			onSubmit={(event) => {
+				event.preventDefault();
+				save.mutate(toPayload(form));
+			}}
+		>
+			<Field label="Product page">
+				<Input
+					type="url"
+					required
+					autoFocus={!item}
+					placeholder="https://store.example/product"
+					value={form.url}
+					onChange={set("url")}
+				/>
+			</Field>
+			<Field label="Name">
+				<Input
+					required
+					placeholder="What you're tracking"
+					value={form.name}
+					onChange={set("name")}
+				/>
+			</Field>
+			<div className="grid gap-4 sm:grid-cols-2">
+				<Field
+					label="Target price"
+					hint="Get notified when the price drops to this."
+				>
+					<Input
+						type="number"
+						min="0"
+						step="0.01"
+						inputMode="decimal"
+						value={form.target_price}
+						onChange={set("target_price")}
+					/>
+				</Field>
+				<Field label="Notifications">
+					<Select
+						value={form.notification_profile_id}
+						onChange={set("notification_profile_id")}
+					>
+						<option value="">None</option>
+						{profiles.map((p) => (
+							<option key={p.id} value={p.id}>
+								{p.name}
+							</option>
+						))}
+					</Select>
+				</Field>
+			</div>
+			<Field
+				label="Tags"
+				hint="Comma separated. Items sharing a tag can be compared."
+			>
+				<Input
+					placeholder="gpu, living room"
+					value={form.tags}
+					onChange={set("tags")}
+				/>
+			</Field>
+			{item && (
+				<Switch
+					label="Scheduled checks"
+					hint="Paused items are only checked when you ask."
+					checked={form.is_active}
+					onChange={(is_active) => setForm({ ...form, is_active })}
+				/>
+			)}
+
+			<details className="group rounded-md border border-border">
+				<summary className="cursor-pointer px-3 py-2 text-sm font-medium select-none">
+					Advanced
+				</summary>
+				<div className="grid gap-4 border-t border-border p-3">
+					<div className="grid gap-4 sm:grid-cols-2">
+						<Field
+							label="Check every (minutes)"
+							hint={
+								profile
+									? `Default: ${profile.check_interval_minutes} (from ${profile.name})`
+									: "Default: the global interval in Settings"
+							}
+						>
+							<Input
+								type="number"
+								min="5"
+								value={form.check_interval_minutes}
+								onChange={set("check_interval_minutes")}
+							/>
+						</Field>
+						<Field
+							label="Price element (CSS selector)"
+							hint="Scrolled into view before the screenshot."
+						>
+							<Input
+								placeholder=".product-price"
+								value={form.selector}
+								onChange={set("selector")}
+							/>
+						</Field>
+					</div>
+					<Field
+						label="Instructions for the AI"
+						hint='For tricky pages, e.g. "Use the price of the 2 TB model, not the 1 TB one."'
+					>
+						<Textarea
+							value={form.custom_prompt}
+							onChange={set("custom_prompt")}
+						/>
+					</Field>
+					<Field label="Notes">
+						<Textarea value={form.description} onChange={set("description")} />
+					</Field>
+					{item && (
+						<div className="grid gap-4 sm:grid-cols-2">
+							<Field
+								label="Current price"
+								hint="Correct a bad reading. Also the baseline for outlier checks."
+							>
+								<Input
+									type="number"
+									min="0"
+									step="0.01"
+									value={form.current_price}
+									onChange={set("current_price")}
+								/>
+							</Field>
+							<Field label="Stock">
+								<Select value={form.in_stock} onChange={set("in_stock")}>
+									<option value="">Unknown</option>
+									<option value="true">In stock</option>
+									<option value="false">Out of stock</option>
+								</Select>
+							</Field>
+						</div>
+					)}
+				</div>
+			</details>
+
+			<div className="flex justify-end gap-2 pt-2">
+				<Button onClick={onDone}>Cancel</Button>
+				<Button type="submit" variant="primary" busy={save.isPending}>
+					{item ? "Save" : "Add item"}
+				</Button>
+			</div>
+		</form>
+	);
+}
