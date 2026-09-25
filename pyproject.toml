@@ -1,6 +1,6 @@
 [project]
 name = "pricecious"
-version = "0.2.5"
+version = "0.3.0"
 description = "Self-hosted price tracker that reads prices from screenshots with vision models"
 readme = "README.md"
 requires-python = ">=3.12"
