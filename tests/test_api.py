@@ -213,16 +213,17 @@ async def test_editing_or_deleting_history_updates_current_price(client, db):
     item = await create_item(client)
     now = utcnow()
     older = PriceHistory(item_id=item["id"], price=50, in_stock=True, timestamp=now - timedelta(hours=2))
-    latest = PriceHistory(item_id=item["id"], price=5000, in_stock=True, timestamp=now)
+    latest = PriceHistory(item_id=item["id"], price=5000, in_stock=True, timestamp=now, promotion="Flash sale")
     db.add_all([older, latest])
     await db.commit()
 
     await client.put(f"/api/history/{latest.id}", json={"price": 55, "in_stock": False})
     current = (await client.get("/api/items")).json()[0]
-    assert (current["current_price"], current["in_stock"]) == (55, False)
+    assert (current["current_price"], current["in_stock"], current["promotion"]) == (55, False, "Flash sale")
 
     await client.delete(f"/api/history/{latest.id}")
-    assert (await client.get("/api/items")).json()[0]["current_price"] == 50
+    current = (await client.get("/api/items")).json()[0]
+    assert (current["current_price"], current["promotion"]) == (50, None)
 
     await client.delete(f"/api/history/{older.id}")
     assert (await client.get("/api/items")).json()[0]["current_price"] is None

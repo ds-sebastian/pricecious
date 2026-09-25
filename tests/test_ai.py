@@ -133,3 +133,35 @@ def test_litellm_does_not_log_every_call():
     import logging
 
     assert logging.getLogger("LiteLLM").getEffectiveLevel() >= logging.WARNING
+
+
+@pytest.mark.parametrize(
+    ("price", "low", "high"),
+    [
+        ("$1,799 - $2,048", 1799.0, 2048.0),
+        ("$1,799–$2,048", 1799.0, 2048.0),  # noqa: RUF001 - an en dash, as stores write ranges
+        ("1.234,56 € to 1.499,00 €", 1234.56, 1499.0),
+        ([2048, 1799], 1799.0, 2048.0),
+        ("$129.99", 129.99, None),
+        ("$1,799 - Limited Time", 1799.0, None),
+    ],
+)
+def test_price_ranges_become_low_and_high(price, low, high):
+    extraction = Extraction.model_validate({"price": price})
+    assert (extraction.price, extraction.price_high) == (low, high)
+
+
+def test_regular_price_and_promotion_are_sanity_checked():
+    sale = Extraction.model_validate(
+        {"price": "$1,799", "regular_price": "$1,899", "promotion": "  Limited   Time Offer "}
+    )
+    assert (sale.regular_price, sale.promotion) == (1899.0, "Limited Time Offer")
+
+    not_a_sale = Extraction.model_validate({"price": 50, "regular_price": 45, "price_high": 40, "promotion": "null"})
+    assert (not_a_sale.regular_price, not_a_sale.price_high, not_a_sale.promotion) == (None, None, None)
+
+
+def test_prompt_covers_popups_ranges_and_promotions():
+    prompt = build_prompt("https://example.com")
+    for phrase in ("Ignore popups", "price_high", "regular_price", "promotion"):
+        assert phrase in prompt

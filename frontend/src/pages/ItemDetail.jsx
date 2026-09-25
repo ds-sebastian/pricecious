@@ -9,6 +9,8 @@ import {
 	checkedLabel,
 	DealBadge,
 	ItemStatus,
+	PriceTag,
+	SaleBadge,
 	scheduleTitle,
 } from "@/components/ItemCard";
 import { ItemFormDialog } from "@/components/ItemForm";
@@ -129,7 +131,7 @@ export default function ItemDetail() {
 					<div className="flex items-center gap-3">
 						<div className="sm:text-right">
 							<div className="text-3xl font-semibold tabular-nums">
-								{formatPrice(item.current_price, item.currency)}
+								<PriceTag price={item} currency={item.currency} />
 							</div>
 							{item.target_price != null && (
 								<div className="text-xs text-muted">
@@ -140,7 +142,12 @@ export default function ItemDetail() {
 						<StockBadge inStock={item.in_stock} />
 					</div>
 				</div>
-				{item.deal && <DealBadge deal={item.deal} className="mt-3" />}
+				{(item.deal || item.promotion || item.regular_price != null) && (
+					<div className="mt-3 flex flex-wrap gap-1">
+						<SaleBadge price={item} />
+						{item.deal && <DealBadge deal={item.deal} />}
+					</div>
+				)}
 				<div className="mt-4 flex gap-1">
 					<CheckButton item={item} />
 					<Button
@@ -477,7 +484,12 @@ function HistoryTable({ itemId, currency }) {
 									{formatDateTime(record.timestamp)}
 								</td>
 								<td className="px-4 py-2 text-right tabular-nums">
-									{formatPrice(record.price, currency)}
+									<PriceTag price={record} currency={currency} />
+									{record.promotion && (
+										<div className="text-xs text-blue-700 dark:text-blue-300">
+											{record.promotion}
+										</div>
+									)}
 								</td>
 								<td className="px-4 py-2">
 									<StockBadge inStock={record.in_stock} />

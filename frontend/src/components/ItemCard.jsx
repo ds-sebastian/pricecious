@@ -4,6 +4,7 @@ import {
 	ExternalLink,
 	Pencil,
 	RefreshCw,
+	Tag,
 	Trash2,
 	TrendingDown,
 } from "lucide-react";
@@ -38,6 +39,49 @@ export function ItemStatus({ item, className }) {
 			<AlertTriangle className="mt-px size-3.5 shrink-0" />
 			<span className="line-clamp-2">{item.last_error}</span>
 		</p>
+	);
+}
+
+/** A price with its range and crossed-out price. price: anything with current_price or price, price_high, regular_price. */
+export function PriceTag({ price, currency }) {
+	const high = price.price_high;
+	const regular = price.regular_price;
+	return (
+		<>
+			{formatPrice(price.current_price ?? price.price, currency)}
+			{(high != null || regular != null) && (
+				<span className="block text-xs font-normal text-muted">
+					{high != null && (
+						<span className="whitespace-nowrap">
+							up to {formatPrice(high, currency)}
+						</span>
+					)}
+					{high != null && regular != null && " · "}
+					{regular != null && (
+						<span className="whitespace-nowrap">
+							was <s>{formatPrice(regular, currency)}</s>
+						</span>
+					)}
+				</span>
+			)}
+		</>
+	);
+}
+
+export function SaleBadge({ price, className }) {
+	const low = price.current_price ?? price.price;
+	if (!price.promotion && price.regular_price == null) return null;
+	const off =
+		price.regular_price && low != null
+			? Math.round((1 - low / price.regular_price) * 100)
+			: null;
+	return (
+		<Badge tone="blue" className={className}>
+			<Tag className="size-3" />
+			{[price.promotion ?? "Sale", off ? `${off}% off` : null]
+				.filter(Boolean)
+				.join(" · ")}
+		</Badge>
 	);
 }
 
@@ -156,7 +200,7 @@ export function ItemCard({ item, onEdit, onDelete, onViewScreenshot }) {
 								targetMet && "text-emerald-600 dark:text-emerald-400",
 							)}
 						>
-							{formatPrice(item.current_price, item.currency)}
+							<PriceTag price={item} currency={item.currency} />
 						</div>
 						{item.target_price != null && (
 							<div className="text-xs text-muted">
@@ -168,7 +212,12 @@ export function ItemCard({ item, onEdit, onDelete, onViewScreenshot }) {
 					<StockBadge inStock={item.in_stock} />
 				</div>
 
-				{item.deal && <DealBadge deal={item.deal} className="self-start" />}
+				{(item.deal || item.promotion || item.regular_price) && (
+					<div className="flex flex-wrap gap-1">
+						<SaleBadge price={item} />
+						{item.deal && <DealBadge deal={item.deal} />}
+					</div>
+				)}
 				<ItemStatus item={item} />
 
 				{tags.length > 0 && (

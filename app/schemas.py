@@ -61,6 +61,9 @@ class ItemOut(BaseModel):
     notification_profile_id: int | None
     current_price: float | None
     current_price_confidence: float | None
+    price_high: float | None
+    regular_price: float | None
+    promotion: str | None
     in_stock: bool | None
     in_stock_confidence: float | None
     is_active: bool
@@ -84,6 +87,9 @@ class HistoryOut(BaseModel):
     timestamp: UTCDateTime
     price: float
     price_confidence: float | None
+    price_high: float | None
+    regular_price: float | None
+    promotion: str | None
     in_stock: bool | None
     in_stock_confidence: float | None
 

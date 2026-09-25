@@ -201,7 +201,13 @@ async def _sync_latest(db: AsyncSession, item_id: int) -> None:
     await db.execute(
         update(Item)
         .where(Item.id == item_id)
-        .values(current_price=latest and latest.price, in_stock=latest and latest.in_stock)
+        .values(
+            {
+                field: latest and getattr(latest, field)
+                for field in ("price_high", "regular_price", "promotion", "in_stock")
+            }
+            | {"current_price": latest and latest.price}
+        )
     )
     await db.commit()
 

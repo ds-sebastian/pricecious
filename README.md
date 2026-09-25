@@ -117,7 +117,10 @@ drive-by protection, not a substitute for the firewall or proxy allowlist.
 
 - **Items**: add a product page; the name, if you leave it out, and the currency come from the page on the first
   check, which starts right away. Each card shows the latest price, stock status, a badge when the price is the
-  lowest seen (or the lowest in 90 days), and what went wrong if a check failed. The **Needs attention** and
+  lowest seen (or the lowest in 90 days), and what went wrong if a check failed. When a page lists a range across
+  options, the price is the cheapest option and the top of the range is shown under it. A sale badge shows the
+  store's own promotion label and the discount from the crossed-out price. That's the store's claim; the green
+  "lowest" badges come from your own history, so seeing both is a good sign the sale is real. The **Needs attention** and
   **Deals** filters gather those up. Click a screenshot to see what the browser saw.
 - **Bookmarklet**: the Add item dialog has a **+ Pricecious** link. Drag it to your bookmarks bar, then click it on
   any product page to add that page.
@@ -145,7 +148,11 @@ drive-by protection, not a substitute for the firewall or proxy allowlist.
 Use **Test** in Settings → AI model to run your settings, saved or not, on one of your items and see the model's
 answer and raw reply. It's the quickest way to check a new model, key or base URL.
 
-- Add **Instructions for the AI** to the item (Edit → Advanced), e.g. "Use the price of the 2 TB model."
+Signup and cookie popups are closed (or hidden) before the screenshot, and the AI is told to read the product behind
+anything left over, so they rarely need attention.
+
+- Add **Instructions for the AI** to the item (Edit → Advanced), e.g. "Use the price of the 2 TB model." This is also
+  how to track one option of a product whose page shows a price range.
 - Set a **Price element** CSS selector so the right part of the page is on screen.
 - Turn on **Send page text to the AI** in Settings for pages where the price is small or hard to read.
 - Raise **Minimum price confidence**. Readings below it are recorded but don't change the price.

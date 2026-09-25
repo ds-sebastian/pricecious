@@ -20,9 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **History filters:** filter an item's readings by price range, stock (including unknown) and confidence, including
   "low", meaning below your minimum confidence, so those readings never changed the price.
 - **Check all cooldown:** "Check all" skips items checked in the last 5 minutes and says how many it skipped.
+- **Price ranges and sales:** pages that list a range across options ("$1,799 – $2,048") record the cheapest option
+  as the price and show the top of the range. The crossed-out "was" price and the store's promotion label ("Limited
+  Time Offer") are recorded too, shown as a sale badge with the discount, and mentioned in alerts. Site-wide banners
+  don't count as a promotion.
 - **README screenshots** of the current UI in light and dark.
 
 ### Changed
+- **Popups:** signup and cookie popups are closed with their own close or "no thanks" buttons (never a sign-up
+  button), and any overlay still covering the page is hidden before the screenshot. The AI is also told to read the
+  product behind anything left over.
+- **Change detection** also watches sale wording ("limited time", "% off", "clearance"), so a sale starting or
+  ending on an unchanged price is still read.
 - **Charts:** thinning long histories keeps each period's real first, last, lowest and highest readings instead of
   averaging them, which drew prices that never existed.
 - **Rewrite:** Backend reorganized into a few flat modules and the frontend rebuilt with fewer dependencies (no Radix,
@@ -47,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Failed test notifications were reported as sent.
 - Check failures now say why (bot check, load error, AI error) instead of a generic message.
 - European prices such as `1.234,56` are parsed correctly.
+- Trackers blocked by a DNS blocklist were logged as blocked requests on every check, and LiteLLM logged each AI call
+  twice at INFO. Both are now quiet (set `LITELLM_LOG` to see LiteLLM's logs).
 
 ## [0.2.3] - 2026-03-01
 
