@@ -46,7 +46,7 @@ async def test_thinking_carries_over_openai_reasoning_effort(db, stored, thinkin
 async def test_save_stores_only_changes_as_strings(db):
     await settings.save(db, {"price_outlier_threshold_enabled": True, "ai_model": "llava"})
 
-    stored = dict((await db.execute(Setting.__table__.select())).tuples().all())
+    stored = dict((await db.execute(Setting.__table__.select())).all())
     assert stored == {"price_outlier_threshold_enabled": "true", "ai_model": "llava"}
 
 
