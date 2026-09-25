@@ -85,3 +85,8 @@ def test_alerts_mention_ranges_and_promotions():
             "Now $1,799.00 for the cheapest option (target $1,800.00) (Limited Time Offer)",
         ),
     ]
+
+
+def test_a_zero_price_is_still_named():
+    messages = alerts(item(current_price=0.0, target_price=10.0, currency="USD"), old_price=20.0, old_stock=None)
+    assert ("Target price reached: Widget", "Now $0.00 (target $10.00)") in messages

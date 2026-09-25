@@ -2,6 +2,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -75,6 +76,26 @@ async def reject_cross_origin_writes(request: Request, call_next):
         if not allowed:
             return JSONResponse({"detail": "Cross-origin requests are not allowed"}, status_code=403)
     return await call_next(request)
+
+
+class MethodOverride:
+    """Let the web UI send PUT and DELETE as POST ?_method=...: some reverse-proxy firewalls only let GET and POST
+    through (the OWASP Core Rule Set does by default). The REST routes themselves are unchanged."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["method"] == "POST" and scope["path"].startswith("/api/"):
+            query = parse_qsl(scope["query_string"].decode("latin-1"), keep_blank_values=True)
+            method = next((value.upper() for key, value in query if key == "_method"), None)
+            if method in {"PUT", "DELETE"}:
+                rest = urlencode([(key, value) for key, value in query if key != "_method"])
+                scope = dict(scope, method=method, query_string=rest.encode("latin-1"))
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(MethodOverride)  # outermost, so everything after it sees the real method
 
 
 @app.get("/health")

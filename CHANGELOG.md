@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-25
+
+### Fixed
+- Deleting an item or notification profile failed with "Request failed (403)" behind reverse proxies whose firewall
+  only allows GET and POST (the OWASP Core Rule Set default, used by CrowdSec AppSec and ModSecurity setups). The web
+  UI now sends edits and deletes as POST; the REST API is unchanged.
+- A reading's stock can be set back to unknown.
+- Editing or deleting readings now also updates the item's price and stock confidence.
+- "Select all matching" readings no longer shrinks to one page when a row or page is unticked.
+- Alerts show a price of 0 instead of leaving it out.
+- Version bumps also update `uv.lock`, so the next release doesn't fail `uv sync --locked`.
+
+### Changed
+- Dependencies upgraded to their latest compatible versions (SQLAlchemy 2.1, Starlette 1.7, LiteLLM 1.102, ...).
+
 ## [0.3.0] - 2026-09-25
 
 ### Added

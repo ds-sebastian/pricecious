@@ -179,7 +179,7 @@ def _manual_values(data: HistoryUpdate) -> dict:
             PriceHistory.price_high: case((PriceHistory.price_high > data.price, PriceHistory.price_high)),
             PriceHistory.regular_price: case((PriceHistory.regular_price > data.price, PriceHistory.regular_price)),
         }
-    if data.in_stock is not None:
+    if data.sets_stock:
         values |= {PriceHistory.in_stock: data.in_stock, PriceHistory.in_stock_confidence: None}
     return values
 
@@ -204,6 +204,8 @@ async def bulk_history(item_id: int, data: HistoryBulk, db: DB) -> BulkResult:
     await _get(db, Item, item_id)
     if data.filters is not None:
         conditions = _history_conditions(item_id, data.filters)
+        if data.exclude_ids:
+            conditions.append(PriceHistory.id.not_in(data.exclude_ids))
     else:
         conditions = [PriceHistory.item_id == item_id, PriceHistory.id.in_(data.ids)]
     if data.action == "delete":
@@ -231,7 +233,7 @@ async def delete_history(record_id: int, db: DB) -> None:
 
 
 async def _sync_latest(db: AsyncSession, item_id: int) -> None:
-    """Keep the item's current price and stock in line with its newest history record."""
+    """Keep the item's current price, stock and their confidences in line with its newest history record."""
     await db.flush()
     latest = await db.scalar(
         select(PriceHistory).where(PriceHistory.item_id == item_id).order_by(PriceHistory.timestamp.desc()).limit(1)
@@ -242,9 +244,9 @@ async def _sync_latest(db: AsyncSession, item_id: int) -> None:
         .values(
             {
                 field: latest and getattr(latest, field)
-                for field in ("price_high", "regular_price", "promotion", "in_stock")
+                for field in ("price_high", "regular_price", "promotion", "in_stock", "in_stock_confidence")
             }
-            | {"current_price": latest and latest.price}
+            | {"current_price": latest and latest.price, "current_price_confidence": latest and latest.price_confidence}
         )
     )
     await db.commit()

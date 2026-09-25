@@ -66,7 +66,7 @@ def _serialize(value: Any) -> str:
 
 async def load(db: AsyncSession) -> AppSettings:
     rows = await db.execute(select(Setting.key, Setting.value))
-    return _parse(dict(rows.tuples().all()))
+    return _parse(dict(rows.all()))
 
 
 def merge(current: AppSettings, changes: dict[str, Any]) -> AppSettings:

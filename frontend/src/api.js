@@ -11,9 +11,17 @@ function errorMessage(detail) {
 	return null;
 }
 
+// Some reverse-proxy firewalls only let GET and POST through, so edits and deletes travel as POST with the real
+// method in the query; the server maps them back.
+const OVERRIDDEN = new Set(["PUT", "DELETE"]);
+
 async function request(method, path, body) {
-	const response = await fetch(`/api${path}`, {
-		method,
+	const override = OVERRIDDEN.has(method);
+	const url = override
+		? `/api${path}${path.includes("?") ? "&" : "?"}_method=${method}`
+		: `/api${path}`;
+	const response = await fetch(url, {
+		method: override ? "POST" : method,
 		headers: body === undefined ? {} : { "Content-Type": "application/json" },
 		body: body === undefined ? undefined : JSON.stringify(body),
 	});
