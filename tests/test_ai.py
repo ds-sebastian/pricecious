@@ -127,3 +127,9 @@ async def test_openai_uses_structured_output_and_no_ollama_base(monkeypatch, png
     assert kwargs["reasoning_effort"] == "low"
     assert kwargs["api_key"] == "k"
     assert "api_base" not in kwargs
+
+
+def test_litellm_does_not_log_every_call():
+    import logging
+
+    assert logging.getLogger("LiteLLM").getEffectiveLevel() >= logging.WARNING

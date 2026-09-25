@@ -17,7 +17,7 @@ from playwright.async_api import Browser, BrowserContext, Page, Playwright, asyn
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from app.urls import UnsafeURLError, redact, validate_url_async
+from app.urls import UnresolvableHostError, UnsafeURLError, redact, validate_url_async
 
 logger = logging.getLogger(__name__)
 
@@ -292,10 +292,14 @@ async def _guard_network(context: BrowserContext) -> None:
                 try:
                     await validate_url_async(url)
                     return True
-                except UnsafeURLError as exc:
-                    if "could not be resolved" in str(exc) and attempt + 1 < DNS_ATTEMPTS:
+                except UnresolvableHostError as exc:
+                    if attempt + 1 < DNS_ATTEMPTS:
                         await asyncio.sleep(0.1)
                         continue
+                    # Often a tracker stopped by a DNS blocklist; the browser couldn't load it either.
+                    logger.debug(f"Skipped browser request to {_origin(url)}: {exc}")
+                    return False
+                except UnsafeURLError as exc:
                     origin = _origin(url)
                     level = logging.DEBUG if origin in reported else logging.WARNING
                     reported.add(origin)

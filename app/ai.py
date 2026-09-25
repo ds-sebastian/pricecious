@@ -4,6 +4,7 @@ import asyncio
 import base64
 import io
 import logging
+import os
 import re
 from urllib.parse import urlparse
 
@@ -15,6 +16,8 @@ from pydantic import BaseModel, ValidationError, field_validator
 from app.settings import AppSettings
 
 litellm.suppress_debug_info = True
+if not os.getenv("LITELLM_LOG"):  # LiteLLM logs every call at INFO, twice; keep it quiet unless asked
+    logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_SIZE = 1024
