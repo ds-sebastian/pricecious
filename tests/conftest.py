@@ -1,96 +1,64 @@
+import io
 import os
-from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock, patch
+import socket
+import tempfile
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from PIL import Image
 
-# Set env var before importing app.database
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+_tmp = Path(tempfile.mkdtemp(prefix="pricecious-tests-"))
+os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_tmp / 'test.db'}"
+os.environ["SCREENSHOT_DIR"] = str(_tmp / "screenshots")
+os.environ["STATIC_DIR"] = str(_tmp / "static")
 os.environ["CORS_ORIGINS"] = "https://trusted.example"
 
-from app.database import Base, get_db
-from app.main import app
-
-# Use in-memory SQLite for testing
-# Note: sqlite+aiosqlite is needed for async sqlite
-SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-
-engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    autocommit=False,
-    autoflush=False,
-    expire_on_commit=False,
-)
+from app.database import Base, SessionLocal, engine  # noqa: E402
+from app.main import app  # noqa: E402
 
 
-@pytest.fixture(scope="function")
-async def db() -> AsyncGenerator[AsyncSession, None]:
-    # Create tables
+@pytest.fixture(autouse=True)
+async def _schema():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
-    async with TestingSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
-
-    # Drop tables
+    yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-
     await engine.dispose()
 
 
-@pytest.fixture(scope="function")
-async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    async def override_get_db():
+@pytest.fixture
+async def db():
+    async with SessionLocal() as session:
+        yield session
+
+
+@pytest.fixture
+async def client():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+
+
+@pytest.fixture(autouse=True)
+def public_dns(monkeypatch):
+    """Resolve IP literals and localhost normally and every other hostname to a public IP, without real DNS."""
+    real_getaddrinfo = socket.getaddrinfo
+
+    def getaddrinfo(host, port, *args, **kwargs):
         try:
-            yield db
-        finally:
-            pass
+            return real_getaddrinfo(host, port, type=socket.SOCK_STREAM, flags=socket.AI_NUMERICHOST)
+        except socket.gaierror:
+            address = "127.0.0.1" if host == "localhost" else "93.184.216.34"
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port or 0))]
 
-    app.dependency_overrides[get_db] = override_get_db
+    monkeypatch.setattr("app.urls.socket.getaddrinfo", getaddrinfo)
 
-    # Mock scheduler and ScraperService to prevent real browser startup
-    with (
-        patch("app.main.scheduler.start"),
-        patch("app.main.scheduler.shutdown"),
-        patch("app.services.scraper_service.ScraperService.initialize", new_callable=AsyncMock),
-        patch("app.services.scraper_service.ScraperService.shutdown", new_callable=AsyncMock),
-        patch(
-            "app.database.get_db", override_get_db
-        ),  # Direct patch if needed, but dependency_override is usually enough
-        patch(
-            "app.database.AsyncSessionLocal", return_value=db
-        ),  # Mock the session local used in services/background tasks
-    ):
-        # We need to mock AsyncSessionLocal to act as a context manager that returns OUR session
-        # But AsyncSessionLocal() returns an AsyncSession
-        # In code: async with AsyncSessionLocal() as session:
-        # We want that session to be `db`.
 
-        class MockSessionContext:
-            def __init__(self, session):
-                self.session = session
-
-            async def __aenter__(self):
-                return self.session
-
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                pass
-
-        with patch("app.database.AsyncSessionLocal", side_effect=lambda: MockSessionContext(db)):
-            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-                yield c
-
-    app.dependency_overrides.clear()
+@pytest.fixture
+def png() -> bytes:
+    """A screenshot with enough detail to pass the blank-page checks."""
+    image = Image.effect_noise((400, 300), 80).convert("RGB")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()

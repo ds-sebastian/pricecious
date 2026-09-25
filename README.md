@@ -8,34 +8,24 @@
   Price tracking using A-Eyes 🤦
 </p>
 
-> [!WARNING]  
+> [!WARNING]
 > This is 100% vibe-coded.
 
-**Pricecious** is a self-hosted, AI-powered price tracking application. It uses **GenAI Vision Models** (OpenAI, Anthropic, Ollama, etc.) to visually analyze product pages, detect prices, and monitor stock status.
+**Pricecious** is a self-hosted price tracker. It opens product pages in a headless browser, takes a screenshot, and
+asks a vision model (Ollama, OpenAI, Anthropic, Gemini or OpenRouter) for the price and stock status. It keeps the
+history, charts it, forecasts it with Prophet, and notifies you through [Apprise](https://github.com/caronc/apprise)
+when prices drop, hit your target, or items come back in stock.
 
-<img width="1749" height="1008" alt="SCR-20251207-ordg" src="https://github.com/user-attachments/assets/c9393151-2ac7-4624-994f-88bc8c77f90b" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/items-dark.png">
+  <img alt="Items page with product cards showing prices, stock status and targets" src="docs/screenshots/items-light.png">
+</picture>
 
-## Features
+## Quick start
 
-*   **AI Capture**: Uses Vision Models (GPT-4o, Claude 3.5, Gemini, Ollama) to see prices/stock.
-*   **Analysis & Tracking**: Full price history, stock status tracking, and Prophet-based price forecasting.
->   <img width="1730" height="845" alt="SCR-20251207-orfh" src="https://github.com/user-attachments/assets/45e74f74-0493-41e1-94ec-dba1a92112d2" />
+You need Docker, and either an API key for a hosted model or a local Ollama with a vision model (e.g. `gemma3:4b`).
 
-*   **Reliability**: Smart scrolling, text fallback, and automatic JSON repair.
-*   **Performance**: Async backend (Granian) with caching and data downsampling.
-
-
-## Prerequisites
-
-*   **Docker** and **Docker Compose**
-*   **AI Provider**: An API key for OpenAI, Anthropic, Gemini, OR a local Ollama instance.
-*   **PostgreSQL**: A database for storing items and history (handled via Docker Compose).
-*   **Browserless**: A headless browser service for scraping (handled via Docker Compose).
-
-## Quick Start
-
-1.  **Create a `docker-compose.yml` file:**
-    Save the following content to a file named `docker-compose.yml`:
+1. Save this as `docker-compose.yml`:
 
     ```yaml
     services:
@@ -76,16 +66,10 @@
       screenshots_data:
     ```
 
-2.  **Start the Application:**
-    Run the following command in the same directory:
-    ```bash
-    docker compose up -d
-    ```
+2. Run `docker compose up -d` and open http://localhost:8000.
+3. In **Settings**, pick your AI provider and model, then add items from the **Items** page.
 
-3.  **Access the Dashboard:**
-    Open your browser and navigate to `http://localhost:8000`.
-
-### Network Boundary (No Application Login)
+## Keep it private
 
 Pricecious has no user authentication. Anyone who can reach it can change settings and trigger AI-backed checks, so keep
 it on a trusted LAN/VPN and never publish port 8000 directly to the unrestricted Internet.
@@ -129,99 +113,97 @@ sudo ufw allow from 192.168.1.0/24 to any port 8000 proto tcp
 These ranges are examples only; narrow them to the networks you control. Browser cross-origin checks are additional
 drive-by protection, not a substitute for the firewall or proxy allowlist.
 
-## User Guide
+## Using it
 
+- **Items**: add a product page; the name, if you leave it out, and the currency come from the page on the first
+  check, which starts right away. Each card shows the latest price, stock status, a badge when the price is the
+  lowest seen (or the lowest in 90 days), and what went wrong if a check failed. The **Needs attention** and
+  **Deals** filters gather those up. Click a screenshot to see what the browser saw.
+- **Bookmarklet**: the Add item dialog has a **+ Pricecious** link. Drag it to your bookmarks bar, then click it on
+  any product page to add that page.
+- **Item page**: price history with lowest/highest markers, out-of-stock periods shaded, an optional forecast, and
+  every reading. Filter readings by price, stock or confidence to find bad ones, then fix or delete them; the current
+  price follows the newest reading.
+- **Compare**: items that share a tag (e.g. `gpu`) on one chart.
+- **Check all** checks every item that wasn't checked in the last 5 minutes, so repeated clicks don't run up your AI
+  bill. The check button on a single item always runs.
+- **Settings**: AI model, confidence thresholds, price sanity limits, browser behaviour, schedules and notification
+  profiles.
 
-### 📊 Using Analytics & Forecasting
-The **Analytics** page offers deep insights into pricing trends.
-*   **Price History**: Solid lines show historical prices. Dotted lines indicate the **Forecast** (if enabled).
-*   **Outlier Filtering**: Toggle "Remove Outliers" to hide price spikes caused by scraper glitches. Adjust the sigma threshold (default 2.0σ) to control sensitivity.
-*   **Comparisons**: Switch to "By Tag" mode to compare multiple items (e.g., "GPU", "SSD") on the same chart.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/item-dark.png">
+  <img alt="Item page with a price history chart, forecast and price statistics" src="docs/screenshots/item-light.png">
+</picture>
 
-### 🧠 Optimizing AI Extraction
-Sometimes the AI needs a nudge to get the right price. Use these tools in the **Edit Item** modal:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/compare-dark.png">
+  <img alt="Compare page charting several items that share a tag" src="docs/screenshots/compare-light.png">
+</picture>
 
-1.  **Custom Prompts**: Add specific instructions for tricky pages.
-    *   *Example*: "Ignore the 'refurbished' price, only extract 'New' condition."
-    *   *Example*: "The price is inside the red badge at the top right."
-2.  **Text Context**: If the image isn't enough, enable "Text Context" in Settings. This sends the page text to the AI along with the screenshot.
-3.  **Confidence Thresholds**: If you see too many wrong prices, raise the "Min Confidence" setting (default 0.7).
+### When the AI gets it wrong
+
+Use **Test** in Settings → AI model to run your settings, saved or not, on one of your items and see the model's
+answer and raw reply. It's the quickest way to check a new model, key or base URL.
+
+- Add **Instructions for the AI** to the item (Edit → Advanced), e.g. "Use the price of the 2 TB model."
+- Set a **Price element** CSS selector so the right part of the page is on screen.
+- Turn on **Send page text to the AI** in Settings for pages where the price is small or hard to read.
+- Raise **Minimum price confidence**. Readings below it are recorded but don't change the price.
+- Turn on **Reject sudden price jumps** to ignore misreads such as a price picked up from another product.
+
+### Keeping AI costs down
+
+Every check visits the page, but the AI is only asked when the page's prices or stock wording ("add to cart", "sold
+out", ...) differ from the last AI check, and at least once a day. Price changes on unrelated parts of the page just
+mean the AI is asked, so nothing is missed; with a CSS selector set, only that element's price counts. "Check now"
+always asks the AI. Settings shows how many checks didn't need it. The biggest lever is still the check interval:
+calls per day are roughly items × 24 ÷ hours between checks.
+
+Checks run on the item's own interval, else its notification profile's, else the global default. An item that fails
+repeatedly (20 times by default) is paused until you turn its scheduled checks back on.
 
 ## Configuration
 
-### Environment Variables
-The following environment variables can be configured in your `docker-compose.yml`:
+AI, scraper and schedule settings live in the Settings page. The container reads these environment variables:
 
-| Variable | Description | Default | Example |
-| :--- | :--- | :--- | :--- |
-| `DATABASE_URL` | PostgreSQL connection string. Use container name for Docker networking. | `postgresql://user:password@db:5432/pricewatch` | `postgresql://u:p@postgresql:5432/db` |
-| `BROWSERLESS_URL` | WebSocket URL for Browserless. | `ws://browserless:3000` | `ws://host:port/chromium` |
-| `BROWSERLESS_TOKEN` | Browserless authentication token. | *(empty)* | `my-secret-token` |
-| `BROWSERLESS_BLOCK_ADS` | Enable ad blocking in Browserless. | `false` | `true` |
-| `BROWSERLESS_STEALTH` | Enable stealth mode in Browserless. | `false` | `true` |
-| `BROWSERLESS_HEADLESS` | Headless mode value passed to Browserless. | *(empty)* | `new` |
-| `BROWSERLESS_VIEWPORT_WIDTH` | Viewport width in pixels. | *(empty)* | `1920` |
-| `BROWSERLESS_VIEWPORT_HEIGHT` | Viewport height in pixels. | *(empty)* | `1080` |
-| `SCREENSHOT_DIR` | Directory for storing scraper screenshots. | `screenshots` | `/app/data/screenshots` |
-| `LOG_LEVEL` | Application logging level | `INFO` | `DEBUG` |
-| `SQL_ECHO` | Log all SQL queries to console | `false` | `true` |
-| `CORS_ORIGINS` | Additional trusted browser origins (comma-separated). Same-origin requests need no entry. | *(none)* | `https://pricecious.example.com` |
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | PostgreSQL connection string (required). | |
+| `BROWSERLESS_URL` | WebSocket URL of Browserless, or of any Chrome with remote debugging. | `ws://browserless:3000` |
+| `BROWSERLESS_TOKEN` | Browserless token. | |
+| `BROWSERLESS_BLOCK_ADS` | Ask Browserless to block ads. | `false` |
+| `BROWSERLESS_STEALTH` | Browserless stealth mode. | `false` |
+| `BROWSERLESS_HEADLESS` | Headless mode passed to Browserless, e.g. `new`. | |
+| `BROWSERLESS_VIEWPORT_WIDTH` / `_HEIGHT` | Browser viewport in pixels. | |
+| `SCREENSHOT_DIR` | Where screenshots are kept. | `screenshots` |
+| `CORS_ORIGINS` | Extra trusted browser origins, comma separated. Same-origin requests need no entry. | |
+| `LOG_LEVEL` | Log level. | `INFO` |
 
-The scraper rejects requests unless DNS resolves every destination to globally routable addresses, including redirects,
-subresources, and WebSockets. Also place the Browserless runtime behind an egress firewall or filtering proxy that denies
-private, loopback, link-local, metadata-service, and reserved address ranges; application checks do not replace that
-network boundary.
+The Browserless options are sent as query parameters, so you don't have to escape JSON in a URL yourself. LiteLLM's
+own environment variables (such as `OPENAI_API_KEY`) also work when no API key is set in Settings.
 
-> [!TIP]
-> LiteLLM environment variables should work too to prepopulate AI model default settings
-
-> [!TIP]
-> **Browserless Configuration**
-> If you are using a protected Browserless instance with custom launch options, use the separate env vars to avoid shell-escaping issues with complex JSON strings:
-> ```bash
-> BROWSERLESS_URL=ws://{IP}:{PORT}/chromium
-> BROWSERLESS_TOKEN={TOKEN}
-> BROWSERLESS_BLOCK_ADS=true
-> BROWSERLESS_STEALTH=true
-> BROWSERLESS_HEADLESS=new
-> BROWSERLESS_VIEWPORT_WIDTH=1920
-> BROWSERLESS_VIEWPORT_HEIGHT=1080
-> ```
-> These are assembled into the correct Browserless query parameters automatically, eliminating shell escaping problems with `"`, `{`, and `&` characters.
-
-### Scraper Settings
-All scraper settings are configured via the **Settings** page in the UI:
-*   **Smart Scroll**: Enable to handle infinite scroll pages.
-*   **Text Context**: Enable to send page text to the AI for better accuracy.
-*   **Scraper Timeout**: Maximum time to wait for page load.
-
-### AI Configuration
-All AI settings are configured via the **Settings** page in the UI. No environment variables are required.
-
-**Provider Settings**:
-*   **Provider**: Choose between OpenAI, Anthropic, Gemini, Ollama, or Custom.
-*   **Model**: Specify the model name (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemma3:4b`).
-*   **API Key**: Enter your API key (not required for Ollama).
-*   **Base URL**: Required for Ollama or custom OpenAI-compatible endpoints.
-
-**Advanced AI Settings**:
-*   **Temperature**: Controls output randomness (0.0-1.0).
-*   **Max Tokens**: Maximum tokens for AI responses.
-*   **Price/Stock Confidence Thresholds**: Minimum confidence required to update values.
-*   **Enable JSON Repair**: Automatically attempt to repair malformed JSON responses.
-
-**How Confidence Works**:
-- The AI provides a confidence score (0.0 to 1.0) for each extracted value
-- Scores represent the AI's subjective probability that the extraction is correct
-- If confidence is below the threshold, the value is logged but doesn't overwrite the current value
-- Large price changes (>20%) with low confidence (<0.7) are flagged for manual review
-- All extractions are saved in history with their confidence scores for analysis
+The scraper only visits addresses that resolve to public IPs, including redirects, subresources and WebSockets. Still
+run Browserless behind an egress firewall that blocks private, loopback, link-local and metadata addresses.
 
 ### Notifications
-Create **Notification Profiles** in the Settings page using Apprise URLs.
-*   Example Discord: `discord://webhook_id/webhook_token`
-*   Example Telegram: `tgram://bot_token/chat_id`
+
+Create a notification profile in Settings with an [Apprise URL](https://github.com/caronc/apprise/wiki), for example
+`discord://webhook_id/webhook_token` or `ntfys://ntfy.sh/your-topic`, then choose it on each item. A profile can alert
+on price drops, reaching the target price, a new lowest price (after two weeks of history) and stock changes.
+
+## Development
+
+```bash
+uv sync                                   # Python 3.12 and dev tools
+uv run pytest                             # backend tests (SQLite)
+uv run ruff check . && uv run ruff format .
+cd frontend && npm install && npm run dev # UI on :5173, proxies /api to :8000
+npm run check                             # Biome lint + format check
+```
+
+Run the backend with `DATABASE_URL=... uv run alembic upgrade head && uv run granian --interface asgi app.main:app`.
+Set `TEST_POSTGRES_URL` to a disposable database to also test the migrations.
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+GNU General Public License v3.0; see [LICENSE](LICENSE).

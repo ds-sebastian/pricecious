@@ -1,269 +1,146 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
-from app import models
-from app.services.analytics_service import AnalyticsService
+from app.analytics import CHART_POINTS, deals, item_analytics, previous_low
+from app.database import utcnow
+from app.models import Item, PriceForecast, PriceHistory
 
 
-@pytest.fixture(autouse=True)
-def clear_cache():
-    AnalyticsService.clear_cache()
-    yield
-    AnalyticsService.clear_cache()
-
-
-def test_invalidate_item_keeps_other_cached_items():
-    AnalyticsService._analytics_cache[(1, None, None)] = {"item_id": 1}
-    AnalyticsService._analytics_cache[(2, None, None)] = {"item_id": 2}
-
-    AnalyticsService.invalidate_item(1)
-
-    assert (1, None, None) not in AnalyticsService._analytics_cache
-    assert (2, None, None) in AnalyticsService._analytics_cache
-
-
-@pytest.mark.asyncio
-async def test_get_analytics_data_empty(db):
-    # Create item
-    item = models.Item(url="http://example.com/1", name="Test Item 1")
+@pytest.fixture
+async def item(db):
+    item = Item(url="https://example.com", name="Widget")
     db.add(item)
     await db.commit()
-    await db.refresh(item)
-
-    data = await AnalyticsService.get_analytics_data(db, item.id)
-    assert data["item_id"] == item.id
-    assert data["stats"]["avg_price"] == 0.0
-    assert len(data["history"]) == 0
+    return item
 
 
-@pytest.mark.asyncio
-async def test_get_analytics_data_stats(db):
-    # Create item
-    item = models.Item(url="http://example.com/2", name="Test Item 2", current_price=100.0)
-    db.add(item)
-    await db.commit()
-    await db.refresh(item)
+def add_history(db, item, *points):
+    """points: (hours_ago, price, in_stock)"""
+    now = utcnow()
+    db.add_all(
+        PriceHistory(item_id=item.id, timestamp=now - timedelta(hours=h), price=p, in_stock=s) for h, p, s in points
+    )
 
-    # Add history
-    prices = [100.0, 102.0, 98.0, 100.0]
-    now = datetime.now()
-    for i, p in enumerate(prices):
-        # timestamps spaced by 1 hour
-        ts = now - timedelta(hours=len(prices) - i)
-        ph = models.PriceHistory(item_id=item.id, price=p, timestamp=ts)
-        db.add(ph)
 
+async def test_empty_history(db, item):
+    data = await item_analytics(db, item, days=30, sigma=None)
+    assert data == {"stats": None, "history": [], "annotations": [], "forecast": []}
+
+
+async def test_stats_and_24h_change(db, item):
+    add_history(db, item, (48, 100.0, True), (30, 120.0, True), (1, 90.0, True))
     await db.commit()
 
-    data = await AnalyticsService.get_analytics_data(db, item.id)
-    assert data["stats"]["min_price"] == 98.0
-    assert data["stats"]["max_price"] == 102.0
-    assert data["stats"]["avg_price"] == 100.0
-    assert data["stats"]["latest_price"] == 100.0
-    assert len(data["history"]) == 4
+    stats = (await item_analytics(db, item, days=None, sigma=None))["stats"]
+
+    assert (stats["latest"], stats["min"], stats["max"]) == (90.0, 90.0, 120.0)
+    assert stats["avg"] == pytest.approx(103.33, abs=0.01)
+    assert stats["change_24h"] == pytest.approx(-25.0)
 
 
-@pytest.mark.asyncio
-async def test_get_analytics_outlier_filtering(db):
-    # Create item
-    item = models.Item(url="http://example.com/3", name="Test Item 3")
-    db.add(item)
+async def test_days_window_and_unknown_24h_change(db, item):
+    add_history(db, item, (24 * 40, 500.0, None), (2, 100.0, None))
     await db.commit()
 
-    # Create a stable history and one massive outlier
-    # Mean approx 100.
-    prices = [100.0] * 10
-    prices.append(1000.0)  # Massive outlier
+    data = await item_analytics(db, item, days=30, sigma=None)
 
-    now = datetime.now()
-    for i, p in enumerate(prices):
-        ts = now - timedelta(hours=len(prices) - i)
-        ph = models.PriceHistory(item_id=item.id, price=p, timestamp=ts)
-        db.add(ph)
+    assert [p["price"] for p in data["history"]] == [100.0]
+    assert data["stats"]["change_24h"] is None
 
+
+async def test_outliers_are_filtered_from_chart_but_not_stats(db, item):
+    add_history(db, item, *[(h, 100.0, True) for h in range(10, 20)], (5, 1000.0, True))
     await db.commit()
 
-    # Without filter
-    data = await AnalyticsService.get_analytics_data(db, item.id)
-    assert len(data["history"]) == 11
-    assert data["stats"]["max_price"] == 1000.0
+    data = await item_analytics(db, item, days=None, sigma=2)
 
-    # With filter (e.g. 2 std dev)
-    # Mean of [100*10, 1000] = 181.8
-    # Std Dev is huge.
-    # Let's use a simpler case. [100, 100, 100, 200]
-    # Mean = 125, StdDev = 50.
-    # 200 is 1.5 sigma from mean.
-    # If threshold is 1.0, 200 should be removed.
-    # Range: 125 +/- 50 = [75, 175]. 200 is outside.
-
-    # Using the massive outlier:
-    # Mean ~181. Stdev ~271.
-    # Range 2 sigma: 181 +/- 542 = [-361, 723].
-    # 1000 is outside 723. It should be filtered.
-
-    data_filtered = await AnalyticsService.get_analytics_data(db, item.id, std_dev_threshold=2.0)
-
-    # Outlier should be gone
-    assert len(data_filtered["history"]) == 10
-    for h in data_filtered["history"]:
-        assert h.price == 100.0
-
-    # Stats should still reflect the raw data per my implementation choice
-    assert data_filtered["stats"]["max_price"] == 1000.0
+    assert data["stats"]["max"] == 1000.0
+    assert max(p["price"] for p in data["history"]) == 100.0
 
 
-@pytest.mark.asyncio
-async def test_get_analytics_downsampling(db):
-    # Create item
-    item = models.Item(url="http://example.com/4", name="Test Item 4")
-    db.add(item)
+async def test_history_is_downsampled_to_real_readings(db, item):
+    prices = [100.0 + h % 7 for h in range(2000)]
+    prices[1234] = 500.0  # a one-off spike must survive thinning
+    add_history(db, item, *[(h / 4, prices[h], None) for h in range(2000)])
     await db.commit()
 
-    # Create 300 history points (linear increase)
-    # 0 to 299
-    points = 300
-    now = datetime.now()
-    start_time = now - timedelta(days=10)
-    # Time step = 10 days / 300 = 48 minutes roughly
-    step = timedelta(minutes=48)
+    history = (await item_analytics(db, item, days=None, sigma=None))["history"]
 
-    for i in range(points):
-        ph = models.PriceHistory(item_id=item.id, price=float(i), timestamp=start_time + (step * i))
-        db.add(ph)
+    assert len(history) <= 4 * (CHART_POINTS + 1)
+    assert history == sorted(history, key=lambda p: p["timestamp"])
+    assert {p["price"] for p in history} <= set(prices)  # nothing averaged into a price never seen
+    assert max(p["price"] for p in history) == 500.0
 
+
+async def test_annotations_mark_extremes_and_stock_changes(db, item):
+    add_history(db, item, (5, 100.0, True), (4, 80.0, False), (3, 120.0, None), (2, 110.0, True))
     await db.commit()
 
-    data = await AnalyticsService.get_analytics_data(db, item.id)
+    notes = (await item_analytics(db, item, days=None, sigma=None))["annotations"]
 
-    # Check that we downsampled
-    history_len = len(data["history"])
-    assert history_len <= 150
-    assert history_len > 0
-
-    # Stats should be on RAW data
-    assert data["stats"]["min_price"] == 0.0
-    assert data["stats"]["max_price"] == 299.0
-
-    # Check that aggregation worked somewhat correctly (middle point should be ~150)
-    # Since prices are 0..299, avg is ~150.
-    # Check that aggregation worked somewhat correctly (middle point should be ~150)
-    # Since prices are 0..299, avg is ~150.
-    assert 140 < data["stats"]["avg_price"] < 160
+    assert [(n["type"], n["price"]) for n in notes] == [
+        ("min", 80.0),
+        ("max", 120.0),
+        ("out_of_stock", 80.0),
+        ("restocked", 110.0),
+    ]
 
 
-@pytest.mark.asyncio
-async def test_get_analytics_annotations(db):
-    # Create item
-    item = models.Item(url="http://example.com/5", name="Test Item 5")
-    db.add(item)
+async def test_forecast_is_included(db, item):
+    db.add(PriceForecast(item_id=item.id, forecast_date=utcnow(), predicted_price=9, yhat_lower=8, yhat_upper=10))
     await db.commit()
 
-    # Create history with clear min and max
-    # 100, 50 (min), 150 (max), 100
-    prices = [100.0, 50.0, 150.0, 100.0]
-    now = datetime.now()
+    forecast = (await item_analytics(db, item, days=None, sigma=None))["forecast"]
 
-    for i, p in enumerate(prices):
-        ts = now - timedelta(hours=len(prices) - i)
-        ph = models.PriceHistory(item_id=item.id, price=p, timestamp=ts)
-        db.add(ph)
+    assert [(f["price"], f["lower"], f["upper"]) for f in forecast] == [(9, 8, 10)]
 
+
+async def deal_for(db, item, current, points):
+    """points: (days_ago, price, confidence)"""
+    now = utcnow()
+    db.add_all(
+        PriceHistory(item_id=item.id, timestamp=now - timedelta(days=d), price=p, price_confidence=c)
+        for d, p, c in points
+    )
+    item.current_price = current
     await db.commit()
-
-    data = await AnalyticsService.get_analytics_data(db, item.id)
-
-    annotations = data["annotations"]
-    assert len(annotations) == 2
-
-    # Sort by value to easily check min/max
-    annotations.sort(key=lambda x: x["value"])
-
-    # Min
-    assert annotations[0]["type"] == "min"
-    assert annotations[0]["value"] == 50.0
-    assert "Lowest" in annotations[0]["label"]
-
-    # Max
-    assert annotations[1]["type"] == "max"
-    assert "Highest" in annotations[1]["label"]
+    return (await deals(db, [item], threshold=0.5)).get(item.id)
 
 
-@pytest.mark.asyncio
-async def test_get_analytics_stock_history(db):
-    # Create item
-    item = models.Item(url="http://example.com/6", name="Test Item 6")
-    db.add(item)
+async def test_lowest_price_seen(db, item):
+    assert await deal_for(db, item, 90.0, [(30, 120.0, 0.9), (1, 90.0, 0.9)]) == "lowest_seen"
+
+
+async def test_lowest_in_90_days_needs_90_days_of_history(db, item):
+    points = [(200, 50.0, 0.9), (60, 120.0, 0.9), (1, 90.0, 0.9)]
+    assert await deal_for(db, item, 90.0, points) == "lowest_90d"
+
+
+@pytest.mark.parametrize(
+    "points",
+    [
+        [(60, 90.0, 0.9), (1, 90.0, 0.9)],  # never higher: not a deal
+        [(5, 120.0, 0.9), (1, 90.0, 0.9)],  # too little history to call it a record
+        [(30, 120.0, 0.9), (20, 10.0, 0.2), (1, 90.0, 0.9)],  # a misread doesn't count, so this is a record
+    ],
+)
+async def test_deal_edge_cases(db, item, points):
+    expected = "lowest_seen" if points[1][2] == 0.2 else None
+    assert await deal_for(db, item, 90.0, points) == expected
+
+
+async def test_previous_low_ignores_misreads_and_short_histories(db, item):
+    now = utcnow()
+    db.add_all(
+        [
+            PriceHistory(item_id=item.id, timestamp=now - timedelta(days=3), price=100.0, price_confidence=0.9),
+            PriceHistory(item_id=item.id, timestamp=now - timedelta(days=2), price=5.0, price_confidence=0.1),
+        ]
+    )
     await db.commit()
+    assert await previous_low(db, item.id, 0.5) is None  # only 3 days tracked
 
-    # Create mixed stock history
-    # 0: In Stock
-    # 1: Out of Stock
-    # 2: In Stock
-    stock_statuses = [True, False, True, True]
-    now = datetime.now()
-
-    for i, stock in enumerate(stock_statuses):
-        ph = models.PriceHistory(
-            item_id=item.id,
-            price=100.0,
-            timestamp=now - timedelta(hours=len(stock_statuses) - i),
-            in_stock=stock,
-        )
-        db.add(ph)
-
+    db.add(PriceHistory(item_id=item.id, timestamp=now - timedelta(days=20), price=110.0, price_confidence=0.9))
     await db.commit()
-
-    data = await AnalyticsService.get_analytics_data(db, item.id)
-
-    # Check if history contains correct stock status
-    history = data["history"]
-    assert len(history) == 4
-
-    # We expect stock status to be preserved in raw history
-    # Order is chronological
-    assert history[0].in_stock is True
-    assert history[1].in_stock is False
-    assert history[2].in_stock is True
-    assert history[3].in_stock is True
-
-
-@pytest.mark.asyncio
-async def test_get_analytics_stock_history_aggregation(db):
-    # Test that aggregation preserves "max" (optimistic) stock status
-    item = models.Item(url="http://example.com/7", name="Test Item 7")
-    db.add(item)
-    await db.commit()
-
-    # Create many points in a short time frame so they get aggregated
-    # But since downsampling triggers at > 150 points, we need > 150 points.
-    points = 200
-    now = datetime.now()
-    step = timedelta(minutes=1)
-
-    # All prices uniform, but stock toggles
-    # If using MAX, a bucket with Mixed stock should result in True
-    for i in range(points):
-        # Every 10th item is in stock, others out
-        in_stock = (i % 10) == 0
-        ph = models.PriceHistory(
-            item_id=item.id, price=10.0, timestamp=now - (step * points) + (step * i), in_stock=in_stock
-        )
-        db.add(ph)
-
-    await db.commit()
-
-    data = await AnalyticsService.get_analytics_data(db, item.id)
-    history = data["history"]
-
-    # Should be downsampled
-    assert len(history) <= 155
-
-    # Check that we have True values (since MAX(true, false) = true)
-    # Since we have Trues regularly distributed, most buckets should have at least one True.
-    # Actually, with 200 points to 150 buckets, bucket size is small (~1.3 items/bucket).
-    # Some buckets might only have 'False' items.
-
-    has_true = any(h.in_stock for h in history)
-    assert has_true
+    assert await previous_low(db, item.id, 0.5) == 100.0

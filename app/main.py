@@ -1,150 +1,110 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
+from starlette.exceptions import HTTPException
 
-from app import database
-from app.limiter import limiter
-from app.routers import items, jobs, notifications, settings
-from app.services.scheduler_service import scheduled_forecasting, scheduled_refresh, scheduler
-from app.services.scraper_service import ScraperService
-from app.services.settings_service import SettingsService
+from app import checks, scraper
+from app.api import router
 
-# Configure logging
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+STATIC_DIR = Path(os.getenv("STATIC_DIR", "static"))
 
 
-def _cors_origins() -> set[str]:
-    origins = {origin.strip().rstrip("/") for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()}
+def trusted_origins() -> set[str]:
+    origins = {o.strip().rstrip("/") for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()}
     if "*" in origins:
-        logger.warning("Ignoring wildcard CORS_ORIGINS; list trusted origins explicitly")
-        origins.remove("*")
+        logger.warning("Ignoring wildcard in CORS_ORIGINS; list trusted origins explicitly")
+        origins.discard("*")
     return origins
 
 
-def _request_origin(request: Request) -> str:
-    scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",", 1)[0].strip()
-    host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc))
-    return f"{scheme}://{host.split(',', 1)[0].strip()}".rstrip("/")
+TRUSTED_ORIGINS = trusted_origins()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_: FastAPI):
+    await checks.release_all_claims()
     try:
-        logger.info("Starting smart scheduler (Heartbeat: 1 minute)")
-
-        # Initialize services
-        await ScraperService.initialize()
-
-        # Schedule forecasting dynamically
-        async with database.AsyncSessionLocal() as db:
-            forecast_hours = int(await SettingsService.get_setting_value(db, "forecasting_interval_hours", "24"))
-
-        scheduler.add_job(
-            scheduled_forecasting, IntervalTrigger(hours=forecast_hours), id="forecasting_job", replace_existing=True
-        )
-
-        # Heartbeat runs every minute to check for items due for refresh
-        # The actual refresh frequency per item is controlled by item/global settings
-        scheduler.add_job(scheduled_refresh, IntervalTrigger(minutes=1), id="refresh_job", replace_existing=True)
-
-        scheduler.start()
-        logger.info("Application started")
-        yield
-    except Exception:
-        logger.exception("Application startup failed")
-        raise
-    finally:
-        logger.info("Shutting down...")
-        try:
-            scheduler.shutdown(wait=True)
-        except Exception:
-            pass  # Scheduler might not be running
-        await ScraperService.shutdown()
-        logger.info("Application shutdown complete")
+        await scraper.start()
+    except scraper.ScrapeError as exc:
+        logger.warning(f"{exc}. Will retry on the first check.")
+    checks.spawn(checks.run_scheduler())
+    yield
+    await checks.shutdown()
+    await scraper.stop()
 
 
-app = FastAPI(title="Pricecious API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Pricecious", lifespan=lifespan)
 
-# Rate Limiting & CORS
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
-if cors_origins := _cors_origins():
+if TRUSTED_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=list(cors_origins),
+        allow_origins=list(TRUSTED_ORIGINS),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
 
+def _own_origin(request: Request) -> str:
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc))
+    return f"{scheme}://{host.split(',')[0].strip()}"
+
+
 @app.middleware("http")
-async def reject_cross_origin_mutations(request: Request, call_next):
-    """Block drive-by browser writes while allowing trusted non-browser clients."""
-    is_api = request.url.path == "/api" or request.url.path.startswith("/api/")
-    if is_api and request.method not in SAFE_METHODS:
+async def reject_cross_origin_writes(request: Request, call_next):
+    """There is no login, so stop other websites from making a visitor's browser change anything."""
+    if request.url.path.startswith("/api/") and request.method not in {"GET", "HEAD", "OPTIONS"}:
         origin = request.headers.get("origin", "").rstrip("/")
-        allowed = _cors_origins() | {_request_origin(request)}
-        if (origin and origin not in allowed) or (not origin and request.headers.get("sec-fetch-site") == "cross-site"):
-            return JSONResponse(status_code=403, content={"detail": "Cross-origin API mutations are not allowed"})
+        if origin:
+            allowed = origin in TRUSTED_ORIGINS or origin == _own_origin(request)
+        else:
+            allowed = request.headers.get("sec-fetch-site") != "cross-site"
+        if not allowed:
+            return JSONResponse({"detail": "Cross-origin requests are not allowed"}, status_code=403)
     return await call_next(request)
 
 
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    logger.debug(f"Request: {request.method} {request.url}")
-    response = await call_next(request)
-    logger.debug(f"Response: {response.status_code}")
-    return response
-
-
-# Static Files
-if os.path.exists("static"):
-    app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
-os.makedirs("screenshots", exist_ok=True)
-app.mount("/screenshots", StaticFiles(directory="screenshots"), name="screenshots")
-
-# Routers
-for router in [notifications.router, items.router, settings.router, jobs.router]:
-    app.include_router(router, prefix="/api")
-
-
 @app.get("/health")
-def health_check():
-    """Lightweight health check endpoint for monitoring/Docker (no DB access)"""
-    return {"status": "healthy"}
+def health() -> dict:
+    return {"status": "ok"}
 
 
-@app.get("/api/")
-def read_root():
-    return {"message": "Welcome to Pricecious API"}
+app.include_router(router)
 
 
-# Frontend Serving
-@app.get("/{full_path:path}")
-async def serve_spa(full_path: str):
-    if full_path.startswith(("api", "screenshots", "assets")):
-        return {"message": "Not found"}
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE"], include_in_schema=False)
+def api_not_found(path: str):
+    raise HTTPException(404, "Not found")
 
-    # Serve static files from root (favicon, logo, etc.)
-    static_file_path = f"static/{full_path}"
-    if os.path.isfile(static_file_path):
-        return FileResponse(static_file_path)
 
-    # Default to SPA index.html
-    if os.path.exists("static/index.html"):
-        return FileResponse("static/index.html")
-    return {"message": "Frontend not built or not found"}
+checks.SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/screenshots", StaticFiles(directory=checks.SCREENSHOT_DIR), name="screenshots")
+
+
+class SPAStaticFiles(StaticFiles):
+    """Serve the built frontend, falling back to index.html for client-side routes."""
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            return await super().get_response("index.html", scope)
+
+
+if STATIC_DIR.is_dir():
+    app.mount("/", SPAStaticFiles(directory=STATIC_DIR, html=True), name="frontend")

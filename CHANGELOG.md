@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Change detection:** checks skip the AI while a page's prices and stock wording match the last AI check (at least
+  one real AI check a day; "Check now" always uses it). On by default; Settings shows how many checks it saved.
+- **Currencies:** each item keeps its currency, detected from the page on the first check (or the site's domain) and
+  editable. Prices, charts and notifications use it instead of always showing `$`.
+- **Test AI settings:** run the settings form, saved or not, on one of your items and see the model's answer.
+- **Faster adding:** a bookmarklet adds the page you're on, and items added without a name take the page title.
+- **Deals:** "Lowest price seen" and "Lowest in 90 days" badges, and an optional "new lowest price" notification
+  that replaces the price-drop message when both apply. Misreads never count as a record.
+- **Filters:** "Needs attention" and "Deals" views on the Items page.
+- **History filters:** filter an item's readings by price range, stock (including unknown) and confidence, including
+  "low", meaning below your minimum confidence, so those readings never changed the price.
+- **Check all cooldown:** "Check all" skips items checked in the last 5 minutes and says how many it skipped.
+- **README screenshots** of the current UI in light and dark.
+
+### Changed
+- **Charts:** thinning long histories keeps each period's real first, last, lowest and highest readings instead of
+  averaging them, which drew prices that never existed.
+- **Rewrite:** Backend reorganized into a few flat modules and the frontend rebuilt with fewer dependencies (no Radix,
+  axios, date-fns or APScheduler, slowapi, tenacity, cachetools).
+- **UI:** Analytics and History merged into a page per item. Tag comparison moved to Compare. Settings are saved with
+  one explicit Save instead of on every keystroke.
+- **AI:** An item's custom prompt now adds instructions to the built-in prompt instead of replacing it.
+- **Docker:** Images install the exact locked dependency versions.
+
+### Fixed
+- Temperature and confidence sliders in Settings did nothing.
+- Editing the masked API key saved the mask plus whatever was typed.
+- Choosing a non-Ollama provider kept sending requests to the Ollama base URL.
+- The target-price alert repeated on every check while the price stayed below target.
+- Manual and "check all" runs ignored the concurrency limit, and the scheduler skipped beats during long runs.
+- Items stayed stuck "refreshing" for an hour after a restart.
+- The price history index was dropped by an earlier migration, slowing charts and history.
+- Paused items could not be resumed from the UI.
+- Unknown stock was shown as "Out of stock" in history.
+- `SCREENSHOT_DIR` was not the directory the UI served screenshots from.
+- The app failed to start when Browserless was not reachable yet.
+- Failed test notifications were reported as sent.
+- Check failures now say why (bot check, load error, AI error) instead of a generic message.
+- European prices such as `1.234,56` are parsed correctly.
+
 ## [0.2.3] - 2026-03-01
 
 ### Added
