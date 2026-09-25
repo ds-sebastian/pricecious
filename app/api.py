@@ -1,3 +1,5 @@
+import asyncio
+import time
 from datetime import timedelta
 from typing import Annotated, Any
 
@@ -8,11 +10,13 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import analytics, checks, forecast, notify
+from app import ai, analytics, checks, forecast, notify, scraper
 from app import settings as app_settings
 from app.database import Base, get_db, utcnow
 from app.models import Item, NotificationProfile, PriceForecast, PriceHistory
 from app.schemas import (
+    AITest,
+    AITestResult,
     Analytics,
     HistoryPage,
     HistoryQuery,
@@ -36,15 +40,23 @@ async def _get[T: Base](db: AsyncSession, model: type[T], object_id: int) -> T:
     return obj
 
 
-def _item_out(item: Item, default_interval: int) -> ItemOut:
+async def _items_out(db: AsyncSession, items: list[Item]) -> list[ItemOut]:
+    settings = await app_settings.load(db)
+    deals = await analytics.deals(db, items, settings.confidence_threshold_price)
+    return [_item_out(item, settings.refresh_interval_minutes, deals.get(item.id)) for item in items]
+
+
+def _item_out(item: Item, default_interval: int, deal: str | None) -> ItemOut:
     interval = checks.interval_minutes(item, default_interval)
     screenshot = checks.screenshot_file(item.id)
     version = int(item.last_checked.timestamp()) if item.last_checked else 0
+    columns = {column.key: getattr(item, column.key) for column in Item.__table__.columns}
     return ItemOut(
-        **{column.key: getattr(item, column.key) for column in Item.__table__.columns},
+        **columns | {"currency": item.currency or ai.infer_currency(item.url)},
         interval=interval,
         next_check=item.last_checked + timedelta(minutes=interval) if item.last_checked else None,
         screenshot_url=f"/screenshots/{screenshot.name}?v={version}" if screenshot.exists() else None,
+        deal=deal,
     )
 
 
@@ -63,9 +75,7 @@ async def _validate_item(db: AsyncSession, data: ItemIn, current_url: str | None
 
 @router.get("/items")
 async def list_items(db: DB) -> list[ItemOut]:
-    settings = await app_settings.load(db)
-    items = (await db.scalars(select(Item).order_by(Item.id))).all()
-    return [_item_out(item, settings.refresh_interval_minutes) for item in items]
+    return await _items_out(db, list(await db.scalars(select(Item).order_by(Item.id))))
 
 
 @router.post("/items", status_code=201)
@@ -75,7 +85,7 @@ async def create_item(data: ItemIn, db: DB) -> ItemOut:
     db.add(item)
     await db.commit()
     item = await _get(db, Item, item.id)
-    return _item_out(item, (await app_settings.load(db)).refresh_interval_minutes)
+    return (await _items_out(db, [item]))[0]
 
 
 @router.put("/items/{item_id}")
@@ -90,7 +100,7 @@ async def update_item(item_id: int, data: ItemIn, db: DB) -> ItemOut:
         setattr(item, key, value)
     await db.commit()
     item = await _get(db, Item, item_id)
-    return _item_out(item, (await app_settings.load(db)).refresh_interval_minutes)
+    return (await _items_out(db, [item]))[0]
 
 
 @router.delete("/items/{item_id}", status_code=204)
@@ -210,6 +220,54 @@ async def update_settings(changes: dict[str, Any], db: DB) -> dict[str, Any]:
     except ValidationError as exc:
         raise RequestValidationError(exc.errors()) from None
     return app_settings.public(saved)
+
+
+@router.post("/settings/test-ai")
+async def test_ai(data: AITest, db: DB) -> AITestResult:
+    """Run one extraction for an item with the given (possibly unsaved) settings, as a real check would."""
+    item = await _get(db, Item, data.item_id)
+    try:
+        settings = app_settings.merge(await app_settings.load(db), data.settings)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from None
+
+    # The saved screenshot is enough unless the model should also get the page text, which isn't kept.
+    screenshot_path = checks.screenshot_file(item.id)
+    page_text = None
+    if screenshot_path.exists() and not settings.text_context_enabled:
+        screenshot = await asyncio.to_thread(screenshot_path.read_bytes)
+    else:
+        try:
+            capture = await scraper.capture(
+                item.url,
+                selector=item.selector,
+                scroll_pixels=settings.smart_scroll_pixels if settings.smart_scroll_enabled else 0,
+                timeout_ms=settings.scraper_timeout,
+            )
+        except scraper.ScrapeError as exc:
+            raise HTTPException(502, f"Couldn't load the page: {exc}") from None
+        screenshot = capture.screenshot
+        if settings.text_context_enabled:
+            page_text = capture.text[: settings.text_context_length]
+
+    started = time.monotonic()
+    try:
+        reply = await ai.ask(
+            screenshot,
+            settings,
+            url=item.url,
+            page_text=page_text,
+            custom_prompt=item.custom_prompt,
+            last_price=item.current_price,
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"The model call failed: {checks.describe(exc)}") from None
+    seconds = round(time.monotonic() - started, 1)
+    try:
+        extraction = ai.parse_response(reply).model_dump()
+    except ai.ExtractionError as exc:
+        return AITestResult(seconds=seconds, reply=reply, extraction=None, error=str(exc))
+    return AITestResult(seconds=seconds, reply=reply, extraction=extraction, error=None)
 
 
 @router.post("/forecasts/refresh")

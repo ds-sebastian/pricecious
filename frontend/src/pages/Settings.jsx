@@ -1,7 +1,7 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bell, Pencil, Plus, Send, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { api, useAction, useProfiles, useSettings } from "@/api";
+import { api, useAction, useItems, useProfiles, useSettings } from "@/api";
 import {
 	Badge,
 	Button,
@@ -14,6 +14,7 @@ import {
 	Spinner,
 	Switch,
 } from "@/components/ui";
+import { formatPrice, itemName } from "@/format";
 
 const SECRET_MASK = "********";
 const PROVIDERS = {
@@ -192,6 +193,7 @@ function SettingsForm({ saved }) {
 						)}
 					</div>
 				</details>
+				<AITest changes={changes} pageText={form.text_context_enabled} />
 			</Card>
 
 			<Card title="Checks">
@@ -307,6 +309,107 @@ function SettingsForm({ saved }) {
 	);
 }
 
+function AITest({ changes, pageText }) {
+	const { data: items = [] } = useItems();
+	const [itemId, setItemId] = useState("");
+	const item =
+		items.find((i) => String(i.id) === itemId) ??
+		items.find((i) => i.screenshot_url) ??
+		items[0];
+	const test = useMutation({
+		mutationFn: () =>
+			api.post("/settings/test-ai", { item_id: item.id, settings: changes }),
+	});
+	const unsaved = Object.keys(changes).length > 0;
+	const result = test.data;
+	const found = result?.extraction;
+
+	return (
+		<div className="grid gap-3 border-t border-border p-4">
+			{items.length === 0 ? (
+				<p className="text-sm text-muted">
+					Add an item to test these settings on a real page.
+				</p>
+			) : (
+				<>
+					<div className="flex flex-wrap items-end gap-2">
+						<Field label="Test on" className="min-w-48 flex-1">
+							<Select
+								value={item.id}
+								onChange={(event) => {
+									setItemId(event.target.value);
+									test.reset();
+								}}
+							>
+								{items.map((i) => (
+									<option key={i.id} value={i.id}>
+										{itemName(i)}
+									</option>
+								))}
+							</Select>
+						</Field>
+						<Button busy={test.isPending} onClick={() => test.mutate()}>
+							Test
+						</Button>
+					</div>
+					<p className="text-xs text-muted">
+						Sends{" "}
+						{item.screenshot_url && !pageText
+							? "the item's latest screenshot"
+							: "a fresh capture of the page"}{" "}
+						to the model{unsaved ? " using your unsaved changes" : ""}. Nothing
+						is saved.
+					</p>
+				</>
+			)}
+			{test.error && <ResultBox tone="red">{test.error.message}</ResultBox>}
+			{result && (
+				<ResultBox tone={found?.price != null ? "green" : "amber"}>
+					<p>
+						{found ? summarize(found, item.currency) : result.error} Took{" "}
+						{result.seconds} s.
+					</p>
+					<details className="mt-2">
+						<summary className="cursor-pointer text-xs">Model reply</summary>
+						<pre className="mt-1 text-xs whitespace-pre-wrap break-all">
+							{result.reply}
+						</pre>
+					</details>
+				</ResultBox>
+			)}
+		</div>
+	);
+}
+
+function summarize(found, currency) {
+	const sure = (confidence) => `${Math.round(confidence * 100)}% sure`;
+	const price =
+		found.price == null
+			? "found no price"
+			: `read ${formatPrice(found.price, found.currency ?? currency)} (${sure(found.price_confidence)})`;
+	const stock =
+		found.in_stock == null
+			? "stock unknown"
+			: `${found.in_stock ? "in stock" : "out of stock"} (${sure(found.in_stock_confidence)})`;
+	return `The model ${price}; ${stock}.`;
+}
+
+const RESULT_TONES = {
+	green:
+		"border-emerald-300 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10",
+	amber:
+		"border-amber-300 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
+	red: "border-red-300 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
+};
+
+function ResultBox({ tone, children }) {
+	return (
+		<div className={`rounded-md border p-3 text-sm ${RESULT_TONES[tone]}`}>
+			{children}
+		</div>
+	);
+}
+
 function NotificationProfiles() {
 	const { data: profiles } = useProfiles();
 	const [editing, setEditing] = useState(null); // a profile, "new", or null
@@ -375,6 +478,7 @@ function NotificationProfiles() {
 									{profile.notify_on_target_price && (
 										<Badge>Target price</Badge>
 									)}
+									{profile.notify_on_new_low && <Badge>New lows</Badge>}
 									{profile.notify_on_stock_change && (
 										<Badge>Stock changes</Badge>
 									)}
@@ -452,6 +556,7 @@ const NEW_PROFILE = {
 	price_drop_threshold_percent: 10,
 	notify_on_target_price: true,
 	notify_on_stock_change: true,
+	notify_on_new_low: true,
 	check_interval_minutes: 60,
 };
 
@@ -537,6 +642,11 @@ function ProfileForm({ profile, onDone }) {
 					label="Target price reached"
 					hint="When an item first drops to its target price."
 					{...toggle("notify_on_target_price")}
+				/>
+				<Switch
+					label="New lowest price"
+					hint="When an item drops below every price seen, after two weeks of tracking."
+					{...toggle("notify_on_new_low")}
 				/>
 				<Switch label="Stock changes" {...toggle("notify_on_stock_change")} />
 			</div>

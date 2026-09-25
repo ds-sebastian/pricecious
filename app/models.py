@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, Text
+from sqlalchemy import ForeignKey, Index, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, utcnow
@@ -16,6 +16,7 @@ class NotificationProfile(Base):
     notify_on_target_price: Mapped[bool] = mapped_column(default=True)
     price_drop_threshold_percent: Mapped[float] = mapped_column(default=10.0)
     notify_on_stock_change: Mapped[bool] = mapped_column(default=True)
+    notify_on_new_low: Mapped[bool] = mapped_column(default=True, server_default=false())
     check_interval_minutes: Mapped[int] = mapped_column(default=60)
 
 
@@ -24,7 +25,8 @@ class Item(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     url: Mapped[str] = mapped_column(index=True)
-    name: Mapped[str]
+    name: Mapped[str | None]  # None until the first check names it after the page title
+    currency: Mapped[str | None] = mapped_column(String(3))  # ISO 4217; detected on the first check if not set
     selector: Mapped[str | None]
     target_price: Mapped[float | None]
     check_interval_minutes: Mapped[int | None]

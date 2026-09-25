@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     AfterValidator,
@@ -18,11 +18,17 @@ from app.notify import mask
 UTCDateTime = Annotated[datetime, AfterValidator(lambda v: v if v.tzinfo else v.replace(tzinfo=UTC))]
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 OptionalText = Annotated[str | None, BeforeValidator(lambda v: (v.strip() or None) if isinstance(v, str) else v)]
+Currency = Annotated[
+    str | None,
+    BeforeValidator(lambda v: (v.strip().upper() or None) if isinstance(v, str) else v),
+    Field(pattern=r"^[A-Z]{3}$"),
+]
 
 
 class ItemIn(BaseModel):
     url: Text
-    name: Text
+    name: OptionalText = None  # named after the page title on the first check
+    currency: Currency = None  # detected on the first check
     selector: OptionalText = None
     target_price: float | None = Field(None, ge=0)
     check_interval_minutes: int | None = Field(None, ge=5)
@@ -44,7 +50,8 @@ class ItemIn(BaseModel):
 class ItemOut(BaseModel):
     id: int
     url: str
-    name: str
+    name: str | None
+    currency: str
     selector: str | None
     target_price: float | None
     check_interval_minutes: int | None
@@ -65,6 +72,7 @@ class ItemOut(BaseModel):
     interval: int
     next_check: UTCDateTime | None
     screenshot_url: str | None
+    deal: Literal["lowest_seen", "lowest_90d"] | None
 
 
 class HistoryOut(BaseModel):
@@ -144,6 +152,7 @@ class ProfileIn(BaseModel):
     notify_on_target_price: bool = True
     price_drop_threshold_percent: float = Field(10.0, gt=0, le=100)
     notify_on_stock_change: bool = True
+    notify_on_new_low: bool = True
     check_interval_minutes: int = Field(60, ge=5)
 
 
@@ -157,6 +166,7 @@ class ProfileOut(BaseModel):
     notify_on_target_price: bool
     price_drop_threshold_percent: float
     notify_on_stock_change: bool
+    notify_on_new_low: bool
     check_interval_minutes: int
 
     @field_serializer("apprise_url")
@@ -166,3 +176,15 @@ class ProfileOut(BaseModel):
 
 class NotificationTest(BaseModel):
     apprise_url: Text
+
+
+class AITest(BaseModel):
+    item_id: int
+    settings: dict[str, Any] = {}  # unsaved changes from the settings form
+
+
+class AITestResult(BaseModel):
+    seconds: float
+    reply: str
+    extraction: dict[str, Any] | None
+    error: str | None

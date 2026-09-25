@@ -62,15 +62,23 @@ async def load(db: AsyncSession) -> AppSettings:
     return _parse(dict(rows.tuples().all()))
 
 
+def merge(current: AppSettings, changes: dict[str, Any]) -> AppSettings:
+    """Apply a partial update without saving it. Raises ValidationError on bad input."""
+    return AppSettings.model_validate(current.model_dump() | _unmasked(changes))
+
+
 async def save(db: AsyncSession, changes: dict[str, Any]) -> AppSettings:
     """Validate and persist a partial update. Raises ValidationError on bad input."""
-    current = await load(db)
-    changes = {k: v for k, v in changes.items() if not (k in SECRET_KEYS and v == SECRET_MASK)}
-    updated = AppSettings.model_validate(current.model_dump() | changes)
-    for key in changes.keys() & AppSettings.model_fields.keys():
+    updated = merge(await load(db), changes)
+    for key in _unmasked(changes).keys() & AppSettings.model_fields.keys():
         await db.merge(Setting(key=key, value=_serialize(getattr(updated, key))))
     await db.commit()
     return updated
+
+
+def _unmasked(changes: dict[str, Any]) -> dict[str, Any]:
+    """Drop secrets sent back as the mask: the client never saw them, so they're unchanged."""
+    return {k: v for k, v in changes.items() if not (k in SECRET_KEYS and v == SECRET_MASK)}
 
 
 def public(settings: AppSettings) -> dict[str, Any]:

@@ -5,14 +5,17 @@ import {
 	Pencil,
 	RefreshCw,
 	Trash2,
+	TrendingDown,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api, useAction } from "@/api";
 import { Badge, Button, Spinner, StockBadge } from "@/components/ui";
 import {
+	DEAL_LABELS,
 	formatDateTime,
 	formatPrice,
 	hostname,
+	itemName,
 	relativeTime,
 	splitTags,
 	WARNING_TYPES,
@@ -35,6 +38,15 @@ export function ItemStatus({ item, className }) {
 			<AlertTriangle className="mt-px size-3.5 shrink-0" />
 			<span className="line-clamp-2">{item.last_error}</span>
 		</p>
+	);
+}
+
+export function DealBadge({ deal, className }) {
+	return (
+		<Badge tone="green" className={className}>
+			<TrendingDown className="size-3" />
+			{DEAL_LABELS[deal]}
+		</Badge>
 	);
 }
 
@@ -88,7 +100,7 @@ export function ItemCard({ item, onEdit, onDelete, onViewScreenshot }) {
 				type="button"
 				onClick={() => onViewScreenshot(item)}
 				disabled={!item.screenshot_url}
-				aria-label={`View screenshot of ${item.name}`}
+				aria-label={`View screenshot of ${itemName(item)}`}
 				className="relative flex aspect-[16/10] items-center justify-center overflow-hidden border-b border-border bg-subtle enabled:cursor-zoom-in"
 			>
 				{item.screenshot_url ? (
@@ -117,9 +129,9 @@ export function ItemCard({ item, onEdit, onDelete, onViewScreenshot }) {
 					<Link
 						to={`/items/${item.id}`}
 						className="line-clamp-2 font-medium hover:underline"
-						title={item.name}
+						title={itemName(item)}
 					>
-						{item.name}
+						{itemName(item)}
 					</Link>
 					<a
 						href={item.url}
@@ -140,11 +152,11 @@ export function ItemCard({ item, onEdit, onDelete, onViewScreenshot }) {
 								targetMet && "text-emerald-600 dark:text-emerald-400",
 							)}
 						>
-							{formatPrice(item.current_price)}
+							{formatPrice(item.current_price, item.currency)}
 						</div>
 						{item.target_price != null && (
 							<div className="text-xs text-muted">
-								Target {formatPrice(item.target_price)}
+								Target {formatPrice(item.target_price, item.currency)}
 								{targetMet && " · reached"}
 							</div>
 						)}
@@ -152,6 +164,7 @@ export function ItemCard({ item, onEdit, onDelete, onViewScreenshot }) {
 					<StockBadge inStock={item.in_stock} />
 				</div>
 
+				{item.deal && <DealBadge deal={item.deal} className="self-start" />}
 				<ItemStatus item={item} />
 
 				{tags.length > 0 && (

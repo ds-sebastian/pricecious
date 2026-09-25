@@ -35,6 +35,8 @@ def test_extraction_normalizes_model_output():
     assert extraction.price_confidence == 1.0
     assert extraction.in_stock_confidence == 0.0
     assert Extraction(in_stock="maybe").in_stock is None
+    assert Extraction(currency=" eur ").currency == "EUR"
+    assert Extraction(currency="€").currency is None
 
 
 @pytest.mark.parametrize(

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Currencies:** each item keeps its currency, detected from the page on the first check (or the site's domain) and
+  editable. Prices, charts and notifications use it instead of always showing `$`.
+- **Test AI settings:** run the settings form, saved or not, on one of your items and see the model's answer.
+- **Faster adding:** a bookmarklet adds the page you're on, and items added without a name take the page title.
+- **Deals:** "Lowest price seen" and "Lowest in 90 days" badges, and an optional "new lowest price" notification
+  that replaces the price-drop message when both apply. Misreads never count as a record.
+- **Filters:** "Needs attention" and "Deals" views on the Items page.
 - **History filters:** filter an item's readings by price range, stock (including unknown) and confidence, including
   "low", meaning below your minimum confidence, so those readings never changed the price.
 - **Check all cooldown:** "Check all" skips items checked in the last 5 minutes and says how many it skipped.

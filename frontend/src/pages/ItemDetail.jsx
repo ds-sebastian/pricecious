@@ -7,6 +7,7 @@ import { analyticsQuery, api, useAction, useItems, useSettings } from "@/api";
 import {
 	CheckButton,
 	checkedLabel,
+	DealBadge,
 	ItemStatus,
 	scheduleTitle,
 } from "@/components/ItemCard";
@@ -38,6 +39,7 @@ import {
 	formatPercent,
 	formatPrice,
 	hostname,
+	itemName,
 	splitTags,
 } from "@/format";
 
@@ -106,7 +108,7 @@ export default function ItemDetail() {
 						</button>
 					)}
 					<div className="min-w-64 flex-1">
-						<h1 className="text-2xl font-semibold">{item.name}</h1>
+						<h1 className="text-2xl font-semibold">{itemName(item)}</h1>
 						<div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
 							<a
 								href={item.url}
@@ -127,17 +129,18 @@ export default function ItemDetail() {
 					<div className="flex items-center gap-3">
 						<div className="sm:text-right">
 							<div className="text-3xl font-semibold tabular-nums">
-								{formatPrice(item.current_price)}
+								{formatPrice(item.current_price, item.currency)}
 							</div>
 							{item.target_price != null && (
 								<div className="text-xs text-muted">
-									Target {formatPrice(item.target_price)}
+									Target {formatPrice(item.target_price, item.currency)}
 								</div>
 							)}
 						</div>
 						<StockBadge inStock={item.in_stock} />
 					</div>
 				</div>
+				{item.deal && <DealBadge deal={item.deal} className="mt-3" />}
 				<div className="mt-4 flex gap-1">
 					<CheckButton item={item} />
 					<Button
@@ -161,8 +164,8 @@ export default function ItemDetail() {
 				</div>
 			</div>
 
-			<PriceHistory itemId={id} />
-			<HistoryTable itemId={id} />
+			<PriceHistory itemId={id} currency={item.currency} />
+			<HistoryTable itemId={id} currency={item.currency} />
 
 			<ItemFormDialog
 				open={editing}
@@ -176,7 +179,7 @@ export default function ItemDetail() {
 				onConfirm={() => remove.mutate()}
 				busy={remove.isPending}
 			>
-				“{item.name}” and its price history will be removed.
+				“{itemName(item)}” and its price history will be removed.
 			</ConfirmDialog>
 			<ScreenshotDialog
 				item={viewing ? item : null}
@@ -186,7 +189,7 @@ export default function ItemDetail() {
 	);
 }
 
-function PriceHistory({ itemId }) {
+function PriceHistory({ itemId, currency }) {
 	const [days, setDays] = useState(30);
 	const [hideOutliers, setHideOutliers] = useState(false);
 	const [showForecast, setShowForecast] = useState(true);
@@ -202,7 +205,9 @@ function PriceHistory({ itemId }) {
 	}));
 	const forecast = showForecast && history.length ? (data?.forecast ?? []) : [];
 	const chartData = [...history];
-	const series = [{ key: "price", name: "Price", color: SERIES_COLORS[0] }];
+	const series = [
+		{ key: "price", name: "Price", color: SERIES_COLORS[0], currency },
+	];
 	if (forecast.length) {
 		// Start the forecast line at the last real price so the two connect.
 		chartData.at(-1).forecast = history.at(-1).price;
@@ -218,6 +223,7 @@ function PriceHistory({ itemId }) {
 			name: "Forecast",
 			color: FORECAST_COLOR,
 			dashed: true,
+			currency,
 		});
 	}
 	const stats = data?.stats;
@@ -258,6 +264,7 @@ function PriceHistory({ itemId }) {
 					<PriceChart
 						data={chartData}
 						series={series}
+						currency={currency}
 						outOfStock={outOfStockRanges(history)}
 						markers={data.annotations
 							.filter((a) => a.type === "min" || a.type === "max")
@@ -270,7 +277,7 @@ function PriceHistory({ itemId }) {
 				<dl className="grid grid-cols-2 gap-px border-t border-border bg-border sm:grid-cols-5">
 					<Stat
 						label="Current"
-						value={formatPrice(stats.latest)}
+						value={formatPrice(stats.latest, currency)}
 						className="max-sm:col-span-2"
 					/>
 					<Stat
@@ -283,9 +290,9 @@ function PriceHistory({ itemId }) {
 							stats.change_24h > 0 && "text-red-600 dark:text-red-400",
 						)}
 					/>
-					<Stat label="Lowest" value={formatPrice(stats.min)} />
-					<Stat label="Highest" value={formatPrice(stats.max)} />
-					<Stat label="Average" value={formatPrice(stats.avg)} />
+					<Stat label="Lowest" value={formatPrice(stats.min, currency)} />
+					<Stat label="Highest" value={formatPrice(stats.max, currency)} />
+					<Stat label="Average" value={formatPrice(stats.avg, currency)} />
 				</dl>
 			)}
 			<div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-border p-4">
@@ -341,7 +348,7 @@ function historyParams(page, filters, threshold) {
 	return params;
 }
 
-function HistoryTable({ itemId }) {
+function HistoryTable({ itemId, currency }) {
 	const [page, setPage] = useState(1);
 	const [filters, setFilters] = useState(NO_FILTERS);
 	const [editing, setEditing] = useState(null);
@@ -470,7 +477,7 @@ function HistoryTable({ itemId }) {
 									{formatDateTime(record.timestamp)}
 								</td>
 								<td className="px-4 py-2 text-right tabular-nums">
-									{formatPrice(record.price)}
+									{formatPrice(record.price, currency)}
 								</td>
 								<td className="px-4 py-2">
 									<StockBadge inStock={record.in_stock} />
@@ -545,7 +552,7 @@ function HistoryTable({ itemId }) {
 				onConfirm={() => remove.mutate(deleting.id)}
 				busy={remove.isPending}
 			>
-				The {formatPrice(deleting?.price)} reading from{" "}
+				The {formatPrice(deleting?.price, currency)} reading from{" "}
 				{deleting && formatDateTime(deleting.timestamp)} will be removed.
 			</ConfirmDialog>
 		</Card>

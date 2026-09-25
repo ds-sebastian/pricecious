@@ -288,3 +288,45 @@ async def test_scheduler_tick_claims_due_items(db, monkeypatch):
     task.cancel()
 
     assert enqueued == [item.id]
+
+
+async def test_first_check_names_the_item_and_detects_currency(db, png, monkeypatch):
+    item = Item(url="https://shop.example.co.uk/x")
+    db.add(item)
+    await db.commit()
+    await checks.claim(db, [item.id])
+    capture = Capture(png, "", "Acme Grinder | Shop")
+    monkeypatch.setattr(checks.scraper, "capture", AsyncMock(return_value=capture))
+    monkeypatch.setattr(checks.ai, "extract", AsyncMock(return_value=extraction(price=10.0)))
+
+    await checks.check_item(item.id)
+
+    await db.refresh(item)
+    assert item.name == "Acme Grinder"
+    assert item.currency == "GBP"  # the model gave none, so the domain decides
+
+
+def test_currency_is_detected_once_and_then_left_alone():
+    item = make_item(currency=None)
+    checks.apply_extraction(item, Extraction(price=10.0, price_confidence=0.9, currency="EUR"), AppSettings())
+    assert item.currency == "EUR"
+    checks.apply_extraction(item, Extraction(price=10.0, price_confidence=0.9, currency="USD"), AppSettings())
+    assert item.currency == "EUR"
+
+
+async def test_new_low_is_announced(db, claimed_item, png, monkeypatch):
+    await db.execute(NotificationProfile.__table__.update().values(notify_on_new_low=True))
+    now = utcnow()
+    db.add_all(
+        PriceHistory(item_id=claimed_item.id, timestamp=now - timedelta(days=d), price=p, price_confidence=0.9)
+        for d, p in [(40, 130.0), (20, 110.0), (1, 120.0)]
+    )
+    await db.commit()
+    monkeypatch.setattr(checks.scraper, "capture", AsyncMock(return_value=Capture(png, "")))
+    monkeypatch.setattr(checks.ai, "extract", AsyncMock(return_value=extraction(price=105.0)))
+    send = AsyncMock(return_value=True)
+    monkeypatch.setattr(checks.notify, "send", send)
+
+    await checks.check_item(claimed_item.id)
+
+    assert [call.args[1] for call in send.await_args_list] == ["Lowest price yet: Widget"]

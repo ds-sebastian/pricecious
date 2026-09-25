@@ -179,3 +179,17 @@ async def test_network_guard_allows_public_requests(monkeypatch):
     await guard_request(route)
 
     route.continue_.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("title", "name"),
+    [
+        ("Acme K65 Keyboard | Acme Store", "Acme K65 Keyboard"),
+        ("Amazon.com: SoundHall NC700 Wireless Headphones : Electronics", "SoundHall NC700 Wireless Headphones"),
+        ('Lumen 27" 4K Monitor \u2013 Lumen Displays', 'Lumen 27" 4K Monitor'),
+        ("  Plain   title ", "Plain title"),
+        ("", None),
+    ],
+)
+def test_product_name_from_page_title(title, name):
+    assert scraper.product_name(title) == name

@@ -1,26 +1,48 @@
 import { PackageSearch, Plus, RefreshCw, Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, useAction, useItems } from "@/api";
 import { ItemCard } from "@/components/ItemCard";
 import { ItemFormDialog } from "@/components/ItemForm";
 import { ScreenshotDialog } from "@/components/ScreenshotDialog";
 import {
 	Button,
+	ChipGroup,
 	ConfirmDialog,
 	EmptyState,
 	Input,
 	Spinner,
 } from "@/components/ui";
+import { itemName } from "@/format";
 
 const matches = (item, query) =>
-	[item.name, item.url, item.tags, item.description].some((text) =>
+	[itemName(item), item.url, item.tags, item.description].some((text) =>
 		text?.toLowerCase().includes(query),
 	);
+
+const VIEWS = {
+	all: { label: "All", test: () => true, empty: "" },
+	attention: {
+		label: "Needs attention",
+		test: (item) => !item.is_active || !!item.last_error,
+		empty: "Nothing needs attention.",
+	},
+	deals: {
+		label: "Deals",
+		test: (item) => !!item.deal,
+		empty: "No item is at its lowest price right now.",
+	},
+};
 
 export default function Items() {
 	const { data: items, isLoading, error } = useItems();
 	const [query, setQuery] = useState("");
-	const [editing, setEditing] = useState(null); // an item, "new", or null
+	const [view, setView] = useState("all");
+	const [searchParams, setSearchParams] = useSearchParams();
+	// null, an item to edit, or a draft ({} or { url } from the bookmarklet) to add
+	const [editing, setEditing] = useState(() =>
+		searchParams.has("add") ? { url: searchParams.get("add") } : null,
+	);
 	const [deleting, setDeleting] = useState(null);
 	const [viewing, setViewing] = useState(null);
 
@@ -41,8 +63,21 @@ export default function Items() {
 		onSuccess: () => setDeleting(null),
 	});
 
+	useEffect(() => {
+		if (searchParams.has("add")) setSearchParams({}, { replace: true });
+	}, [searchParams, setSearchParams]);
+
+	const counts = Object.fromEntries(
+		Object.entries(VIEWS).map(([key, { test }]) => [
+			key,
+			items?.filter(test).length ?? 0,
+		]),
+	);
 	const visible =
-		items?.filter((item) => matches(item, query.trim().toLowerCase())) ?? [];
+		items?.filter(
+			(item) =>
+				VIEWS[view].test(item) && matches(item, query.trim().toLowerCase()),
+		) ?? [];
 
 	let content;
 	if (isLoading) {
@@ -57,7 +92,7 @@ export default function Items() {
 				icon={PackageSearch}
 				title="Track your first product"
 				action={
-					<Button variant="primary" onClick={() => setEditing("new")}>
+					<Button variant="primary" onClick={() => setEditing({})}>
 						<Plus className="size-4" /> Add item
 					</Button>
 				}
@@ -69,7 +104,7 @@ export default function Items() {
 	} else if (visible.length === 0) {
 		content = (
 			<p className="py-16 text-center text-sm text-muted">
-				Nothing matches “{query}”.
+				{query ? `Nothing matches “${query}”.` : VIEWS[view].empty}
 			</p>
 		);
 	} else {
@@ -120,18 +155,32 @@ export default function Items() {
 							{!checkAll.isPending && <RefreshCw className="size-4" />}
 							Check all
 						</Button>
-						<Button variant="primary" onClick={() => setEditing("new")}>
+						<Button variant="primary" onClick={() => setEditing({})}>
 							<Plus className="size-4" /> Add item
 						</Button>
 					</>
 				)}
 			</div>
 
+			{(counts.attention > 0 || counts.deals > 0 || view !== "all") && (
+				<ChipGroup
+					label="Show"
+					className="mb-4"
+					options={Object.entries(VIEWS)
+						.filter(([key]) => key === "all" || counts[key] > 0 || key === view)
+						.map(([key, { label }]) => ({
+							value: key,
+							label: key === "all" ? label : `${label} (${counts[key]})`,
+						}))}
+					value={view}
+					onChange={setView}
+				/>
+			)}
 			{content}
 
 			<ItemFormDialog
 				open={editing !== null}
-				item={editing === "new" ? undefined : editing}
+				item={editing}
 				onClose={() => setEditing(null)}
 			/>
 			<ConfirmDialog
@@ -141,7 +190,8 @@ export default function Items() {
 				onConfirm={() => remove.mutate(deleting.id)}
 				busy={remove.isPending}
 			>
-				“{deleting?.name}” and its price history will be removed.
+				“{deleting && itemName(deleting)}” and its price history will be
+				removed.
 			</ConfirmDialog>
 			<ScreenshotDialog item={viewing} onClose={() => setViewing(null)} />
 		</>

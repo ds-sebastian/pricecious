@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import pytest
 
-from app.analytics import CHART_POINTS, item_analytics
+from app.analytics import CHART_POINTS, deals, item_analytics, previous_low
 from app.database import utcnow
 from app.models import Item, PriceForecast, PriceHistory
 
@@ -94,3 +94,53 @@ async def test_forecast_is_included(db, item):
     forecast = (await item_analytics(db, item, days=None, sigma=None))["forecast"]
 
     assert [(f["price"], f["lower"], f["upper"]) for f in forecast] == [(9, 8, 10)]
+
+
+async def deal_for(db, item, current, points):
+    """points: (days_ago, price, confidence)"""
+    now = utcnow()
+    db.add_all(
+        PriceHistory(item_id=item.id, timestamp=now - timedelta(days=d), price=p, price_confidence=c)
+        for d, p, c in points
+    )
+    item.current_price = current
+    await db.commit()
+    return (await deals(db, [item], threshold=0.5)).get(item.id)
+
+
+async def test_lowest_price_seen(db, item):
+    assert await deal_for(db, item, 90.0, [(30, 120.0, 0.9), (1, 90.0, 0.9)]) == "lowest_seen"
+
+
+async def test_lowest_in_90_days_needs_90_days_of_history(db, item):
+    points = [(200, 50.0, 0.9), (60, 120.0, 0.9), (1, 90.0, 0.9)]
+    assert await deal_for(db, item, 90.0, points) == "lowest_90d"
+
+
+@pytest.mark.parametrize(
+    "points",
+    [
+        [(60, 90.0, 0.9), (1, 90.0, 0.9)],  # never higher: not a deal
+        [(5, 120.0, 0.9), (1, 90.0, 0.9)],  # too little history to call it a record
+        [(30, 120.0, 0.9), (20, 10.0, 0.2), (1, 90.0, 0.9)],  # a misread doesn't count, so this is a record
+    ],
+)
+async def test_deal_edge_cases(db, item, points):
+    expected = "lowest_seen" if points[1][2] == 0.2 else None
+    assert await deal_for(db, item, 90.0, points) == expected
+
+
+async def test_previous_low_ignores_misreads_and_short_histories(db, item):
+    now = utcnow()
+    db.add_all(
+        [
+            PriceHistory(item_id=item.id, timestamp=now - timedelta(days=3), price=100.0, price_confidence=0.9),
+            PriceHistory(item_id=item.id, timestamp=now - timedelta(days=2), price=5.0, price_confidence=0.1),
+        ]
+    )
+    await db.commit()
+    assert await previous_low(db, item.id, 0.5) is None  # only 3 days tracked
+
+    db.add(PriceHistory(item_id=item.id, timestamp=now - timedelta(days=20), price=110.0, price_confidence=0.9))
+    await db.commit()
+    assert await previous_low(db, item.id, 0.5) == 100.0

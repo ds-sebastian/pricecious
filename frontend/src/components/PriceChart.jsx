@@ -10,7 +10,7 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
-import { formatDateTime, formatPrice } from "@/format";
+import { formatAxisPrice, formatDateTime, formatPrice } from "@/format";
 
 export const SERIES_COLORS = [
 	"#2563eb",
@@ -47,7 +47,7 @@ function ChartTooltip({ active, payload, series }) {
 							/>
 							<span className="text-muted">{s.name}</span>
 							<span className="ml-auto pl-3 font-medium tabular-nums">
-								{formatPrice(point[s.key])}
+								{formatPrice(point[s.key], s.currency)}
 							</span>
 						</div>
 					),
@@ -62,10 +62,12 @@ function ChartTooltip({ active, payload, series }) {
 /**
  * data: points sorted by `t` (ms) with a value per series key, plus optional
  * `band` ([low, high]) for the forecast range and `in_stock`.
+ * currency labels the axis; leave it out when series use different currencies.
  */
 export function PriceChart({
 	data,
 	series,
+	currency,
 	outOfStock = [],
 	markers = [],
 	band = false,
@@ -100,7 +102,9 @@ export function PriceChart({
 					/>
 					<YAxis
 						domain={["auto", "auto"]}
-						tickFormatter={(v) => `$${v}`}
+						tickFormatter={(v) =>
+							currency ? formatAxisPrice(v, currency) : v.toLocaleString()
+						}
 						width={64}
 						{...AXIS}
 					/>
@@ -147,7 +151,7 @@ export function PriceChart({
 							stroke="var(--surface)"
 							strokeWidth={2}
 							label={{
-								value: formatPrice(m.price),
+								value: formatPrice(m.price, currency),
 								position: m.type === "min" ? "bottom" : "top",
 								fontSize: 11,
 								fill: "var(--muted)",

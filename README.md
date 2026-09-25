@@ -115,8 +115,12 @@ drive-by protection, not a substitute for the firewall or proxy allowlist.
 
 ## Using it
 
-- **Items**: add a product page and a name; the first check starts right away. Each card shows the latest price,
-  stock status, and what went wrong if a check failed. Click the screenshot to see what the browser saw.
+- **Items**: add a product page; the name, if you leave it out, and the currency come from the page on the first
+  check, which starts right away. Each card shows the latest price, stock status, a badge when the price is the
+  lowest seen (or the lowest in 90 days), and what went wrong if a check failed. The **Needs attention** and
+  **Deals** filters gather those up. Click a screenshot to see what the browser saw.
+- **Bookmarklet**: the Add item dialog has a **+ Pricecious** link. Drag it to your bookmarks bar, then click it on
+  any product page to add that page.
 - **Item page**: price history with lowest/highest markers, out-of-stock periods shaded, an optional forecast, and
   every reading. Filter readings by price, stock or confidence to find bad ones, then fix or delete them; the current
   price follows the newest reading.
@@ -137,6 +141,9 @@ drive-by protection, not a substitute for the firewall or proxy allowlist.
 </picture>
 
 ### When the AI gets it wrong
+
+Use **Test** in Settings → AI model to run your settings, saved or not, on one of your items and see the model's
+answer and raw reply. It's the quickest way to check a new model, key or base URL.
 
 - Add **Instructions for the AI** to the item (Edit → Advanced), e.g. "Use the price of the 2 TB model."
 - Set a **Price element** CSS selector so the right part of the page is on screen.
@@ -173,7 +180,8 @@ run Browserless behind an egress firewall that blocks private, loopback, link-lo
 ### Notifications
 
 Create a notification profile in Settings with an [Apprise URL](https://github.com/caronc/apprise/wiki), for example
-`discord://webhook_id/webhook_token` or `tgram://bot_token/chat_id`, then choose it on each item.
+`discord://webhook_id/webhook_token` or `ntfys://ntfy.sh/your-topic`, then choose it on each item. A profile can alert
+on price drops, reaching the target price, a new lowest price (after two weeks of history) and stock changes.
 
 ## Development
 

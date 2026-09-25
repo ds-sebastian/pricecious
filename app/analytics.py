@@ -2,13 +2,16 @@ from datetime import datetime, timedelta
 from operator import attrgetter
 from statistics import fmean, pstdev
 
-from sqlalchemy import select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import utcnow
 from app.models import Item, PriceForecast, PriceHistory
 
 CHART_POINTS = 150
+# "Lowest price seen" means little until an item has some history behind it.
+LOW_MIN_HISTORY = timedelta(days=14)
+LOW_WINDOW = timedelta(days=90)
 by_price = attrgetter("price")
 
 
@@ -95,3 +98,55 @@ def _annotations(rows: list) -> list[dict]:
             notes.append({"type": kind, "timestamp": row.timestamp, "price": row.price})
         previous = row.in_stock
     return notes
+
+
+def _trusted(threshold: float):
+    """Readings confident enough to have been applied (or entered by hand); misreads mustn't set records."""
+    return or_(PriceHistory.price_confidence.is_(None), PriceHistory.price_confidence >= threshold)
+
+
+async def previous_low(db: AsyncSession, item_id: int, threshold: float) -> float | None:
+    """The lowest trusted price so far, once the item has been tracked long enough for that to be meaningful."""
+    low, first = (
+        await db.execute(
+            select(func.min(PriceHistory.price), func.min(PriceHistory.timestamp)).where(
+                PriceHistory.item_id == item_id, _trusted(threshold)
+            )
+        )
+    ).one()
+    return low if low is not None and utcnow() - first >= LOW_MIN_HISTORY else None
+
+
+async def deals(db: AsyncSession, items: list[Item], threshold: float) -> dict[int, str]:
+    """Items whose current price is the lowest seen ("lowest_seen") or lowest in LOW_WINDOW ("lowest_90d").
+
+    A price that has never been higher isn't a deal, so each needs a higher price in the same period.
+    """
+    if not items:
+        return {}
+    now = utcnow()
+    cutoff = now - LOW_WINDOW
+    recent = case((PriceHistory.timestamp >= cutoff, PriceHistory.price))
+    rows = await db.execute(
+        select(
+            PriceHistory.item_id,
+            func.min(PriceHistory.timestamp).label("first"),
+            func.min(PriceHistory.price).label("low"),
+            func.max(PriceHistory.price).label("high"),
+            func.min(recent).label("recent_low"),
+            func.max(recent).label("recent_high"),
+        )
+        .where(PriceHistory.item_id.in_([item.id for item in items]), _trusted(threshold))
+        .group_by(PriceHistory.item_id)
+    )
+    current = {item.id: item.current_price for item in items}
+    found = {}
+    for row in rows:
+        price = current[row.item_id]
+        if price is None:
+            continue
+        if now - row.first >= LOW_MIN_HISTORY and price <= row.low < row.high:
+            found[row.item_id] = "lowest_seen"
+        elif row.first <= cutoff and row.recent_low is not None and price <= row.recent_low < row.recent_high:
+            found[row.item_id] = "lowest_90d"
+    return found

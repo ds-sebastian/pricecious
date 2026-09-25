@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import random
+import re
 from contextlib import suppress
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlparse, urlunparse
@@ -79,6 +80,7 @@ _conn = _Connection()
 class Capture:
     screenshot: bytes
     text: str
+    title: str = ""
 
 
 class ScrapeError(Exception):
@@ -230,9 +232,10 @@ async def _capture_once(url: str, selector: str | None, scroll_pixels: int, time
             await page.evaluate("px => window.scrollBy(0, px)", scroll_pixels)
             await page.wait_for_timeout(1000)
 
-        text = ""
+        text = title = ""
         with suppress(PlaywrightError):
             text = " ".join((await page.inner_text("body")).split())
+            title = await page.title()
         screenshot = await page.screenshot()
     except PlaywrightError as exc:  # usually a lost browser connection; start() reconnects next time
         raise ScrapeError(f"Browser error: {_first_line(exc)}") from None
@@ -241,13 +244,23 @@ async def _capture_once(url: str, selector: str | None, scroll_pixels: int, time
             with suppress(Exception):
                 await context.close()
 
+    capture = Capture(screenshot, text, title)
     if problem := await asyncio.to_thread(content_problem, screenshot, text):
-        raise ScrapeError(problem, Capture(screenshot, text))
-    return Capture(screenshot, text)
+        raise ScrapeError(problem, capture)
+    return capture
 
 
 def _first_line(exc: PlaywrightError) -> str:
     return exc.message.splitlines()[0].removeprefix("Page.goto: ")
+
+
+def product_name(title: str) -> str | None:
+    """Guess a product name from a page title such as 'Acme K65 Keyboard | Acme Store'.
+
+    Titles join the product with the store and category using separators; the product is usually the longest part.
+    """
+    parts = re.split(r"\s+[|\-\u2013\u2014:\u00b7]\s+|:\s+", " ".join(title.split()))  # pipes, dashes, colons, middots
+    return max(parts, key=len)[:200] or None
 
 
 def content_problem(screenshot: bytes, text: str) -> str | None:

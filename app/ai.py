@@ -87,7 +87,7 @@ class ExtractionError(Exception):
 
 class Extraction(BaseModel):
     price: float | None = None
-    currency: str = "USD"
+    currency: str | None = None
     in_stock: bool | None = None
     price_confidence: float = 0.0
     in_stock_confidence: float = 0.0
@@ -96,6 +96,12 @@ class Extraction(BaseModel):
     @classmethod
     def _clamp(cls, value):
         return 0.0 if value is None else max(0.0, min(1.0, float(value)))
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def _currency(cls, value):
+        code = value.strip().upper() if isinstance(value, str) else ""
+        return code if re.fullmatch(r"[A-Z]{3}", code) else None
 
     @field_validator("price", mode="before")
     @classmethod
@@ -190,7 +196,7 @@ def _encode_image(png: bytes) -> str:
     return base64.b64encode(buffer.getvalue()).decode()
 
 
-async def _complete(messages: list[dict], settings: AppSettings, json_mode: bool = True) -> str:
+async def _call_model(messages: list[dict], settings: AppSettings, json_mode: bool = True) -> str:
     provider = settings.ai_provider
     model = settings.ai_model
     if provider == "ollama" and not model.startswith("ollama/"):
@@ -223,7 +229,7 @@ async def _complete(messages: list[dict], settings: AppSettings, json_mode: bool
     return response.choices[0].message.content or ""
 
 
-async def extract(
+async def ask(
     screenshot: bytes,
     settings: AppSettings,
     *,
@@ -231,7 +237,8 @@ async def extract(
     page_text: str | None = None,
     custom_prompt: str | None = None,
     last_price: float | None = None,
-) -> Extraction:
+) -> str:
+    """Send the screenshot and prompt to the model and return its raw reply."""
     image = await asyncio.to_thread(_encode_image, screenshot)
     prompt = build_prompt(url, page_text, custom_prompt, last_price)
     messages = [
@@ -243,12 +250,16 @@ async def extract(
             ],
         }
     ]
-    content = await _complete(messages, settings)
+    content = await _call_model(messages, settings)
     if not content:
         # Some models return nothing when forced into JSON mode.
         logger.warning(f"{settings.ai_model} returned an empty response in JSON mode; retrying without it")
-        content = await _complete(messages, settings, json_mode=False)
+        content = await _call_model(messages, settings, json_mode=False)
     if not content:
         raise ExtractionError(f"{settings.ai_model} returned an empty response")
     logger.debug(f"Model response: {content}")
-    return parse_response(content)
+    return content
+
+
+async def extract(screenshot: bytes, settings: AppSettings, **context) -> Extraction:
+    return parse_response(await ask(screenshot, settings, **context))

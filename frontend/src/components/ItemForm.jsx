@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, useAction, useProfiles } from "@/api";
 import {
 	Button,
@@ -13,6 +13,7 @@ import {
 const TEXT_FIELDS = [
 	"url",
 	"name",
+	"currency",
 	"tags",
 	"selector",
 	"custom_prompt",
@@ -45,12 +46,13 @@ function toPayload(form) {
 	return payload;
 }
 
+/** item: an existing item to edit, or a draft without an id (e.g. { url }) to add. */
 export function ItemFormDialog({ item, open, onClose }) {
 	return (
 		<Dialog
 			open={open}
 			onClose={onClose}
-			title={item ? "Edit item" : "Add item"}
+			title={item?.id ? "Edit item" : "Add item"}
 			size="lg"
 		>
 			<ItemForm item={item} onDone={onClose} />
@@ -59,6 +61,7 @@ export function ItemFormDialog({ item, open, onClose }) {
 }
 
 function ItemForm({ item, onDone }) {
+	const isNew = !item?.id;
 	const [form, setForm] = useState(() => toForm(item));
 	const { data: profiles = [] } = useProfiles();
 	const set = (key) => (event) =>
@@ -66,13 +69,13 @@ function ItemForm({ item, onDone }) {
 
 	const save = useAction(
 		async (payload) => {
-			if (item) return api.put(`/items/${item.id}`, payload);
+			if (!isNew) return api.put(`/items/${item.id}`, payload);
 			const created = await api.post("/items", payload);
 			await api.post(`/items/${created.id}/check`).catch(() => {}); // the scheduler picks it up otherwise
 			return created;
 		},
 		{
-			success: item ? "Item saved" : "Item added, checking it now",
+			success: isNew ? "Item added, checking it now" : "Item saved",
 			invalidate: [["items"], ["analytics"], ["history"]],
 			onSuccess: onDone,
 		},
@@ -90,11 +93,11 @@ function ItemForm({ item, onDone }) {
 				save.mutate(toPayload(form));
 			}}
 		>
-			<Field label="Product page">
+			<Field label="Product page" hint={isNew && <Bookmarklet />}>
 				<Input
 					type="url"
 					required
-					autoFocus={!item}
+					autoFocus={isNew && !form.url}
 					placeholder="https://store.example/product"
 					value={form.url}
 					onChange={set("url")}
@@ -102,8 +105,7 @@ function ItemForm({ item, onDone }) {
 			</Field>
 			<Field label="Name">
 				<Input
-					required
-					placeholder="What you're tracking"
+					placeholder="Leave empty to use the page title"
 					value={form.name}
 					onChange={set("name")}
 				/>
@@ -146,7 +148,7 @@ function ItemForm({ item, onDone }) {
 					onChange={set("tags")}
 				/>
 			</Field>
-			{item && (
+			{!isNew && (
 				<Switch
 					label="Scheduled checks"
 					hint="Paused items are only checked when you ask."
@@ -186,6 +188,16 @@ function ItemForm({ item, onDone }) {
 								onChange={set("selector")}
 							/>
 						</Field>
+						<Field label="Currency" hint="Detected on the first check.">
+							<Input
+								placeholder="USD"
+								maxLength={3}
+								pattern="[A-Za-z]{3}"
+								title="A three-letter currency code, such as EUR"
+								value={form.currency}
+								onChange={set("currency")}
+							/>
+						</Field>
 					</div>
 					<Field
 						label="Instructions for the AI"
@@ -199,7 +211,7 @@ function ItemForm({ item, onDone }) {
 					<Field label="Notes">
 						<Textarea value={form.description} onChange={set("description")} />
 					</Field>
-					{item && (
+					{!isNew && (
 						<div className="grid gap-4 sm:grid-cols-2">
 							<Field
 								label="Current price"
@@ -228,9 +240,36 @@ function ItemForm({ item, onDone }) {
 			<div className="flex justify-end gap-2 pt-2">
 				<Button onClick={onDone}>Cancel</Button>
 				<Button type="submit" variant="primary" busy={save.isPending}>
-					{item ? "Save" : "Add item"}
+					{isNew ? "Add item" : "Save"}
 				</Button>
 			</div>
 		</form>
+	);
+}
+
+/** A link to drag to the bookmarks bar that opens this dialog for the page being viewed. */
+function Bookmarklet() {
+	const link = useRef(null);
+	useEffect(() => {
+		// React refuses javascript: URLs in JSX, so set it directly.
+		const target = `${window.location.origin}/?add=`;
+		link.current.setAttribute(
+			"href",
+			`javascript:void(window.open(${JSON.stringify(target)}+encodeURIComponent(location.href)))`,
+		);
+	}, []);
+	return (
+		<>
+			Tip: drag{" "}
+			<a
+				ref={link}
+				href="#bookmarklet"
+				title="Drag this to your bookmarks bar"
+				className="rounded border border-border px-1.5 py-0.5 font-medium text-fg"
+			>
+				+ Pricecious
+			</a>{" "}
+			to your bookmarks bar, then click it on any product page.
+		</>
 	);
 }

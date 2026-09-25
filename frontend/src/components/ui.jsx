@@ -211,3 +211,28 @@ export function Spinner({ className }) {
 		<Loader2 className={clsx("size-5 animate-spin text-muted", className)} />
 	);
 }
+
+/** A row of toggle chips where exactly one is selected. options: [{ value, label }] */
+export function ChipGroup({ label, options, value, onChange, className }) {
+	return (
+		<fieldset className={clsx("flex flex-wrap gap-2", className)}>
+			<legend className="sr-only">{label}</legend>
+			{options.map((option) => (
+				<button
+					key={option.value}
+					type="button"
+					aria-pressed={option.value === value}
+					onClick={() => onChange(option.value)}
+					className={clsx(
+						"rounded-full border px-3 py-1 text-sm",
+						option.value === value
+							? "border-fg bg-fg text-bg"
+							: "border-border text-muted hover:text-fg",
+					)}
+				>
+					{option.label}
+				</button>
+			))}
+		</fieldset>
+	);
+}

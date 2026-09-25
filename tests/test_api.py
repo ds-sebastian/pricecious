@@ -6,6 +6,7 @@ import pytest
 from app import checks
 from app.database import utcnow
 from app.models import Item, PriceHistory
+from app.scraper import Capture
 
 ITEM = {"url": "https://example.com/product", "name": "Widget", "target_price": 100}
 
@@ -48,12 +49,34 @@ async def test_next_check_is_utc(client, db):
     assert listed["interval"] == 30
 
 
+async def test_unnamed_item_gets_currency_from_its_domain(client):
+    created = await create_item(client, url="https://shop.example.de/grinder", name="  ")
+    assert created["name"] is None
+    assert created["currency"] == "EUR"
+
+    updated = await client.put(f"/api/items/{created['id']}", json=ITEM | {"currency": "chf"})
+    assert updated.json()["currency"] == "CHF"
+
+
+async def test_items_report_deals(client, db):
+    item = await create_item(client)
+    now = utcnow()
+    db.add_all(
+        PriceHistory(item_id=item["id"], price=price, timestamp=now - timedelta(days=days))
+        for days, price in [(30, 120.0), (10, 110.0), (0, 99.0)]
+    )
+    await db.execute(Item.__table__.update().values(current_price=99.0))
+    await db.commit()
+
+    assert (await client.get("/api/items")).json()[0]["deal"] == "lowest_seen"
+
+
 @pytest.mark.parametrize(
     ("fields", "status"),
     [
         ({"url": "http://192.168.1.10/admin"}, 422),
         ({"url": "file:///etc/passwd"}, 422),
-        ({"name": "   "}, 422),
+        ({"currency": "dollars"}, 422),
         ({"target_price": -1}, 422),
         ({"check_interval_minutes": 1}, 422),
         ({"notification_profile_id": 999}, 404),
@@ -330,3 +353,71 @@ async def test_cross_origin_writes_are_rejected(client, headers):
 async def test_trusted_origin_gets_cors_headers(client):
     response = await client.get("/api/settings", headers={"Origin": "https://trusted.example"})
     assert response.headers["access-control-allow-origin"] == "https://trusted.example"
+
+
+# AI settings test
+
+
+@pytest.fixture
+async def item_with_screenshot(client, png):
+    item = await create_item(client)
+    path = checks.screenshot_file(item["id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(png)
+    return item
+
+
+async def test_ai_test_uses_unsaved_settings_and_saved_screenshot(client, item_with_screenshot, png, monkeypatch):
+    ask = AsyncMock(return_value='{"price": 12.5, "currency": "usd", "price_confidence": 0.9}')
+    monkeypatch.setattr("app.ai.ask", ask)
+
+    response = await client.post(
+        "/api/settings/test-ai", json={"item_id": item_with_screenshot["id"], "settings": {"ai_model": "llava"}}
+    )
+
+    result = response.json()
+    assert result["extraction"]["price"] == 12.5
+    assert result["extraction"]["currency"] == "USD"
+    assert result["error"] is None
+    screenshot, settings = ask.await_args.args
+    assert screenshot == png
+    assert settings.ai_model == "llava"
+    assert (await client.get("/api/settings")).json()["ai_model"] == "gemma3:4b"  # nothing was saved
+
+
+async def test_ai_test_reports_unparseable_replies_and_failures(client, item_with_screenshot, monkeypatch):
+    monkeypatch.setattr("app.ai.ask", AsyncMock(return_value="I think it costs about twelve dollars"))
+    result = (await client.post("/api/settings/test-ai", json={"item_id": item_with_screenshot["id"]})).json()
+    assert result["extraction"] is None
+    assert result["reply"] == "I think it costs about twelve dollars"
+    assert "did not return JSON" in result["error"]
+
+    monkeypatch.setattr("app.ai.ask", AsyncMock(side_effect=RuntimeError("model 'llava' not found")))
+    failed = await client.post("/api/settings/test-ai", json={"item_id": item_with_screenshot["id"]})
+    assert failed.status_code == 502
+    assert failed.json()["detail"] == "The model call failed: model 'llava' not found"
+
+
+async def test_ai_test_validates_settings(client, item_with_screenshot):
+    response = await client.post(
+        "/api/settings/test-ai", json={"item_id": item_with_screenshot["id"], "settings": {"ai_temperature": 9}}
+    )
+    assert response.status_code == 422
+
+
+async def test_ai_test_captures_the_page_when_page_text_is_wanted(client, item_with_screenshot, png, monkeypatch):
+    capture = AsyncMock(return_value=Capture(png, "Price: $12.50 " * 10))
+    monkeypatch.setattr("app.scraper.capture", capture)
+    ask = AsyncMock(return_value='{"price": 12.5}')
+    monkeypatch.setattr("app.ai.ask", ask)
+
+    await client.post(
+        "/api/settings/test-ai",
+        json={
+            "item_id": item_with_screenshot["id"],
+            "settings": {"text_context_enabled": True, "text_context_length": 20},
+        },
+    )
+
+    capture.assert_awaited_once()
+    assert ask.await_args.kwargs["page_text"] == "Price: $12.50 Price:"

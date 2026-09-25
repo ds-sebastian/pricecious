@@ -1,12 +1,18 @@
 import { useQueries } from "@tanstack/react-query";
-import { clsx } from "clsx";
 import { Tags } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { analyticsQuery, useItems } from "@/api";
 import { PriceChart, SERIES_COLORS, toTime } from "@/components/PriceChart";
-import { Card, EmptyState, Select, Spinner, Switch } from "@/components/ui";
-import { formatPrice, splitTags } from "@/format";
+import {
+	Card,
+	ChipGroup,
+	EmptyState,
+	Select,
+	Spinner,
+	Switch,
+} from "@/components/ui";
+import { formatPrice, itemName, splitTags } from "@/format";
 
 const RANGES = [
 	["Last 7 days", 7],
@@ -42,10 +48,14 @@ export default function Compare() {
 
 	const series = tagged.map((item, index) => ({
 		key: `item${item.id}`,
-		name: item.name,
+		name: itemName(item),
+		currency: item.currency,
 		color: SERIES_COLORS[index % SERIES_COLORS.length],
 		item,
 	}));
+	// Label the axis with a currency only when every item uses the same one.
+	const currencies = new Set(series.map((s) => s.currency));
+	const sharedCurrency = currencies.size === 1 ? series[0].currency : undefined;
 	const data = series
 		.flatMap((s, index) =>
 			(results[index]?.data?.history ?? []).map((p) => ({
@@ -83,25 +93,13 @@ export default function Compare() {
 				</EmptyState>
 			) : (
 				<Card>
-					<fieldset className="flex flex-wrap gap-2 border-b border-border p-4">
-						<legend className="sr-only">Tag</legend>
-						{tags.map((t) => (
-							<button
-								key={t}
-								type="button"
-								aria-pressed={t === tag}
-								onClick={() => setTag(t)}
-								className={clsx(
-									"rounded-full border px-3 py-1 text-sm",
-									t === tag
-										? "border-fg bg-fg text-bg"
-										: "border-border text-muted hover:text-fg",
-								)}
-							>
-								{t}
-							</button>
-						))}
-					</fieldset>
+					<ChipGroup
+						label="Tag"
+						className="border-b border-border p-4"
+						options={tags.map((t) => ({ value: t, label: t }))}
+						value={tag}
+						onChange={setTag}
+					/>
 					<div className="p-4">
 						{results.some((r) => r.isLoading) ? (
 							<Spinner className="mx-auto my-32" />
@@ -110,7 +108,11 @@ export default function Compare() {
 								No prices recorded in this period.
 							</p>
 						) : (
-							<PriceChart data={data} series={series} />
+							<PriceChart
+								data={data}
+								series={series}
+								currency={sharedCurrency}
+							/>
 						)}
 					</div>
 					<div className="border-t border-border p-4">
@@ -135,7 +137,7 @@ export default function Compare() {
 									{s.name}
 								</Link>
 								<span className="ml-auto tabular-nums text-muted">
-									{formatPrice(s.item.current_price)}
+									{formatPrice(s.item.current_price, s.currency)}
 								</span>
 							</li>
 						))}

@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import ai, database, forecast, notify, scraper
+from app import ai, analytics, database, forecast, notify, scraper
 from app import settings as app_settings
 from app.database import utcnow
 from app.models import Item, PriceHistory
@@ -145,7 +145,7 @@ async def _check(item_id: int) -> None:
     except Exception as exc:
         if isinstance(exc, scraper.ScrapeError) and exc.capture:
             await _save_screenshot(item_id, exc.capture.screenshot)
-        await _record_failure(item_id, _describe(exc), "scrape_failed", settings)
+        await _record_failure(item_id, describe(exc), "scrape_failed", settings)
         return
     await _save_screenshot(item_id, capture.screenshot)
 
@@ -159,7 +159,7 @@ async def _check(item_id: int) -> None:
             last_price=item.current_price,
         )
     except Exception as exc:
-        await _record_failure(item_id, f"AI extraction failed: {_describe(exc)}", "ai_failed", settings)
+        await _record_failure(item_id, f"AI extraction failed: {describe(exc)}", "ai_failed", settings)
         return
 
     async with database.SessionLocal() as db:
@@ -168,12 +168,15 @@ async def _check(item_id: int) -> None:
             screenshot_file(item_id).unlink(missing_ok=True)
             return
         old_price, old_stock = item.current_price, item.in_stock
+        previous_low = await analytics.previous_low(db, item_id, settings.confidence_threshold_price)
         if history := apply_extraction(item, extraction, settings):
             db.add(history)
+        if not item.name:
+            item.name = scraper.product_name(capture.title)
         item.is_refreshing, item.refresh_started_at = False, None
         await db.commit()
 
-    for title, body in notify.alerts(item, old_price, old_stock):
+    for title, body in notify.alerts(item, old_price, old_stock, previous_low):
         await notify.send(item.notification_profile.apprise_url, title, body)
 
 
@@ -196,6 +199,9 @@ def apply_extraction(item: Item, extraction: ai.Extraction, settings: AppSetting
         if extraction.in_stock is not False:  # sold-out pages often hide the price
             item.last_error, item.error_type = "No price found on the page", "no_price"
         return None
+
+    if not item.currency:  # detected once; after that it's the user's to change
+        item.currency = extraction.currency or ai.infer_currency(item.url)
 
     if price_confidence < settings.confidence_threshold_price:
         item.last_error = f"Found {price:.2f} with only {price_confidence:.0%} confidence, so it wasn't applied"
@@ -270,7 +276,8 @@ async def _save_screenshot(item_id: int, png: bytes) -> None:
     await asyncio.to_thread(write)
 
 
-def _describe(exc: Exception) -> str:
+def describe(exc: Exception) -> str:
+    """First line of an exception's message, short enough to show in the UI."""
     message = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
     return message[:300]
 

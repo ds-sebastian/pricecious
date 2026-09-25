@@ -1,16 +1,21 @@
 import { ExternalLink } from "lucide-react";
 import { Dialog } from "@/components/ui";
-import { formatDateTime } from "@/format";
+import { formatDateTime, itemName } from "@/format";
 
 export function ScreenshotDialog({ item, onClose }) {
 	return (
-		<Dialog open={!!item} onClose={onClose} title={item?.name} size="xl">
+		<Dialog
+			open={!!item}
+			onClose={onClose}
+			title={item && itemName(item)}
+			size="xl"
+		>
 			{item && (
 				<>
 					<a href={item.screenshot_url} target="_blank" rel="noreferrer">
 						<img
 							src={item.screenshot_url}
-							alt={`Screenshot of ${item.name}`}
+							alt={`Screenshot of ${itemName(item)}`}
 							className="w-full rounded-md border border-border"
 						/>
 					</a>
