@@ -118,10 +118,14 @@ class HistoryPage(BaseModel):
 
 
 class HistoryUpdate(BaseModel):
-    """Omitted fields are left alone. A price or stock set here counts as confirmed by hand."""
+    """Omitted fields are left alone; in_stock: null sets the stock to unknown. Values set here count as confirmed."""
 
     price: float | None = Field(None, ge=0)
     in_stock: bool | None = None
+
+    @property
+    def sets_stock(self) -> bool:
+        return "in_stock" in self.model_fields_set
 
 
 class HistoryBulk(HistoryUpdate):
@@ -130,12 +134,15 @@ class HistoryBulk(HistoryUpdate):
     action: Literal["delete", "update"]
     ids: list[int] | None = Field(None, min_length=1, max_length=10_000)
     filters: HistoryFilters | None = None
+    exclude_ids: list[int] = Field(default_factory=list, max_length=10_000)  # with filters: matches to leave out
 
     @model_validator(mode="after")
     def _check(self):
         if (self.ids is None) == (self.filters is None):
             raise ValueError("Give either ids or filters")
-        if self.action == "update" and self.price is None and self.in_stock is None:
+        if self.exclude_ids and self.filters is None:
+            raise ValueError("exclude_ids only applies with filters")
+        if self.action == "update" and self.price is None and not self.sets_stock:
             raise ValueError("Give a price or stock status to set")
         return self
 

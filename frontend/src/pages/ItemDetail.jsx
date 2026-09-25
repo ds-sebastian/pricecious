@@ -364,9 +364,11 @@ function HistoryTable({ itemId, currency }) {
 	const [filters, setFilters] = useState(NO_FILTERS);
 	const [editing, setEditing] = useState(null);
 	const [deleting, setDeleting] = useState(null);
-	// Either hand-picked ids, or every reading matching the filters (which can span many pages).
+	// Either hand-picked ids, or every reading matching the filters (which can span many pages) except the
+	// ones unticked since.
 	const [selected, setSelected] = useState(() => new Set());
 	const [allMatching, setAllMatching] = useState(false);
+	const [excluded, setExcluded] = useState(() => new Set());
 	const [bulkDialog, setBulkDialog] = useState(null); // "edit" | "delete"
 	const { data: settings } = useSettings();
 	const threshold = settings?.confidence_threshold_price ?? 0.5;
@@ -386,6 +388,7 @@ function HistoryTable({ itemId, currency }) {
 	const clearSelection = () => {
 		setSelected(new Set());
 		setAllMatching(false);
+		setExcluded(new Set());
 	};
 	const remove = useAction((id) => api.delete(`/history/${id}`), {
 		success: "Reading deleted",
@@ -399,7 +402,9 @@ function HistoryTable({ itemId, currency }) {
 		async (body) => ({
 			...(await api.post(`/items/${itemId}/history/bulk`, {
 				...body,
-				...(allMatching ? { filters: query } : { ids: [...selected] }),
+				...(allMatching
+					? { filters: query, exclude_ids: [...excluded] }
+					: { ids: [...selected] }),
 			})),
 			action: body.action,
 		}),
@@ -424,24 +429,25 @@ function HistoryTable({ itemId, currency }) {
 	if (pages && page > pages) setPage(pages); // the last page was emptied by a delete
 
 	const pageIds = data.items.map((record) => record.id);
-	const isSelected = (id) => allMatching || selected.has(id);
+	const isSelected = (id) =>
+		allMatching ? !excluded.has(id) : selected.has(id);
 	const pageSelected = pageIds.filter(isSelected).length;
-	const count = allMatching ? data.total : selected.size;
-	const toggle = (id) => {
-		// Unticking one reading out of "all matching" keeps the rest of this page ticked.
-		const ids = new Set(allMatching ? pageIds : selected);
-		if (ids.has(id)) ids.delete(id);
-		else ids.add(id);
-		setAllMatching(false);
-		setSelected(ids);
+	const count = allMatching ? data.total - excluded.size : selected.size;
+	/** Tick or untick ids; in "all matching" mode unticking means excluding. */
+	const mark = (ids, on) => {
+		if (!allMatching) {
+			const next = new Set(selected);
+			for (const id of ids) on ? next.add(id) : next.delete(id);
+			return setSelected(next);
+		}
+		const next = new Set(excluded);
+		for (const id of ids) on ? next.delete(id) : next.add(id);
+		if (next.size >= data.total) clearSelection();
+		else setExcluded(next);
 	};
-	const togglePage = () => {
-		const everything = pageIds.length > 0 && pageSelected === pageIds.length;
-		const ids = allMatching ? new Set() : new Set(selected);
-		for (const id of pageIds) everything ? ids.delete(id) : ids.add(id);
-		setAllMatching(false);
-		setSelected(ids);
-	};
+	const toggle = (id) => mark([id], !isSelected(id));
+	const togglePage = () =>
+		mark(pageIds, !(pageIds.length > 0 && pageSelected === pageIds.length));
 
 	return (
 		<Card
@@ -511,9 +517,11 @@ function HistoryTable({ itemId, currency }) {
 			{count > 0 && (
 				<div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-subtle px-4 py-2 text-sm">
 					<span className="font-medium">
-						{allMatching
+						{allMatching && excluded.size === 0
 							? `All ${data.total}${filtering ? " matching" : ""} ${data.total === 1 ? "reading" : "readings"} selected`
-							: `${readings(count)} selected`}
+							: allMatching
+								? `${count} of ${data.total}${filtering ? " matching" : ""} readings selected`
+								: `${readings(count)} selected`}
 					</span>
 					{!allMatching &&
 						pageSelected === pageIds.length &&
@@ -714,7 +722,7 @@ function HistoryTable({ itemId, currency }) {
 				onConfirm={() => bulk.mutate({ action: "delete" })}
 				busy={bulk.isPending}
 			>
-				{allMatching && !filtering
+				{allMatching && !filtering && excluded.size === 0
 					? "Every reading of this item will be removed. This can't be undone."
 					: `The ${readings(count)} you selected will be removed. This can't be undone.`}
 			</ConfirmDialog>
@@ -742,7 +750,7 @@ function EditReading({ record, invalidate, onDone }) {
 function ReadingForm({ record, bulk = false, busy, onCancel, onSubmit }) {
 	const [price, setPrice] = useState(record ? String(record.price) : "");
 	const [stock, setStock] = useState(
-		record?.in_stock == null ? "" : String(record.in_stock),
+		record ? String(record.in_stock ?? "unknown") : "",
 	);
 	const empty = bulk && price === "" && stock === "";
 
@@ -753,7 +761,13 @@ function ReadingForm({ record, bulk = false, busy, onCancel, onSubmit }) {
 				event.preventDefault();
 				onSubmit({
 					price: price === "" ? undefined : Number(price),
-					in_stock: stock === "" ? undefined : stock === "true",
+					// Blank leaves the stock as it is (bulk only); "unknown" clears it.
+					in_stock:
+						stock === ""
+							? undefined
+							: stock === "unknown"
+								? null
+								: stock === "true",
 				});
 			}}
 		>
@@ -774,9 +788,8 @@ function ReadingForm({ record, bulk = false, busy, onCancel, onSubmit }) {
 				</Field>
 				<Field label="Stock">
 					<Select value={stock} onChange={(e) => setStock(e.target.value)}>
-						<option value="" disabled={!bulk}>
-							{bulk ? "Leave as is" : "Unknown"}
-						</option>
+						{bulk && <option value="">Leave as is</option>}
+						<option value="unknown">Unknown</option>
 						<option value="true">In stock</option>
 						<option value="false">Out of stock</option>
 					</Select>

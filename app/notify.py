@@ -59,7 +59,8 @@ def alerts(
     dropped = price is not None and old_price is not None and price < old_price
     drop = (old_price - price) / old_price * 100 if dropped and old_price else 0.0
     # With a range the tracked price is the cheapest option; say so, and name any store promotion.
-    now = f"{money(price, currency)}{' for the cheapest option' if item.price_high else ''}" if price else ""
+    cheapest = " for the cheapest option" if item.price_high else ""
+    now = f"{money(price, currency)}{cheapest}" if price is not None else ""
     promo = f" ({item.promotion})" if item.promotion else ""
     change = f"Down {drop:.1f}% to {now} (was {money(old_price, currency)}){promo}" if dropped else ""
 
