@@ -272,6 +272,10 @@ async def _call_model(messages: list[dict], settings: AppSettings, json_mode: bo
         kwargs["api_base"] = api_base
     if provider == "openai":
         kwargs["reasoning_effort"] = settings.ai_reasoning_effort
+    if provider == "ollama":
+        # Thinking models (Qwen 3, DeepSeek-R1, ...) otherwise reason at length before answering and can use up the
+        # whole token budget first. Reading a price doesn't need it; models that can't think ignore the flag.
+        kwargs["think"] = False
     if json_mode:
         if provider == "ollama":
             kwargs["format"] = "json"
@@ -281,7 +285,19 @@ async def _call_model(messages: list[dict], settings: AppSettings, json_mode: bo
             kwargs["response_format"] = {"type": "json_object"}
 
     response = await litellm.acompletion(**kwargs)
-    return response.choices[0].message.content or ""
+    choice = response.choices[0]
+    content = choice.message.content or ""
+    usage = getattr(response, "usage", None)
+    out_of_tokens = choice.finish_reason == "length" or (
+        usage is not None and (usage.completion_tokens or 0) >= settings.ai_max_tokens
+    )
+    if not content.strip() and out_of_tokens:
+        # Retrying can't help: the same budget runs out again (usually spent on thinking).
+        raise ExtractionError(
+            f"{settings.ai_model} used all {settings.ai_max_tokens} tokens without answering, probably thinking. "
+            "Raise Max tokens or pick a model that doesn't think first."
+        )
+    return content
 
 
 async def ask(

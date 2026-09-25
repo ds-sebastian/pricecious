@@ -122,7 +122,9 @@ def test_content_checks(png):
     assert content_problem(b"tiny", "") == "Page looks blank"
     blank = image_bytes(Image.new("RGB", (4000, 3000), "white"))
     assert content_problem(blank + b"\0" * 10_000, "") == "Page looks blank"
-    assert "bot check" in content_problem(png, "Please complete the captcha to continue")
+    assert "blocked" in content_problem(png, "Please complete the captcha to continue")
+    restricted = "Sorry, due to website restrictions we are unable to display the requested page."
+    assert content_problem(png, restricted) == "The site blocked the page ('unable to display the requested page')"
     # Long real pages mentioning a phrase are fine.
     assert content_problem(png, "captcha " + "word " * 200) is None
 

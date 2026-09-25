@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Failed test notifications were reported as sent.
 - Check failures now say why (bot check, load error, AI error) instead of a generic message.
 - European prices such as `1.234,56` are parsed correctly.
+- Thinking models in Ollama (Qwen 3 and similar) could spend the whole token budget reasoning and return nothing,
+  failing with "returned an empty response". Thinking is now turned off for Ollama, and a reply that runs out of
+  tokens before answering says so instead of being retried.
+- Pages showing "unable to display the requested page" are reported as blocked instead of being sent to the AI.
 - Correcting a low-confidence reading by hand left it ignored by deals and new-low alerts; corrected readings now
   count as confirmed.
 - Trackers blocked by a DNS blocklist were logged as blocked requests on every check, and LiteLLM logged each AI call

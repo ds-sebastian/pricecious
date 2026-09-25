@@ -93,8 +93,9 @@ def test_relevant_text_falls_back_to_start_of_page():
     assert ai.relevant_text("nothing useful here", limit=7) == "nothing"
 
 
-def _response(content):
-    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+def _response(content, finish_reason="stop", completion_tokens=10):
+    choice = SimpleNamespace(message=SimpleNamespace(content=content), finish_reason=finish_reason)
+    return SimpleNamespace(choices=[choice], usage=SimpleNamespace(completion_tokens=completion_tokens))
 
 
 async def test_extract_retries_without_json_mode_when_response_is_empty(monkeypatch, png):
@@ -108,6 +109,20 @@ async def test_extract_retries_without_json_mode_when_response_is_empty(monkeypa
     assert first["format"] == "json" and "format" not in second
     assert first["model"] == "ollama/gemma3:4b"
     assert first["api_base"] == ai.OLLAMA_DEFAULT_BASE
+    assert first["think"] is False and "reasoning_effort" not in first  # thinking models answer straight away
+
+
+@pytest.mark.parametrize(
+    "response",
+    [_response("", completion_tokens=1000), _response(None, finish_reason="length", completion_tokens=None)],
+)
+async def test_a_reply_that_ran_out_of_tokens_is_not_retried(monkeypatch, png, response):
+    completion = AsyncMock(return_value=response)
+    monkeypatch.setattr(ai.litellm, "acompletion", completion)
+
+    with pytest.raises(ExtractionError, match="used all 1000 tokens without answering"):
+        await ai.extract(png, AppSettings(), url="https://example.com")
+    assert completion.await_count == 1
 
 
 async def test_extract_fails_when_model_stays_silent(monkeypatch, png):
@@ -127,6 +142,7 @@ async def test_openai_uses_structured_output_and_no_ollama_base(monkeypatch, png
     assert kwargs["reasoning_effort"] == "low"
     assert kwargs["api_key"] == "k"
     assert "api_base" not in kwargs
+    assert "think" not in kwargs
 
 
 def test_litellm_does_not_log_every_call():

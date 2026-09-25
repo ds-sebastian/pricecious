@@ -80,6 +80,7 @@ BLOCKED_PAGE_PHRASES = [
     "unusual traffic",
     "enable javascript",
     "please enable cookies",
+    "unable to display the requested page",
 ]
 
 MIN_SCREENSHOT_BYTES = 5_000
@@ -303,7 +304,7 @@ def content_problem(screenshot: bytes, text: str) -> str | None:
     if len(text.split()) < MIN_CONTENT_WORDS:
         for phrase in BLOCKED_PAGE_PHRASES:
             if phrase in lowered:
-                return f"Page looks blocked by a bot check ('{phrase}')"
+                return f"The site blocked the page ('{phrase}')"
     return None
 
 

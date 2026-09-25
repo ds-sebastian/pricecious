@@ -24,6 +24,8 @@ when prices drop, hit your target, or items come back in stock.
 ## Quick start
 
 You need Docker, and either an API key for a hosted model or a local Ollama with a vision model (e.g. `gemma3:4b`).
+Thinking models such as Qwen 3 work too: Pricecious turns their thinking off in Ollama, since reading a price doesn't
+need it.
 
 1. Save this as `docker-compose.yml`:
 
