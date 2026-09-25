@@ -295,6 +295,48 @@ async def test_bulk_update_backfills_a_confirmed_price(client, db):
     assert (record["regular_price"], record["in_stock"], record["in_stock_confidence"]) == (None, False, None)
 
 
+async def test_bulk_select_all_can_leave_readings_out(client, db):
+    item = await create_item(client)
+    await _add_readings(db, item["id"], [(10, True, 0.2), (20, True, 0.2), (30, True, 0.2)])
+    readings = (await client.get(f"/api/items/{item['id']}/history")).json()["items"]
+    keep = next(r["id"] for r in readings if r["price"] == 20)
+
+    body = {"action": "delete", "filters": {"confidence_below": 0.5}, "exclude_ids": [keep]}
+    assert (await client.post(f"/api/items/{item['id']}/history/bulk", json=body)).json() == {"count": 2}
+    assert await _prices(client, item["id"]) == [20]
+
+
+async def test_stock_can_be_set_back_to_unknown(client, db):
+    item = await create_item(client)
+    await _add_readings(db, item["id"], [(10, True, 0.9), (12, False, 0.9)])
+    readings = (await client.get(f"/api/items/{item['id']}/history")).json()["items"]
+
+    await client.put(f"/api/history/{readings[0]['id']}", json={"in_stock": None})
+    body = {"action": "update", "ids": [readings[1]["id"]], "in_stock": None}
+    assert (await client.post(f"/api/items/{item['id']}/history/bulk", json=body)).json() == {"count": 1}
+
+    readings = (await client.get(f"/api/items/{item['id']}/history")).json()["items"]
+    assert [(r["price"], r["in_stock"]) for r in readings] == [(10, None), (12, None)]  # prices untouched
+    await client.put(f"/api/history/{readings[0]['id']}", json={"price": 11})
+    assert (await client.get(f"/api/items/{item['id']}/history")).json()["items"][0]["in_stock"] is None
+
+
+async def test_item_takes_confidences_from_its_latest_reading(client, db):
+    item = await create_item(client)
+    await _add_readings(db, item["id"], [(10, True, 0.3)])
+    await db.execute(update(PriceHistory).values(in_stock_confidence=0.4))
+    await db.commit()
+    latest = (await client.get(f"/api/items/{item['id']}/history")).json()["items"][0]
+
+    await client.put(f"/api/history/{latest['id']}", json={"price": 10})
+    current = (await client.get("/api/items")).json()[0]
+    assert (current["current_price"], current["current_price_confidence"], current["in_stock_confidence"]) == (
+        10,
+        None,  # corrected by hand
+        0.4,
+    )
+
+
 @pytest.mark.parametrize(
     "body",
     [
@@ -302,6 +344,7 @@ async def test_bulk_update_backfills_a_confirmed_price(client, db):
         {"action": "delete", "ids": [1], "filters": {}},
         {"action": "delete", "ids": []},
         {"action": "update", "ids": [1]},
+        {"action": "delete", "ids": [1], "exclude_ids": [2]},
         {"action": "update", "ids": [1], "price": -1},
         {"action": "delete", "filters": {"sort": "asc"}},
         {"action": "purge", "ids": [1]},
@@ -437,6 +480,29 @@ async def test_same_origin_and_trusted_writes_are_allowed(client, headers):
 )
 async def test_cross_origin_writes_are_rejected(client, headers):
     assert (await client.post("/api/items/check-all", headers=headers)).status_code == 403
+
+
+async def test_edits_and_deletes_can_travel_as_post(client):
+    """Proxies that only allow GET and POST still get through: the UI sends POST ?_method=PUT|DELETE."""
+    item = await create_item(client)
+
+    response = await client.post(f"/api/items/{item['id']}?_method=PUT", json={"url": item["url"], "name": "Renamed"})
+    assert response.status_code == 200 and response.json()["name"] == "Renamed"
+    assert (await client.post("/api/settings?_method=put", json={"ai_model": "llava"})).json()["ai_model"] == "llava"
+    assert (await client.post(f"/api/items/{item['id']}?_method=DELETE")).status_code == 204
+    assert (await client.get("/api/items")).json() == []
+
+
+async def test_method_override_is_limited(client):
+    item = await create_item(client)
+    # Only POST is overridden, only to PUT or DELETE, and the cross-origin check still applies.
+    await client.get(f"/api/items/{item['id']}?_method=DELETE")
+    assert (await client.post("/api/items/check-all?_method=GET")).status_code == 200
+    cross_site = await client.post(
+        f"/api/items/{item['id']}?_method=DELETE", headers={"Origin": "https://evil.example"}
+    )
+    assert cross_site.status_code == 403
+    assert len((await client.get("/api/items")).json()) == 1
 
 
 async def test_trusted_origin_gets_cors_headers(client):
