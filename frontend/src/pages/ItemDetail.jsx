@@ -395,7 +395,11 @@ function HistoryTable({ itemId, currency }) {
 		invalidate,
 		onSuccess: (_, id) => {
 			setDeleting(null);
-			setSelected((ids) => new Set([...ids].filter((other) => other !== id)));
+			// A deleted reading is neither picked nor a match any more, so it mustn't count as excluded either.
+			const without = (ids) =>
+				new Set([...ids].filter((other) => other !== id));
+			setSelected(without);
+			setExcluded(without);
 		},
 	});
 	const bulk = useAction(
@@ -688,6 +692,10 @@ function HistoryTable({ itemId, currency }) {
 						record={editing}
 						invalidate={invalidate}
 						onDone={() => setEditing(null)}
+						onSaved={(id) => {
+							// The edit may have taken it out of the filter, so an exclusion could now be off by one.
+							if (allMatching && excluded.has(id)) clearSelection();
+						}}
 					/>
 				)}
 			</Dialog>
@@ -730,11 +738,14 @@ function HistoryTable({ itemId, currency }) {
 	);
 }
 
-function EditReading({ record, invalidate, onDone }) {
+function EditReading({ record, invalidate, onDone, onSaved }) {
 	const save = useAction((body) => api.put(`/history/${record.id}`, body), {
 		success: "Reading updated",
 		invalidate,
-		onSuccess: onDone,
+		onSuccess: () => {
+			onSaved?.(record.id);
+			onDone();
+		},
 	});
 	return (
 		<ReadingForm
