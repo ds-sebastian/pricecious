@@ -26,6 +26,7 @@ import {
 	Badge,
 	Button,
 	Card,
+	Checkbox,
 	ConfirmDialog,
 	Dialog,
 	EmptyState,
@@ -344,49 +345,103 @@ function useDebounced(value, delay = 300) {
 	return debounced;
 }
 
-function historyParams(page, filters, threshold) {
-	const params = new URLSearchParams({ page, size: PAGE_SIZE });
-	for (const key of ["min_price", "max_price", "stock"]) {
-		if (filters[key] !== "") params.set(key, filters[key]);
+/** The filters as the API takes them, for listing a page or acting on every match. */
+function historyFilters(filters, threshold) {
+	const out = {};
+	for (const key of ["min_price", "max_price"]) {
+		if (filters[key] !== "") out[key] = Number(filters[key]);
 	}
-	if (filters.confidence === "unapplied")
-		params.set("confidence_below", threshold);
-	if (filters.confidence === "confident") params.set("min_confidence", 0.8);
-	return params;
+	if (filters.stock) out.stock = filters.stock;
+	if (filters.confidence === "unapplied") out.confidence_below = threshold;
+	if (filters.confidence === "confident") out.min_confidence = 0.8;
+	return out;
 }
+
+const readings = (count) => `${count} reading${count === 1 ? "" : "s"}`;
 
 function HistoryTable({ itemId, currency }) {
 	const [page, setPage] = useState(1);
 	const [filters, setFilters] = useState(NO_FILTERS);
 	const [editing, setEditing] = useState(null);
 	const [deleting, setDeleting] = useState(null);
+	// Either hand-picked ids, or every reading matching the filters (which can span many pages).
+	const [selected, setSelected] = useState(() => new Set());
+	const [allMatching, setAllMatching] = useState(false);
+	const [bulkDialog, setBulkDialog] = useState(null); // "edit" | "delete"
 	const { data: settings } = useSettings();
 	const threshold = settings?.confidence_threshold_price ?? 0.5;
 	const applied = useDebounced(filters);
 	const filtering = Object.values(applied).some((value) => value !== "");
+	const query = historyFilters(applied, threshold);
 
-	const { data } = useQuery({
+	const { data, isPlaceholderData } = useQuery({
 		queryKey: ["history", itemId, page, applied, threshold],
 		queryFn: () =>
 			api.get(
-				`/items/${itemId}/history?${historyParams(page, applied, threshold)}`,
+				`/items/${itemId}/history?${new URLSearchParams({ page, size: PAGE_SIZE, ...query })}`,
 			),
 		placeholderData: keepPreviousData,
 	});
 	const invalidate = [["history", itemId], ["analytics", itemId], ["items"]];
+	const clearSelection = () => {
+		setSelected(new Set());
+		setAllMatching(false);
+	};
 	const remove = useAction((id) => api.delete(`/history/${id}`), {
-		success: "Record deleted",
+		success: "Reading deleted",
 		invalidate,
-		onSuccess: () => setDeleting(null),
+		onSuccess: (_, id) => {
+			setDeleting(null);
+			setSelected((ids) => new Set([...ids].filter((other) => other !== id)));
+		},
 	});
+	const bulk = useAction(
+		async (body) => ({
+			...(await api.post(`/items/${itemId}/history/bulk`, {
+				...body,
+				...(allMatching ? { filters: query } : { ids: [...selected] }),
+			})),
+			action: body.action,
+		}),
+		{
+			success: ({ count, action }) =>
+				`${readings(count)} ${action === "delete" ? "deleted" : "updated"}`,
+			invalidate,
+			onSuccess: () => {
+				setBulkDialog(null);
+				clearSelection();
+			},
+		},
+	);
 	const setFilter = (key) => (event) => {
 		setFilters({ ...filters, [key]: event.target.value });
 		setPage(1);
+		clearSelection();
 	};
 
 	if (!data || (!data.total && !filtering)) return null;
 	const pages = Math.ceil(data.total / PAGE_SIZE);
 	if (pages && page > pages) setPage(pages); // the last page was emptied by a delete
+
+	const pageIds = data.items.map((record) => record.id);
+	const isSelected = (id) => allMatching || selected.has(id);
+	const pageSelected = pageIds.filter(isSelected).length;
+	const count = allMatching ? data.total : selected.size;
+	const toggle = (id) => {
+		// Unticking one reading out of "all matching" keeps the rest of this page ticked.
+		const ids = new Set(allMatching ? pageIds : selected);
+		if (ids.has(id)) ids.delete(id);
+		else ids.add(id);
+		setAllMatching(false);
+		setSelected(ids);
+	};
+	const togglePage = () => {
+		const everything = pageIds.length > 0 && pageSelected === pageIds.length;
+		const ids = allMatching ? new Set() : new Set(selected);
+		for (const id of pageIds) everything ? ids.delete(id) : ids.add(id);
+		setAllMatching(false);
+		setSelected(ids);
+	};
 
 	return (
 		<Card
@@ -402,6 +457,7 @@ function HistoryTable({ itemId, currency }) {
 						onClick={() => {
 							setFilters(NO_FILTERS);
 							setPage(1);
+							clearSelection();
 						}}
 					>
 						Clear filters
@@ -452,10 +508,65 @@ function HistoryTable({ itemId, currency }) {
 					<option value="confident">High (80%+)</option>
 				</Select>
 			</fieldset>
+			{count > 0 && (
+				<div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-subtle px-4 py-2 text-sm">
+					<span className="font-medium">
+						{allMatching
+							? `All ${data.total}${filtering ? " matching" : ""} ${data.total === 1 ? "reading" : "readings"} selected`
+							: `${readings(count)} selected`}
+					</span>
+					{!allMatching &&
+						pageSelected === pageIds.length &&
+						data.total > count && (
+							<button
+								type="button"
+								className="font-medium text-accent hover:underline disabled:opacity-50"
+								disabled={isPlaceholderData}
+								onClick={() => setAllMatching(true)}
+							>
+								Select all {data.total}
+								{filtering ? " matching" : ""}
+							</button>
+						)}
+					<div className="ml-auto flex gap-1">
+						<Button variant="ghost" onClick={clearSelection}>
+							Clear
+						</Button>
+						<Button
+							aria-label="Edit selected readings"
+							onClick={() => setBulkDialog("edit")}
+						>
+							<Pencil className="size-4" />
+							Edit
+						</Button>
+						<Button
+							variant="danger"
+							aria-label="Delete selected readings"
+							onClick={() => setBulkDialog("delete")}
+						>
+							<Trash2 className="size-4" />
+							Delete
+						</Button>
+					</div>
+				</div>
+			)}
 			<div className="relative overflow-x-auto">
 				<table className="w-full text-sm">
 					<thead className="text-left text-xs text-muted">
 						<tr className="border-b border-border">
+							<th className="w-0 py-2 pr-0 pl-4">
+								<Checkbox
+									aria-label="Select all readings on this page"
+									checked={
+										pageIds.length > 0 && pageSelected === pageIds.length
+									}
+									indeterminate={
+										pageSelected > 0 && pageSelected < pageIds.length
+									}
+									disabled={pageIds.length === 0}
+									onChange={togglePage}
+								/>
+							</th>
 							<th className="px-4 py-2 font-medium">Date</th>
 							<th className="px-4 py-2 text-right font-medium">Price</th>
 							<th className="px-4 py-2 font-medium">Stock</th>
@@ -470,7 +581,7 @@ function HistoryTable({ itemId, currency }) {
 					<tbody>
 						{data.items.length === 0 && (
 							<tr>
-								<td colSpan={5} className="px-4 py-10 text-center text-muted">
+								<td colSpan={6} className="px-4 py-10 text-center text-muted">
 									No readings match these filters.
 								</td>
 							</tr>
@@ -478,8 +589,18 @@ function HistoryTable({ itemId, currency }) {
 						{data.items.map((record) => (
 							<tr
 								key={record.id}
-								className="border-b border-border last:border-0"
+								className={clsx(
+									"border-b border-border last:border-0",
+									isSelected(record.id) && "bg-subtle/60",
+								)}
 							>
+								<td className="py-2 pr-0 pl-4">
+									<Checkbox
+										aria-label={`Select the reading from ${formatDateTime(record.timestamp)}`}
+										checked={isSelected(record.id)}
+										onChange={() => toggle(record.id)}
+									/>
+								</td>
 								<td className="px-4 py-2 whitespace-nowrap">
 									{formatDateTime(record.timestamp)}
 								</td>
@@ -500,6 +621,11 @@ function HistoryTable({ itemId, currency }) {
 										record.price_confidence < 0.5 &&
 											"text-amber-600 dark:text-amber-400",
 									)}
+									title={
+										record.price_confidence == null
+											? "Entered or confirmed by hand"
+											: undefined
+									}
 								>
 									{record.price_confidence == null
 										? "—"
@@ -557,6 +683,20 @@ function HistoryTable({ itemId, currency }) {
 					/>
 				)}
 			</Dialog>
+			<Dialog
+				open={bulkDialog === "edit"}
+				onClose={() => setBulkDialog(null)}
+				title={`Edit ${readings(count)}`}
+			>
+				{bulkDialog === "edit" && (
+					<ReadingForm
+						bulk
+						busy={bulk.isPending}
+						onCancel={() => setBulkDialog(null)}
+						onSubmit={(body) => bulk.mutate({ action: "update", ...body })}
+					/>
+				)}
+			</Dialog>
 			<ConfirmDialog
 				open={!!deleting}
 				title="Delete reading?"
@@ -567,57 +707,88 @@ function HistoryTable({ itemId, currency }) {
 				The {formatPrice(deleting?.price, currency)} reading from{" "}
 				{deleting && formatDateTime(deleting.timestamp)} will be removed.
 			</ConfirmDialog>
+			<ConfirmDialog
+				open={bulkDialog === "delete"}
+				title={`Delete ${readings(count)}?`}
+				onClose={() => setBulkDialog(null)}
+				onConfirm={() => bulk.mutate({ action: "delete" })}
+				busy={bulk.isPending}
+			>
+				{allMatching && !filtering
+					? "Every reading of this item will be removed. This can't be undone."
+					: `The ${readings(count)} you selected will be removed. This can't be undone.`}
+			</ConfirmDialog>
 		</Card>
 	);
 }
 
 function EditReading({ record, invalidate, onDone }) {
-	const [price, setPrice] = useState(String(record.price));
-	const [stock, setStock] = useState(
-		record.in_stock == null ? "" : String(record.in_stock),
-	);
 	const save = useAction((body) => api.put(`/history/${record.id}`, body), {
 		success: "Reading updated",
 		invalidate,
 		onSuccess: onDone,
 	});
+	return (
+		<ReadingForm
+			record={record}
+			busy={save.isPending}
+			onCancel={onDone}
+			onSubmit={(body) => save.mutate(body)}
+		/>
+	);
+}
+
+/** Corrects one reading, or (bulk) sets a price and/or stock on many; blank bulk fields are left as they are. */
+function ReadingForm({ record, bulk = false, busy, onCancel, onSubmit }) {
+	const [price, setPrice] = useState(record ? String(record.price) : "");
+	const [stock, setStock] = useState(
+		record?.in_stock == null ? "" : String(record.in_stock),
+	);
+	const empty = bulk && price === "" && stock === "";
 
 	return (
 		<form
 			className="grid gap-4"
 			onSubmit={(event) => {
 				event.preventDefault();
-				save.mutate({
-					price: Number(price),
-					in_stock: stock === "" ? null : stock === "true",
+				onSubmit({
+					price: price === "" ? undefined : Number(price),
+					in_stock: stock === "" ? undefined : stock === "true",
 				});
 			}}
 		>
-			<p className="text-sm text-muted">{formatDateTime(record.timestamp)}</p>
+			{record && (
+				<p className="text-sm text-muted">{formatDateTime(record.timestamp)}</p>
+			)}
 			<div className="grid grid-cols-2 gap-4">
 				<Field label="Price">
 					<Input
 						type="number"
 						min="0"
 						step="0.01"
-						required
+						required={!bulk}
+						placeholder={bulk ? "Leave as is" : undefined}
 						value={price}
 						onChange={(e) => setPrice(e.target.value)}
 					/>
 				</Field>
 				<Field label="Stock">
 					<Select value={stock} onChange={(e) => setStock(e.target.value)}>
-						<option value="" disabled>
-							Unknown
+						<option value="" disabled={!bulk}>
+							{bulk ? "Leave as is" : "Unknown"}
 						</option>
 						<option value="true">In stock</option>
 						<option value="false">Out of stock</option>
 					</Select>
 				</Field>
 			</div>
+			<p className="text-xs text-muted">
+				Corrected readings count as confirmed, so "lowest price" deals and
+				alerts use them even if the AI was unsure.
+			</p>
 			<div className="flex justify-end gap-2">
-				<Button onClick={onDone}>Cancel</Button>
-				<Button type="submit" variant="primary" busy={save.isPending}>
+				<Button onClick={onCancel}>Cancel</Button>
+				<Button type="submit" variant="primary" busy={busy} disabled={empty}>
 					Save
 				</Button>
 			</div>

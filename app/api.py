@@ -6,7 +6,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,9 @@ from app.schemas import (
     AITest,
     AITestResult,
     Analytics,
+    BulkResult,
+    HistoryBulk,
+    HistoryFilters,
     HistoryPage,
     HistoryQuery,
     HistoryUpdate,
@@ -148,23 +151,43 @@ async def item_analytics(
 # Price history
 
 
+def _history_conditions(item_id: int, filters: HistoryFilters) -> list:
+    conditions = [PriceHistory.item_id == item_id]
+    if filters.min_price is not None:
+        conditions.append(PriceHistory.price >= filters.min_price)
+    if filters.max_price is not None:
+        conditions.append(PriceHistory.price <= filters.max_price)
+    if filters.stock:
+        stock = {"in": True, "out": False, "unknown": None}[filters.stock]
+        conditions.append(PriceHistory.in_stock.is_(stock))
+    # Readings without a confidence (entered by hand or very old) match neither confidence filter.
+    if filters.min_confidence is not None:
+        conditions.append(PriceHistory.price_confidence >= filters.min_confidence)
+    if filters.confidence_below is not None:
+        conditions.append(PriceHistory.price_confidence < filters.confidence_below)
+    return conditions
+
+
+def _manual_values(data: HistoryUpdate) -> dict:
+    """Column values for a correction by hand. A corrected reading has no AI confidence, so it counts as trusted."""
+    values: dict[Any, Any] = {}
+    if data.price is not None:
+        values |= {
+            PriceHistory.price: data.price,
+            PriceHistory.price_confidence: None,
+            # Keep the range top and "was" price only while they still make sense above the new price.
+            PriceHistory.price_high: case((PriceHistory.price_high > data.price, PriceHistory.price_high)),
+            PriceHistory.regular_price: case((PriceHistory.regular_price > data.price, PriceHistory.regular_price)),
+        }
+    if data.in_stock is not None:
+        values |= {PriceHistory.in_stock: data.in_stock, PriceHistory.in_stock_confidence: None}
+    return values
+
+
 @router.get("/items/{item_id}/history")
 async def item_history(item_id: int, query: Annotated[HistoryQuery, Query()], db: DB) -> HistoryPage:
     await _get(db, Item, item_id)
-    conditions = [PriceHistory.item_id == item_id]
-    if query.min_price is not None:
-        conditions.append(PriceHistory.price >= query.min_price)
-    if query.max_price is not None:
-        conditions.append(PriceHistory.price <= query.max_price)
-    if query.stock:
-        stock = {"in": True, "out": False, "unknown": None}[query.stock]
-        conditions.append(PriceHistory.in_stock.is_(stock))
-    # Readings without a confidence (entered by hand or very old) match neither confidence filter.
-    if query.min_confidence is not None:
-        conditions.append(PriceHistory.price_confidence >= query.min_confidence)
-    if query.confidence_below is not None:
-        conditions.append(PriceHistory.price_confidence < query.confidence_below)
-
+    conditions = _history_conditions(item_id, query)
     total = await db.scalar(select(func.count()).select_from(PriceHistory).where(*conditions))
     records = await db.scalars(
         select(PriceHistory)
@@ -176,11 +199,26 @@ async def item_history(item_id: int, query: Annotated[HistoryQuery, Query()], db
     return HistoryPage(items=records.all(), total=total, page=query.page, size=query.size)
 
 
+@router.post("/items/{item_id}/history/bulk")
+async def bulk_history(item_id: int, data: HistoryBulk, db: DB) -> BulkResult:
+    await _get(db, Item, item_id)
+    if data.filters is not None:
+        conditions = _history_conditions(item_id, data.filters)
+    else:
+        conditions = [PriceHistory.item_id == item_id, PriceHistory.id.in_(data.ids)]
+    if data.action == "delete":
+        result = await db.execute(delete(PriceHistory).where(*conditions))
+    else:
+        result = await db.execute(update(PriceHistory).where(*conditions).values(_manual_values(data)))
+    await _sync_latest(db, item_id)
+    return BulkResult(count=result.rowcount)
+
+
 @router.put("/history/{record_id}")
 async def update_history(record_id: int, data: HistoryUpdate, db: DB) -> dict:
     record = await _get(db, PriceHistory, record_id)
-    for key, value in data.model_dump(exclude_none=True).items():
-        setattr(record, key, value)
+    if values := _manual_values(data):
+        await db.execute(update(PriceHistory).where(PriceHistory.id == record_id).values(values))
     await _sync_latest(db, record.item_id)
     return {"ok": True}
 

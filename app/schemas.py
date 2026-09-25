@@ -10,6 +10,7 @@ from pydantic import (
     StringConstraints,
     field_serializer,
     field_validator,
+    model_validator,
 )
 
 from app.notify import mask
@@ -94,16 +95,19 @@ class HistoryOut(BaseModel):
     in_stock_confidence: float | None
 
 
-class HistoryQuery(BaseModel):
+class HistoryFilters(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    page: int = Field(1, ge=1)
-    size: int = Field(50, ge=1, le=200)
     min_price: float | None = Field(None, ge=0)
     max_price: float | None = Field(None, ge=0)
     stock: Literal["in", "out", "unknown"] | None = None
     min_confidence: float | None = Field(None, ge=0, le=1)
     confidence_below: float | None = Field(None, gt=0, le=1)
+
+
+class HistoryQuery(HistoryFilters):
+    page: int = Field(1, ge=1)
+    size: int = Field(50, ge=1, le=200)
 
 
 class HistoryPage(BaseModel):
@@ -114,8 +118,30 @@ class HistoryPage(BaseModel):
 
 
 class HistoryUpdate(BaseModel):
+    """Omitted fields are left alone. A price or stock set here counts as confirmed by hand."""
+
     price: float | None = Field(None, ge=0)
     in_stock: bool | None = None
+
+
+class HistoryBulk(HistoryUpdate):
+    """Delete or update the chosen readings: the listed ids, or every reading matching the filters."""
+
+    action: Literal["delete", "update"]
+    ids: list[int] | None = Field(None, min_length=1, max_length=10_000)
+    filters: HistoryFilters | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        if (self.ids is None) == (self.filters is None):
+            raise ValueError("Give either ids or filters")
+        if self.action == "update" and self.price is None and self.in_stock is None:
+            raise ValueError("Give a price or stock status to set")
+        return self
+
+
+class BulkResult(BaseModel):
+    count: int
 
 
 class Stats(BaseModel):

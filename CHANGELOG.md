@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Filters:** "Needs attention" and "Deals" views on the Items page.
 - **History filters:** filter an item's readings by price range, stock (including unknown) and confidence, including
   "low", meaning below your minimum confidence, so those readings never changed the price.
+- **Bulk history fixes:** tick readings, or every reading matching the filters across pages, then delete them or set
+  the right price and stock in one go.
 - **Check all cooldown:** "Check all" skips items checked in the last 5 minutes and says how many it skipped.
 - **Price ranges and sales:** pages that list a range across options ("$1,799 – $2,048") record the cheapest option
   as the price and show the top of the range. The crossed-out "was" price and the store's promotion label ("Limited
@@ -56,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Failed test notifications were reported as sent.
 - Check failures now say why (bot check, load error, AI error) instead of a generic message.
 - European prices such as `1.234,56` are parsed correctly.
+- Correcting a low-confidence reading by hand left it ignored by deals and new-low alerts; corrected readings now
+  count as confirmed.
 - Trackers blocked by a DNS blocklist were logged as blocked requests on every check, and LiteLLM logged each AI call
   twice at INFO. Both are now quiet (set `LITELLM_LOG` to see LiteLLM's logs).
 

@@ -53,6 +53,24 @@ export function Select({ className, ...props }) {
 	return <select className={clsx(FIELD, "h-9", className)} {...props} />;
 }
 
+export function Checkbox({ indeterminate = false, className, ...props }) {
+	const ref = useRef(null);
+	useEffect(() => {
+		if (ref.current) ref.current.indeterminate = indeterminate;
+	}, [indeterminate]);
+	return (
+		<input
+			ref={ref}
+			type="checkbox"
+			className={clsx(
+				"size-4 cursor-pointer accent-fg align-middle",
+				className,
+			)}
+			{...props}
+		/>
+	);
+}
+
 export function Field({ label, hint, className, children }) {
 	return (
 		// biome-ignore lint/a11y/noLabelWithoutControl: the control is passed in as children

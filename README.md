@@ -125,8 +125,9 @@ drive-by protection, not a substitute for the firewall or proxy allowlist.
 - **Bookmarklet**: the Add item dialog has a **+ Pricecious** link. Drag it to your bookmarks bar, then click it on
   any product page to add that page.
 - **Item page**: price history with lowest/highest markers, out-of-stock periods shaded, an optional forecast, and
-  every reading. Filter readings by price, stock or confidence to find bad ones, then fix or delete them; the current
-  price follows the newest reading.
+  every reading. Filter readings by price, stock or confidence to find bad ones, tick them (or every match, across
+  pages) and delete them or set the right price in one go; the current price follows the newest reading. Corrected
+  readings count as confirmed, so "lowest price" deals and alerts use them.
 - **Compare**: items that share a tag (e.g. `gpu`) on one chart.
 - **Check all** checks every item that wasn't checked in the last 5 minutes, so repeated clicks don't run up your AI
   bill. The check button on a single item always runs.
