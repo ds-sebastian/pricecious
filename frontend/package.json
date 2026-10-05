@@ -11,7 +11,7 @@
 	"dependencies": {
 		"@tanstack/react-query": "^5.102.8",
 		"clsx": "^2.1.1",
-		"lucide-react": "^1.47.0",
+		"lucide-react": "^1.49.0",
 		"react": "^19.2.7",
 		"react-dom": "^19.3.0",
 		"react-router-dom": "^7.18.4",
