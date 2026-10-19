@@ -9,7 +9,7 @@
 		"fix": "biome check . --write"
 	},
 	"dependencies": {
-		"@tanstack/react-query": "^5.104.1",
+		"@tanstack/react-query": "^5.104.3",
 		"clsx": "^2.1.1",
 		"lucide-react": "^1.58.0",
 		"react": "^19.3.1",
