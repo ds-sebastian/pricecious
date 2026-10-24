@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-24
+
+### Security
+- LiteLLM is now required to be 1.106.2 or newer and the compromised 1.107.0 release (published 2026-10-21 and since
+  pulled from PyPI) is excluded. No previous Pricecious release ever shipped 1.107.0.
+- The Docker image is built on the current Node.js 22 release, which includes the October 2026 Node.js security fixes.
+- Dependabot now waits 3 days before proposing a new release, so a compromised version is usually pulled before it
+  would be auto-merged. Security updates are not delayed.
+
+### Changed
+- Dependencies upgraded to their latest compatible versions (LiteLLM 1.106, FastAPI 0.162, Starlette 1.9, Pillow 13,
+  pandas 3.1, Prophet 1.5, asyncpg 0.32, Apprise 2.0, Vite 8.3, ...).
+
 ## [0.3.1] - 2026-09-25
 
 ### Fixed
