@@ -10,6 +10,11 @@ updates:
       time: "08:00"
     labels:
       - "dependencies"
+    # PRs are auto-merged, so wait for new releases to age before proposing them.
+    # A compromised release (e.g. litellm 1.107.0, Oct 2026) is usually pulled within
+    # hours. Security updates are not delayed by this.
+    cooldown:
+      default-days: 3
 
   # Python backend (uv)
   - package-ecosystem: "uv"
@@ -20,6 +25,8 @@ updates:
       time: "08:00"
     labels:
       - "dependencies"
+    cooldown:
+      default-days: 3
 
   # Node.js frontend (npm)
   - package-ecosystem: "npm"
@@ -30,3 +37,5 @@ updates:
       time: "08:00"
     labels:
       - "dependencies"
+    cooldown:
+      default-days: 3
