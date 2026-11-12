@@ -19,10 +19,11 @@ from app.notify import mask
 UTCDateTime = Annotated[datetime, AfterValidator(lambda v: v if v.tzinfo else v.replace(tzinfo=UTC))]
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 OptionalText = Annotated[str | None, BeforeValidator(lambda v: (v.strip() or None) if isinstance(v, str) else v)]
+# The pattern sits on the str branch only: on the whole `str | None` it is applied to None too, which pydantic
+# raises as a TypeError (HTTP 500) instead of a validation error whenever the field is blank or null.
 Currency = Annotated[
-    str | None,
+    Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")] | None,
     BeforeValidator(lambda v: (v.strip().upper() or None) if isinstance(v, str) else v),
-    Field(pattern=r"^[A-Z]{3}$"),
 ]
 
 

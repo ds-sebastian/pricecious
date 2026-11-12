@@ -59,6 +59,16 @@ async def test_unnamed_item_gets_currency_from_its_domain(client):
     assert updated.json()["currency"] == "CHF"
 
 
+@pytest.mark.parametrize("currency", ["", "  ", None])
+async def test_blank_currency_is_detected_from_the_domain(client, currency):
+    # The add form sends every text field, so a blank currency arrives as "" (or null from API clients).
+    created = await create_item(client, url="https://shop.example.de/grinder", currency=currency)
+    assert created["currency"] == "EUR"
+
+    updated = await client.put(f"/api/items/{created['id']}", json=ITEM | {"currency": currency})
+    assert updated.status_code == 200, updated.text
+
+
 async def test_items_report_deals(client, db):
     item = await create_item(client)
     now = utcnow()

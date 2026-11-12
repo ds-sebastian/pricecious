@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Adding an item without a currency failed with "Request failed (500)". A blank or null currency is now detected from
+  the store's domain, as intended. Saving an item with its currency cleared failed the same way.
+
 ## [0.3.2] - 2026-10-24
 
 ### Security
