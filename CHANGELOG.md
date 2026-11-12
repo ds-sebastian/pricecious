@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-12
+
 ### Fixed
 - Adding an item without a currency failed with "Request failed (500)". A blank or null currency is now detected from
   the store's domain, as intended. Saving an item with its currency cleared failed the same way.
+
+### Changed
+- Dependencies upgraded to their latest patch releases (LiteLLM 1.106.6, pydantic 2.14.3, SQLAlchemy 2.1.8,
+  pandas 3.1.1, Vite 8.3.6, ...).
 
 ## [0.3.2] - 2026-10-24
 
