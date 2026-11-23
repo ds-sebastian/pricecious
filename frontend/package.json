@@ -19,7 +19,7 @@
 		"sonner": "^2.0.8"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.6.7",
+		"@biomejs/biome": "^2.6.8",
 		"@tailwindcss/vite": "^4.3.5",
 		"@vitejs/plugin-react": "^6.3.0",
 		"tailwindcss": "^4.3.3",
